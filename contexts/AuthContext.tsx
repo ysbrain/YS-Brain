@@ -4,30 +4,32 @@ import { deleteToken, getToken, saveToken } from "./storage";
 
 type AuthContextType = {
   isSignedIn: boolean;
-  loading: boolean;
-  signIn: (token: string) => Promise<void>;
+  userToken: string | null;
+  signIn: (token: string, username: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [userToken, setUserToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadToken = async () => {
+    const loadAuthData = async () => {
       try {
         const token = await getToken("userToken");
+        const storedUsername = await getToken("username");
         if (token) setUserToken(token);
+        console.log("Auth data loaded:", { userToken });
       } finally {
         setLoading(false);
         SplashScreen.hideAsync(); // Hide the splash screen once loading is done
       }
     };
-    loadToken();
+    loadAuthData();
   }, []);
-
+  
   const signIn = async (token: string) => {
     await saveToken("userToken", token);
     setUserToken(token);
@@ -38,11 +40,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUserToken(null);
   };
 
-  console.log("AuthProvider render, isSignedIn:", !!userToken);
-
   return (
-    <AuthContext.Provider value={{ isSignedIn: !!userToken, loading, signIn, signOut }}>
-      {!loading && children}
+    <AuthContext.Provider
+      value={{
+        isSignedIn: !!userToken,
+        userToken,
+        signIn,
+        signOut,
+      }}
+    >
+    {!loading && children}
     </AuthContext.Provider>
   );
 };

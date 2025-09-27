@@ -14,7 +14,7 @@ export default function LoginScreen() {
     // TODO: Replace with real API call
     if (email && password) {
       // Imagine you send email/password to backend and get a token
-      const fakeToken = "demo-token-123";
+      const fakeToken = "demo-user";
       await signIn(fakeToken);
       router.replace("/(tabs)"); // Navigate to main app after login
     } else {
@@ -23,7 +23,6 @@ export default function LoginScreen() {
   };
 
   return (
-    console.log("Rendering Login Screen"),
     <View style={styles.container}>
       <Text style={styles.title}>Welcome Back 👋</Text>
       <Text style={styles.subtitle}>Sign in to continue</Text>
