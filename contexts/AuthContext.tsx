@@ -1,42 +1,41 @@
+import * as SecureStore from "expo-secure-store";
 import * as SplashScreen from 'expo-splash-screen';
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { deleteToken, getToken, saveToken } from "./storage";
 
 type AuthContextType = {
   isSignedIn: boolean;
   userToken: string | null;
-  signIn: (token: string, username: string) => Promise<void>;
+  signIn: (token: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
-const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [userToken, setUserToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadAuthData = async () => {
+    // Load token on app start
+    const loadToken = async () => {
       try {
-        const token = await getToken("userToken");
-        const storedUsername = await getToken("username");
+        const token = await SecureStore.getItemAsync("userToken");
         if (token) setUserToken(token);
-        console.log("Auth data loaded:", { userToken });
       } finally {
         setLoading(false);
-        SplashScreen.hideAsync(); // Hide the splash screen once loading is done
+        SplashScreen.hideAsync();
       }
     };
-    loadAuthData();
+    loadToken();
   }, []);
-  
+
   const signIn = async (token: string) => {
-    await saveToken("userToken", token);
+    await SecureStore.setItemAsync("userToken", token);
     setUserToken(token);
   };
 
   const signOut = async () => {
-    await deleteToken("userToken");
+    await SecureStore.deleteItemAsync("userToken");
     setUserToken(null);
   };
 
@@ -49,13 +48,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         signOut,
       }}
     >
-    {!loading && children}
+      {!loading && children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = () => {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within AuthProvider");
+  return context;
 };

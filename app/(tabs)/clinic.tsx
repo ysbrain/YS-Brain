@@ -1,9 +1,31 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ClinicScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Clinic screen</Text>
+      <TouchableOpacity style={styles.button}>
+        <Text style={styles.buttonText}>Autoclave - 1</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button}>
+        <Text style={styles.buttonText}>Autoclave - 2</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button}>
+        <Text style={styles.buttonText}>Temperature - 1</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button}>
+        <Text style={styles.buttonText}>Temperature - 2</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button}>
+        <Text style={styles.buttonText}>Ultrasonic machine</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.button}>
+        <Text style={styles.buttonText}>AED</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -12,10 +34,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#25292e',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  text: {
+  button: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginVertical: 20,
+    width: 300,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  buttonText: {
+    fontSize: 24,
     color: '#fff',
+    fontWeight: 'bold',
   },
 });

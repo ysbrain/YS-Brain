@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useAuth } from "../../contexts/AuthContext"; // adjust path if needed
 
@@ -9,6 +9,8 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  const passwordRef = useRef<TextInput>(null);
 
   const handleLogin = async () => {
     // TODO: Replace with real API call
@@ -26,19 +28,23 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <Text style={styles.title}>Welcome Back 👋</Text>
       <Text style={styles.subtitle}>Sign in to continue</Text>
-
       <TextInput
         style={styles.input}
         placeholder="Email"
+        placeholderTextColor={"#999"}
         value={email}
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
       />
 
       <TextInput
+        ref={passwordRef}
         style={styles.input}
         placeholder="Password"
+        placeholderTextColor={"#999"}
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -51,14 +57,15 @@ export default function LoginScreen() {
       <Text style={styles.footerText}>
         Don’t have an account? <Text style={styles.link}>Sign Up</Text>
       </Text>
-    </View>
+    </View>    
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
+    justifyContent: 'flex-start',
+    paddingTop: 50,
     paddingHorizontal: 24,
     backgroundColor: "#fff",
   },

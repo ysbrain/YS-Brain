@@ -48,7 +48,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="clinic"
         options={{
-          title: 'Clinic',
+          title: 'Clinic - 001',
+          tabBarLabel: 'Clinic',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'storefront-sharp' : 'storefront-outline'} color={color} size={24}/>
           ),
