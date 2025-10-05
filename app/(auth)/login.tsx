@@ -1,33 +1,26 @@
-import { useRouter } from "expo-router";
-import React, { useRef, useState } from "react";
-import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useAuth } from "../../contexts/AuthContext"; // adjust path if needed
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import React, { useRef, useState } from 'react';
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { auth } from '../../src/lib/auth';
 
-export default function LoginScreen() {
-  const { signIn } = useAuth();
-  const router = useRouter();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+export default function Login() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const passwordRef = useRef<TextInput>(null);
 
-  const handleLogin = async () => {
-    // TODO: Replace with real API call
-    if (email && password) {
-      // Imagine you send email/password to backend and get a token
-      const fakeToken = "demo-user";
-      await signIn(fakeToken);
-      router.replace("/(tabs)"); // Navigate to main app after login
-    } else {
-      alert("Please enter email and password");
-    }
-  };
+  async function signIn() {
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (e: any) { setError(e.message); }
+  }
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Welcome Back 👋</Text>
-      <Text style={styles.subtitle}>Sign in to continue</Text>
+      <Text style={styles.subtitle}>Sign in to continue</Text>      
+
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -39,7 +32,6 @@ export default function LoginScreen() {
         returnKeyType="next"
         onSubmitEditing={() => passwordRef.current?.focus()}
       />
-
       <TextInput
         ref={passwordRef}
         style={styles.input}
@@ -49,15 +41,12 @@ export default function LoginScreen() {
         onChangeText={setPassword}
         secureTextEntry
       />
+      {!!error && <Text style={{ color: 'red' }}>{error}</Text>}
 
-      <TouchableOpacity style={styles.button} onPress={handleLogin}>
+      <TouchableOpacity style={styles.button} onPress={signIn}>
         <Text style={styles.buttonText}>Sign In</Text>
       </TouchableOpacity>
-
-      <Text style={styles.footerText}>
-        Don’t have an account? <Text style={styles.link}>Sign Up</Text>
-      </Text>
-    </View>    
+    </View>
   );
 }
 

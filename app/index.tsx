@@ -1,15 +1,14 @@
 import { Redirect } from "expo-router";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../src/contexts/AuthContext";
 
 export default function Index() {
-  const { isSignedIn, loading } = useAuth();
+  const { user, initializing } = useAuth();
 
-  if (loading) {
-    // While checking token, keep splash visible
-    return null;
-  }
+  if (initializing) return null;
 
-  if (isSignedIn) {
+  console.log("User on Index page:");
+
+  if (user) {
     return <Redirect href="/(tabs)" />;
   } else {
     return <Redirect href="/(auth)/login" />;

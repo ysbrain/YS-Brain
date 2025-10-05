@@ -1,8 +1,5 @@
-import { Stack } from "expo-router";
-import * as SplashScreen from 'expo-splash-screen';
-import { AuthProvider } from "../contexts/AuthContext";
-
-SplashScreen.preventAutoHideAsync(); // Keep the splash screen visible while we fetch resources
+import { Stack } from 'expo-router';
+import { AuthProvider } from '../src/contexts/AuthContext';
 
 export default function RootLayout() {
   return (

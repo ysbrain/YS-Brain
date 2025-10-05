@@ -1,21 +1,16 @@
 import { useRouter } from 'expo-router';
+import { signOut } from 'firebase/auth';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useAuth } from '../../contexts/AuthContext';
+import { auth } from '../../src/lib/auth';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 export default function SettingsScreen() {
-  const {signOut} = useAuth();
   const router = useRouter();
-
-  const handleLogOut = async () => {
-    await signOut();
-    router.replace("/(auth)/login");
-  }
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.button} onPress={handleLogOut}>
+      <TouchableOpacity style={styles.button} onPress={() => signOut(auth)}>
         <Ionicons name="log-out-outline" size={24} color="#fff" style={styles.icon} />
         <Text style={styles.buttonText}>Sign Out</Text>
       </TouchableOpacity>

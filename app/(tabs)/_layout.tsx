@@ -1,4 +1,4 @@
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/src/contexts/AuthContext';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 
@@ -6,14 +6,16 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 
 export default function TabLayout() {
-  const { isSignedIn, userToken } = useAuth();
+  const { user, initializing } = useAuth();
   const router = useRouter();
+  
+  if (initializing) return null; // splash/loading
 
   useEffect(() => {
-    if (!isSignedIn) {
+    if (!user) {
       router.replace("/(auth)/login");
     }
-  }, [isSignedIn, router]);
+  }, [user, router]);
 
   return (
     <Tabs
@@ -38,7 +40,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Hello, ' + userToken + '!',
+          title: 'Hello, ' + '!',
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'home-sharp' : 'home-outline'} color={color} size={24} />
