@@ -6,7 +6,7 @@ export default function ClinicScreen() {
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity style={styles.button} onPress={() => router.push('./sterilizer')}>
+      <TouchableOpacity style={styles.button} onPress={() => router.push('/(tabs)/clinic/sterilizer')}>
         <Text style={styles.buttonText}>Autoclave - 1</Text>
       </TouchableOpacity>
 

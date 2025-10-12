@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { Button, FlatList, Switch, Text, TextInput, View } from 'react-native';
-import { useAuth } from '../../src/contexts/AuthContext';
+import { useAuth } from '@/src/contexts/AuthContext';
 import {
   createSterilizer,
   subscribeSterilizers,
   updateSterilizer
-} from '../../src/features/sterilizer/sterilizer.store';
+} from '@/src/features/sterilizer/sterilizer.store';
+import React, { useEffect, useState } from 'react';
+import { Button, FlatList, Switch, Text, TextInput, View } from 'react-native';
 
 export default function SterilizerScreen() {
   const { user } = useAuth();
