@@ -1,6 +1,6 @@
+import { useAuth } from '@/src/contexts/AuthContext';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { useAuth } from '../../src/contexts/AuthContext';
 
 export default function AuthLayout() {
   const { user, initializing } = useAuth();
@@ -10,7 +10,7 @@ export default function AuthLayout() {
   
   useEffect(() => {
     if (user) {
-      router.replace("/(tabs)");
+      router.replace("../(tabs)/home");
     }
   }, [user, router]);
 
@@ -19,14 +19,13 @@ export default function AuthLayout() {
       screenOptions={{
         headerStyle: { backgroundColor: '#002E5D'},
         headerTintColor: '#fff',
-        title: "YS Brain",
         headerTitleStyle: {
-                    fontSize: 24,
+                    fontSize: 36,
                     fontWeight: 'bold',
                   },
       }}
     >
-      <Stack.Screen name="login" options={{ title: "Sign In" }} />
+      <Stack.Screen name="login" options={{ title: "YS Brain" }} />
     </Stack>
   );
 }

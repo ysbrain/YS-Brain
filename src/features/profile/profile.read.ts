@@ -4,11 +4,11 @@ import { db } from '../../lib/firebase';
 
 export type UserProfile = {
   ysid: string;
-  email: string | null;
-  name?: string | null;
-  gender?: 'male' | 'female' | 'nonbinary' | 'prefer_not_to_say' | null;
+  email: string;
+  name: string;
+  gender: 'male' | 'female' | 'nonbinary' | 'prefer_not_to_say';
   photoURL?: string | null;
-  clinic?: string | null;
+  clinic: string;
   createdAt?: any; // Firestore Timestamp
   updatedAt?: any;
 };

@@ -4,7 +4,7 @@ import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text } from 'react-native';
 
-export default function ClinicLayout() {
+export default function HomeLayout() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -23,11 +23,10 @@ export default function ClinicLayout() {
   }, []);
   if (loading) return <ActivityIndicator />;
   if (!profile) return <Text>No profile found.</Text>;
-
+  
   return (
     <Stack screenOptions={commonStackOptions}>
-      <Stack.Screen name="index" options={{ title: profile.clinic }} />
-      <Stack.Screen name="sterilizer" options={{ title: 'Sterilizer' }} />
+      <Stack.Screen name="index" options={{ title: 'Hello - ' + profile.name + '!' }} />
     </Stack>
   );
 }

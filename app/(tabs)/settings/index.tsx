@@ -1,7 +1,7 @@
+import { auth } from '@/src/lib/auth';
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { auth } from '../../src/lib/auth';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -21,7 +21,6 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#25292e',
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -1,7 +1,7 @@
+import { auth } from '@/src/lib/auth';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import React, { useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { auth } from '../../src/lib/auth';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -56,7 +56,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: 50,
     paddingHorizontal: 24,
-    backgroundColor: "#fff",
   },
   title: {
     fontSize: 28,

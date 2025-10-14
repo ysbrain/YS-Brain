@@ -1,16 +1,12 @@
 import { useAuth } from '@/src/contexts/AuthContext';
 import { Tabs, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Text } from 'react-native';
-import { fetchMyProfileOnce, UserProfile } from '../../src/features/profile/profile.read';
+import { useEffect } from 'react';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 
-export default function TabLayout() {
+export default function TabsLayout() {
   const { user, initializing } = useAuth();  
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
 
   const router = useRouter();
   
@@ -22,47 +18,20 @@ export default function TabLayout() {
     }
   }, [user, router]);
 
-  
-  useEffect(() => {
-    let unsub: (() => void) | undefined;
-
-    (async () => {
-      // One-time fetch (fast initial data)
-      const p = await fetchMyProfileOnce();
-      setProfile(p);
-      setLoading(false);
-    })();
-
-    return () => { if (unsub) unsub(); };
-  }, []);
-
-  if (loading) return <ActivityIndicator />;
-  if (!profile) return <Text>No profile found.</Text>;
-
   return (
     <Tabs
       screenOptions={{
+        headerShown: false,
         tabBarActiveTintColor: '#ffd33d',
-        headerStyle: {
-          backgroundColor: '#002E5D',
-          height: 120,
-        },
-        headerShadowVisible: false,
-        headerTintColor: '#fff',
-        headerTitleAlign: 'left',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-          fontSize: 36,
-        },
         tabBarStyle: {
           backgroundColor: '#002E5D',
         },
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="home"
         options={{
-          title: 'Hello, ' + profile.name + '!',
+          title: 'Hello, ',
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'home-sharp' : 'home-outline'} color={color} size={24} />
@@ -72,7 +41,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="clinic"
         options={{
-          title: 'Clinic - ' + (profile.clinic || ''),
+          headerShown: false,
+          title: 'Clinic - ',
           tabBarLabel: 'Clinic',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'storefront-sharp' : 'storefront-outline'} color={color} size={24}/>
