@@ -1,27 +1,13 @@
-import { fetchMyProfileOnce, UserProfile } from '@/src/features/profile/profile.read';
+import { useUserProfile } from '@/src/data/hooks/useUserProfile';
 import { commonStackOptions } from '@/src/lib/stackOptions';
 import { Stack } from 'expo-router';
-import { useEffect, useState } from 'react';
 import { ActivityIndicator, Text } from 'react-native';
 
 export default function HomeLayout() {
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { profile, loading, error } = useUserProfile();
 
-  useEffect(() => {
-    (async () => {
-      // One-time fetch (fast initial data)
-      try {
-        const p = await fetchMyProfileOnce();
-        setProfile(p);
-      } catch (err) {
-        console.error("Error fetching profile:", err);
-      } finally {
-        setLoading(false);
-      }    
-    })();
-  }, []);
   if (loading) return <ActivityIndicator />;
+  if (error) return <Text>Error: {error.message}</Text>;
   if (!profile) return <Text>No profile found.</Text>;
   
   return (

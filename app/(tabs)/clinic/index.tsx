@@ -87,19 +87,13 @@ export default function ClinicScreen() {
   );
 }
 
-/*
-<TouchableOpacity style={styles.button} onPress={() => router.push('/(tabs)/clinic/sterilizer')}>
-  <Text style={styles.buttonText}>Autoclave - 1</Text>
-</TouchableOpacity>
-*/
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  listContent: { padding: 16, gap: 12 },
+  listContent: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   button: {
     backgroundColor: '#3b82f6',
     paddingVertical: 12,
@@ -109,8 +103,19 @@ const styles = StyleSheet.create({
     width: 300,
     flexDirection: 'row',
     alignItems: 'flex-start',
+    // iOS shadow (optional)
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    // Android elevation (optional)
+    elevation: 2,
   },
-  buttonPressed: { opacity: 0.85 },
+  // Applied only while pressing (via style callback)
+  buttonPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.98 }],
+  },
   buttonText: {
     fontSize: 24,
     color: '#fff',
