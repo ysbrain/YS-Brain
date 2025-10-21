@@ -37,6 +37,10 @@ export default function ClinicScreen() {
   const handlePress = (item: string): void => {
     // TODO: navigate or perform an action per equipment item
     console.log('Pressed:', item);
+    if (item.includes('Autoclave')) {
+      console.log('Navigating to Autoclave screen');
+      router.push({ pathname: '/(tabs)/clinic/autoclave', params: { selected: item } });
+    }
   };
 
   const renderItem: ListRenderItem<string> = ({ item }) => (
