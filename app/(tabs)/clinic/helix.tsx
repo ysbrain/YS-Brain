@@ -1,3 +1,4 @@
+import { logHelixTest } from '@/src/data/autoclave/autoclave.helix';
 import { useUserProfile } from '@/src/data/hooks/useUserProfile';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useRef, useState } from 'react';
@@ -19,7 +20,6 @@ import DateText from '@/components/DateText'; // <-- adjust path if needed
 type ResultOption = 'PASS' | 'FAIL' | null;
 
 export default function HelixScreen() {
-  // ✅ All hooks at top-level (no conditionals, no early returns)
   const { profile, loading, error } = useUserProfile();
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -70,9 +70,26 @@ export default function HelixScreen() {
   };
 
   const handleUpload = async () => {
-    if (!canUpload) return;
-    // TODO: Replace with your actual upload logic (multipart/form-data)
-    Alert.alert('Upload', `Uploading...\nResult: ${result}\nPhoto: ${photoUri}`);
+    if (!canUpload) return;    
+    
+    try {
+      // Convert 'PASS'/'FAIL' to boolean
+      const resultBool = result === 'PASS';
+
+      // If you later store the photo in Firebase Storage, 
+      // supply the photo's download URL as photoUrl.
+      const id = await logHelixTest({
+        result: resultBool,
+        username: profile?.name ?? 'Unknown',
+        cycleNumber: 1, // <-- supply your actual cycle number
+        // photoUrl: await uploadAndGetDownloadUrl(photoUri)
+      });
+
+      Alert.alert('Upload complete', `Entry ID: ${id}`);
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Upload failed', 'Please try again.');
+    }
   };
 
   if (loading) return <ActivityIndicator />;
