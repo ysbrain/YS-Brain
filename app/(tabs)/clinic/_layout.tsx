@@ -18,7 +18,7 @@ export default function ClinicLayout() {
         <Stack.Screen
           name="autoclave"        
           options={({ route }) => {
-            return { title: (route.params as any)?.selected ?? 'Autoclave' };
+            return { title: (route.params as any)?.equipment ?? 'Autoclave' };
           }}
         />
         <Stack.Screen name="helix" options={{ title: 'Helix Test' }} />

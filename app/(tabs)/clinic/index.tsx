@@ -39,7 +39,7 @@ export default function ClinicScreen() {
     console.log('Pressed:', item);
     if (item.includes('Autoclave')) {
       console.log('Navigating to Autoclave screen');
-      router.push({ pathname: '/(tabs)/clinic/autoclave', params: { selected: item } });
+      router.push({ pathname: '/(tabs)/clinic/autoclave', params: { equipment: item } });
     }
   };
 

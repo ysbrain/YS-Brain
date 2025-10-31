@@ -1,5 +1,6 @@
 import { useUserProfile } from '@/src/data/hooks/useUserProfile';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -18,7 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Reusable Date component (format: "21 Oct 2025")
-import DateText from '../../../components/DateText';
+import DateText from '../../../src/components/DateText';
 
 // Firestore
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
@@ -26,12 +27,21 @@ import { getAuth } from 'firebase/auth';
 import {
   addDoc,
   collection,
-  doc,
-  getDoc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
-  setDoc,
   Timestamp,
 } from 'firebase/firestore';
+
+// ✅ Crop helper (Context API version)
+import { centerCropToAspect } from '@/src/lib/crop';
+import { SaveFormat } from 'expo-image-manipulator';
+
+// 🔥 Storage
+import { storage } from '@/src/lib/storage'; // getStorage() exported here
+import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 
 type ResultOption = 'PASS' | 'FAIL' | null;
 
@@ -48,15 +58,33 @@ function formatDateTime(d: Date, timeZone = 'Asia/Shanghai') {
       hour12: false,
       timeZone,
     })
-      .format(d)
-      .replace(/,/g, '');
+    .format(d)
+    .replace(/,/g, '');
   } catch {
     return `${d.toDateString()} ${d.toTimeString().slice(0, 8)}`;
   }
 }
 
+// 🔎 small helpers
+const guessContentType = (uri: string) => {
+  const ext = uri.split('.').pop()?.toLowerCase();
+  if (ext === 'png') return 'image/png';
+  if (ext === 'webp') return 'image/webp';
+  if (ext === 'heic' || ext === 'heif') return 'image/heic';
+  return 'image/jpeg';
+};
+
+const buildStoragePath = (opts: {
+  clinicId: string; folder: string; uid: string; cycle: number | null;
+}) => {
+  const { clinicId, folder, uid, cycle } = opts;
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  // e.g., clinics/clinic001/helix1/2025-10-21T06-45-12-123Z_uid_c3.jpg
+  return `clinics/${clinicId}/${folder}/${ts}_${uid}${cycle ? `_c${cycle}` : ''}.jpg`;
+};
+
 export default function HelixScreen() {
-  // Hooks at top-level (no conditionals)
+  const router = useRouter();
   const { profile, loading, error } = useUserProfile();
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -73,36 +101,42 @@ export default function HelixScreen() {
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isCropping, setIsCropping] = useState(false);
+  const [wasCropped, setWasCropped] = useState(false);
+  const [uploadPct, setUploadPct] = useState<number>(0);
   const cameraRef = useRef<CameraView>(null);
-
-  // Last uploaded time (from Firestore: /clinics/clinic001/helix1/status)
+  
+  // ⏱️ Last uploaded time — now driven by the newest doc in the collection
   const [lastUploadedAt, setLastUploadedAt] = useState<Date | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
   // Footer enablement: require result + photo + valid cycle
   const canUpload = Boolean(result && photoUri && isValidCycle);
-
-  // Load status once
+  
+  // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
-    let isMounted = true;
-    const loadStatus = async () => {
-      try {
-        const statusRef = doc(db, 'clinics', 'clinic001', 'helix1', 'status');
-        const snap = await getDoc(statusRef);
-        if (snap.exists()) {
-          const ts = snap.data()?.lastUploadedAt as Timestamp | undefined;
-          if (ts && isMounted) setLastUploadedAt(ts.toDate());
+    const col = collection(db, 'clinics', 'clinic001', 'helix1');
+    const q = query(col, orderBy('createdAt', 'desc'), limit(1));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        if (snap.empty) {
+          setLastUploadedAt(null);
+        } else {
+          const data = snap.docs[0].data();
+          const ts = data?.createdAt as Timestamp | undefined;
+          setLastUploadedAt(ts ? ts.toDate() : null);
         }
-      } catch (e) {
-        console.warn('Failed to load status doc', e);
-      } finally {
-        if (isMounted) setLoadingStatus(false);
+        setLoadingStatus(false);
+      },
+      (err) => {
+        console.warn('Failed to load latest upload time', err);
+        setLoadingStatus(false);
       }
-    };
-    loadStatus();
-    return () => {
-      isMounted = false;
-    };
+    );
+
+    return unsubscribe;
   }, []);
 
   const openCamera = async () => {
@@ -118,16 +152,35 @@ export default function HelixScreen() {
 
   const capturePhoto = async () => {
     if (!cameraRef.current) return;
+        
     try {
       setIsCapturing(true);
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
+
+      // 1) Take the photo (fast), we’ll process explicitly
+      const shot = await cameraRef.current.takePictureAsync({
+        quality: 0.9,
         skipProcessing: true,
       });
-      setPhotoUri(photo?.uri ?? null);
+
+      // 2) Run center-crop to 4:3 right away (optional: scale width to reduce file size)
+      setIsCropping(true);
+      const cropped = await centerCropToAspect(shot.uri, 4 / 3, {
+        compress: 0.8,
+        format: SaveFormat.JPEG,
+        // targetWidth: 900, // uncomment to downscale for faster uploads
+      });
+      setIsCropping(false);
+
+      // 3) Use the cropped image everywhere (preview + upload)
+      const uri = (cropped as any).localUri ?? (cropped as any).uri;
+      setPhotoUri(uri);
+      setWasCropped(true);
+
+      // 4) Close the camera modal
       setIsCameraOpen(false);
     } catch (e) {
-      console.warn('Failed to capture photo', e);
+      setIsCropping(false);
+      console.warn('Failed to capture/crop', e);
       Alert.alert('Capture failed', 'Please try again.');
     } finally {
       setIsCapturing(false);
@@ -138,13 +191,45 @@ export default function HelixScreen() {
     setPhotoUri(null);
     openCamera();
   };
+  
+  // ✅ Upload the local file URI to Firebase Storage and return its download URL
+  async function uploadPhotoAndGetUrl(localUri: string, storagePath: string) {
+    // Convert the local file to a Blob (works in Expo RN)
+    const response = await fetch(localUri);
+    const blob = await response.blob(); // Blob is supported in browser-like environments
+    const metadata = { contentType: guessContentType(localUri) };
+
+    const storageRef = ref(storage, storagePath);
+    const task = uploadBytesResumable(storageRef, blob, metadata); // progress-capable
+    // Web v9 upload & download URL pattern
+    //  - uploadBytesResumable(...)
+    //  - await completion
+    //  - getDownloadURL(task.snapshot.ref)
+    // Docs / patterns: upload API & getDownloadURL usage. [1](https://stackoverflow.com/questions/70262009/file-upload-from-website-to-firebase-storage-using-firebase-v9)[2](https://firebase.google.com/docs/storage/web/download-files)
+
+    return await new Promise<string>((resolve, reject) => {
+      task.on(
+        'state_changed',
+        (snap) => {
+          if (snap.totalBytes > 0) {
+            setUploadPct((snap.bytesTransferred / snap.totalBytes) * 100);
+          }
+        },
+        (err) => reject(err),
+        async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          resolve(url);
+        }
+      );
+    });
+  }
 
   const handleUpload = async () => {
     if (!canUpload) {
       const reasons: string[] = [];
       if (!result) reasons.push('Select PASS or FAIL.');
       if (!photoUri) reasons.push('Take a photo.');
-      if (!isValidCycle) reasons.push('Enter a valid integer cycle (1–999999).');
+      if (!isValidCycle) reasons.push('Enter a valid integer cycle.');
       Alert.alert('Upload disabled', reasons.join('\n'));
       return;
     }
@@ -153,37 +238,56 @@ export default function HelixScreen() {
     if (!user) {
       Alert.alert('Not signed in', 'Please sign in before uploading.');
       return;
-    }
-
+    }    
+    
     try {
-      // 1) Create an entry document in the collection
+      // ✅ Use already-cropped URI if available; otherwise crop now
+      const croppedUri = wasCropped
+        ? photoUri!
+        : (await centerCropToAspect(photoUri!, 4 / 3, {
+          compress: 0.9,
+          format: SaveFormat.JPEG,
+          // targetWidth: 900,
+        })).uri ?? (await centerCropToAspect(photoUri!, 4 / 3)).uri;
+
+      // Upload croppedUri to Storage (rest of your code unchanged)
+      const storagePath = buildStoragePath({
+        clinicId: 'clinic001',
+        folder: 'helix1',
+        uid: user.uid,
+        cycle: cycleNumber,
+      });
+
+      const response = await fetch(croppedUri);
+      const blob = await response.blob();
+      const metadata = { contentType: guessContentType(croppedUri) };
+
+      const storageRef = ref(storage, storagePath);
+      const task = uploadBytesResumable(storageRef, blob, metadata);
+      task.on('state_changed', (snap) => {
+        if (snap.totalBytes > 0) setUploadPct((snap.bytesTransferred / snap.totalBytes) * 100);
+      });
+      await new Promise<void>((resolve, reject) =>
+        task.on('state_changed', undefined, reject, () => resolve())
+      );
+      const photoUrl = await getDownloadURL(task.snapshot.ref);
+
       const entriesRef = collection(db, 'clinics', 'clinic001', 'helix1');
       await addDoc(entriesRef, {
         result: result === 'PASS',
         username: profile?.name ?? user.uid,
-        cycleNumber, // integer
+        cycleNumber,
         clinic: profile?.clinic ?? null,
+        photoUrl,
         createdAt: serverTimestamp(),
       });
 
-      // 2) Update status doc with lastUploadedAt
-      const statusRef = doc(db, 'clinics', 'clinic001', 'helix1', 'status');
-      await setDoc(
-        statusRef,
-        {
-          lastUploadedAt: serverTimestamp(),
-          lastBy: profile?.name ?? user.uid,
-          lastCycleNumber: cycleNumber,
-          lastResult: result === 'PASS',
-        },
-        { merge: true }
-      );
-
-      setLastUploadedAt(new Date()); // local optimistic update
-      Alert.alert('Upload complete', 'Your entry was uploaded successfully.');
-    } catch (e) {
+      router.back();
+    } catch (e: any) {
       console.error(e);
-      Alert.alert('Upload failed', 'Please try again.');
+      Alert.alert('Upload failed', e?.message ?? 'Please try again.');
+    } finally {
+      setUploadPct(0);
     }
   };
 
