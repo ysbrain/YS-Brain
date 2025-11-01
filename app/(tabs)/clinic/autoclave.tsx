@@ -32,14 +32,14 @@ export default function AutoclaveScreen() {
 
       <Pressable
         accessibilityRole="button"
-        onPress={() => router.push('./sterilizer')}
+        onPress={() => console.log('放入焗爐 pressed')}
         android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
         style={({ pressed }) => [
           styles.button,
           pressed && styles.buttonPressed,
         ]}
       >
-        <Text style={styles.buttonText}>Sterilizer</Text>
+        <Text style={styles.buttonText}>放入焗爐</Text>
       </Pressable>
     </View>
   );

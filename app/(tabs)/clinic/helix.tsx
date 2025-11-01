@@ -1,7 +1,8 @@
+import UploadingOverlay from '@/src/components/UploadingOverlay';
 import { useUserProfile } from '@/src/data/hooks/useUserProfile';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -103,8 +104,17 @@ export default function HelixScreen() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isCropping, setIsCropping] = useState(false);
   const [wasCropped, setWasCropped] = useState(false);
-  const [uploadPct, setUploadPct] = useState<number>(0);
   const cameraRef = useRef<CameraView>(null);
+  
+  // derive a single busy flag for the shutter button
+  const isShutterBusy = isCapturing || isCropping;
+  
+  // ⏱️ 12s timeout support
+  const CAPTURE_TIMEOUT_MS = 12_000;
+  const shutterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // If a timeout occurs, we set this to true so we can ignore late results
+  const opCancelledRef = useRef(false);
   
   // ⏱️ Last uploaded time — now driven by the newest doc in the collection
   const [lastUploadedAt, setLastUploadedAt] = useState<Date | null>(null);
@@ -112,6 +122,12 @@ export default function HelixScreen() {
 
   // Footer enablement: require result + photo + valid cycle
   const canUpload = Boolean(result && photoUri && isValidCycle);
+  
+  // Upload overlay
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'working' | 'done' | 'error'>('working');
+  const [uploadMsg, setUploadMsg] = useState<string>('');
+  const [uploadPct, setUploadPct] = useState<number>(0);
   
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
@@ -149,41 +165,79 @@ export default function HelixScreen() {
     }
     setIsCameraOpen(true);
   };
+  
+  // For the camera overlay frame, we need the live camera area size
+  const [camLayout, setCamLayout] = useState({ width: 0, height: 0 });
 
+  // Derived crop-box metrics (centered 4:3 that fits inside camera view)
+  const cropBox = useMemo(() => {
+    const { width: cw, height: ch } = camLayout;
+    if (cw <= 0 || ch <= 0) return { w: 0, h: 0, left: 0, top: 0 };
+
+    const M = 24; // margin around frame
+    let w = Math.max(0, cw - M * 2);
+    let h = Math.round(w * 3 / 4); // 4:3 aspect => h = w * 3/4
+
+    // If too tall, fit by height instead
+    if (h > ch - M * 2) {
+      h = Math.max(0, ch - M * 2);
+      w = Math.round(h * 4 / 3);
+    }
+
+    const left = Math.round((cw - w) / 2);
+    const top = Math.round((ch - h) / 2);
+    return { w, h, left, top };
+  }, [camLayout]);
+
+  
   const capturePhoto = async () => {
-    if (!cameraRef.current) return;
-        
+    if (!cameraRef.current || isShutterBusy) return; // prevent double taps
+
+    let success = false;
+    startShutterTimer();           // ⏱️ begin 12s timer
+
     try {
+      // 1) Start capture
       setIsCapturing(true);
 
-      // 1) Take the photo (fast), we’ll process explicitly
       const shot = await cameraRef.current.takePictureAsync({
         quality: 0.9,
-        skipProcessing: true,
+        skipProcessing: true,      // we crop explicitly
       });
 
-      // 2) Run center-crop to 4:3 right away (optional: scale width to reduce file size)
+      // If timeout already fired, ignore the result and bail out quietly
+      if (opCancelledRef.current) return;
+
+      // 2) Crop
+      setIsCapturing(false);
       setIsCropping(true);
-      const cropped = await centerCropToAspect(shot.uri, 4 / 3, {
-        compress: 0.8,
-        format: SaveFormat.JPEG,
-        // targetWidth: 900, // uncomment to downscale for faster uploads
-      });
-      setIsCropping(false);
 
-      // 3) Use the cropped image everywhere (preview + upload)
+      const cropped = await centerCropToAspect(shot.uri, 4 / 3, {
+        compress: 0.9,
+        format: SaveFormat.JPEG,
+        // targetWidth: 1600, // optional downscale
+      });
+
+      if (opCancelledRef.current) return; // timed out during crop -> ignore
+
       const uri = (cropped as any).localUri ?? (cropped as any).uri;
+      if (!uri) throw new Error('Cropped image returned no URI');
+
       setPhotoUri(uri);
       setWasCropped(true);
 
-      // 4) Close the camera modal
-      setIsCameraOpen(false);
+      success = true;              // ✅ finished successfully
     } catch (e) {
-      setIsCropping(false);
-      console.warn('Failed to capture/crop', e);
+      console.warn('Capture/crop error', e);
       Alert.alert('Capture failed', 'Please try again.');
     } finally {
+      clearShutterTimer();         // ✅ stop the 12s timer
       setIsCapturing(false);
+      setIsCropping(false);
+
+      if (success && !opCancelledRef.current) {
+        setIsCameraOpen(false);    // close only after success
+      }
     }
   };
 
@@ -201,12 +255,7 @@ export default function HelixScreen() {
 
     const storageRef = ref(storage, storagePath);
     const task = uploadBytesResumable(storageRef, blob, metadata); // progress-capable
-    // Web v9 upload & download URL pattern
-    //  - uploadBytesResumable(...)
-    //  - await completion
-    //  - getDownloadURL(task.snapshot.ref)
-    // Docs / patterns: upload API & getDownloadURL usage. [1](https://stackoverflow.com/questions/70262009/file-upload-from-website-to-firebase-storage-using-firebase-v9)[2](https://firebase.google.com/docs/storage/web/download-files)
-
+    
     return await new Promise<string>((resolve, reject) => {
       task.on(
         'state_changed',
@@ -224,6 +273,45 @@ export default function HelixScreen() {
     });
   }
 
+  const handleCancelCamera = () => {
+    if (isShutterBusy) return;      // ⬅️ ignore while busy
+    setIsCameraOpen(false);
+  };
+  
+  const clearShutterTimer = () => {
+    if (shutterTimerRef.current) {
+      clearTimeout(shutterTimerRef.current);
+      shutterTimerRef.current = null;
+    }
+  };
+
+  const startShutterTimer = () => {
+    // New operation begins; clear any prior timer and reset cancelled flag
+    clearShutterTimer();
+    opCancelledRef.current = false;
+
+    shutterTimerRef.current = setTimeout(() => {
+      // ⏰ Timed out: mark operation cancelled and recover UI
+      opCancelledRef.current = true;
+      setIsCapturing(false);
+      setIsCropping(false);
+
+      // Let the user retry (modal stays open, shutter buttons re-enabled)
+      Alert.alert(
+        'Taking longer than expected',
+        'Capturing this photo is taking unusually long. Please try again.',
+        [
+          { text: 'OK' }, // user can tap Capture again
+        ]
+      );
+    }, CAPTURE_TIMEOUT_MS);
+  };
+
+  // Clean up the timer when the modal closes or screen unmounts
+  useEffect(() => {
+    return () => clearShutterTimer();
+  }, []);
+
   const handleUpload = async () => {
     if (!canUpload) {
       const reasons: string[] = [];
@@ -238,19 +326,29 @@ export default function HelixScreen() {
     if (!user) {
       Alert.alert('Not signed in', 'Please sign in before uploading.');
       return;
-    }    
+    }
     
+    // ⛔ Block all interaction with the full-screen overlay
+    setIsUploading(true);
+    setUploadMode('working');
+    setUploadMsg('Processing image…');
+    setUploadPct(0);
+        
     try {
-      // ✅ Use already-cropped URI if available; otherwise crop now
-      const croppedUri = wasCropped
-        ? photoUri!
-        : (await centerCropToAspect(photoUri!, 4 / 3, {
+      // 1) Ensure cropped image (you’re already cropping at capture; this is a safe fallback)
+      let croppedUri = photoUri!;
+      if (!wasCropped) {
+        const out = await centerCropToAspect(photoUri!, 4 / 3, {
           compress: 0.9,
           format: SaveFormat.JPEG,
-          // targetWidth: 900,
-        })).uri ?? (await centerCropToAspect(photoUri!, 4 / 3)).uri;
+          // targetWidth: 1600, // optional
+        });
+        croppedUri = (out as any).localUri ?? (out as any).uri;
+      }
 
-      // Upload croppedUri to Storage (rest of your code unchanged)
+      // 2) Upload to Firebase Storage with progress
+      setUploadMsg('Uploading photo…');
+
       const storagePath = buildStoragePath({
         clinicId: 'clinic001',
         folder: 'helix1',
@@ -264,13 +362,22 @@ export default function HelixScreen() {
 
       const storageRef = ref(storage, storagePath);
       const task = uploadBytesResumable(storageRef, blob, metadata);
-      task.on('state_changed', (snap) => {
-        if (snap.totalBytes > 0) setUploadPct((snap.bytesTransferred / snap.totalBytes) * 100);
+
+      await new Promise<void>((resolve, reject) => {
+        task.on(
+          'state_changed',
+          (snap) => {
+            if (snap.totalBytes > 0) setUploadPct((snap.bytesTransferred / snap.totalBytes) * 100);
+          },
+          (err) => reject(err),
+          () => resolve()
+        );
       });
-      await new Promise<void>((resolve, reject) =>
-        task.on('state_changed', undefined, reject, () => resolve())
-      );
+
       const photoUrl = await getDownloadURL(task.snapshot.ref);
+
+      // 3) Create Firestore document
+      setUploadMsg('Saving record…');
 
       const entriesRef = collection(db, 'clinics', 'clinic001', 'helix1');
       await addDoc(entriesRef, {
@@ -282,12 +389,21 @@ export default function HelixScreen() {
         createdAt: serverTimestamp(),
       });
 
-      router.back();
+      // 4) Success: show completed state
+      setUploadMode('done');
+      setUploadMsg('Upload complete');
+
+      // Auto-dismiss after a short delay and navigate back
+      setTimeout(() => {
+        setIsUploading(false);
+        router.back();
+      }, 5000); // adjust to taste
     } catch (e: any) {
       console.error(e);
-      Alert.alert('Upload failed', e?.message ?? 'Please try again.');
-    } finally {
-      setUploadPct(0);
+      setUploadMode('error');
+      setUploadMsg(e?.message ?? 'Something went wrong. Please try again.');
+
+      // Leave overlay up in "error" mode; user can tap OK to dismiss and retry
     }
   };
 
@@ -405,7 +521,7 @@ export default function HelixScreen() {
             style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
           >
             <Text style={styles.uploadBtnText}>
-              {canUpload ? 'Upload' : 'Upload (disabled)'}
+              Upload
             </Text>
           </Pressable>
 
@@ -420,24 +536,106 @@ export default function HelixScreen() {
             )}
           </View>
         </View>
-      </View>
+      </View>      
 
       {/* Camera modal */}
       <Modal
         visible={isCameraOpen}
-        animationType="slide"
-        onRequestClose={() => setIsCameraOpen(false)}
+        animationType="slide"        
+        onRequestClose={() => {
+          if (isShutterBusy) return;    // ⬅️ ignore back while busy
+          setIsCameraOpen(false);
+        }}
       >
         <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
-          <View style={styles.cameraWrap}>
+          {/* Measure this container to position the overlay accurately */}
+          <View
+            style={styles.cameraWrap}
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              setCamLayout({ width, height });
+            }}
+          >
             <CameraView ref={cameraRef} facing="back" style={styles.camera} />
+
+            {/* 4:3 crop overlay (only when measured) */}
+            {camLayout.width > 0 && camLayout.height > 0 && (
+              <View pointerEvents="none" style={styles.overlayWrap}>
+                {/* Dim outside the crop rectangle */}
+                {/* Top */}
+                <View style={[
+                  styles.dim,
+                  { left: 0, top: 0, width: camLayout.width, height: cropBox.top }
+                ]} />
+                {/* Bottom */}
+                <View style={[
+                  styles.dim,
+                  {
+                    left: 0,
+                    top: cropBox.top + cropBox.h,
+                    width: camLayout.width,
+                    height: camLayout.height - (cropBox.top + cropBox.h)
+                  }
+                ]} />
+                {/* Left */}
+                <View style={[
+                  styles.dim,
+                  { left: 0, top: cropBox.top, width: cropBox.left, height: cropBox.h }
+                ]} />
+                {/* Right */}
+                <View style={[
+                  styles.dim,
+                  {
+                    left: cropBox.left + cropBox.w,
+                    top: cropBox.top,
+                    width: camLayout.width - (cropBox.left + cropBox.w),
+                    height: cropBox.h
+                  }
+                ]} />
+
+                {/* The visible crop frame */}
+                <View
+                  style={[
+                    styles.cropBox,
+                    {
+                      left: cropBox.left,
+                      top: cropBox.top,
+                      width: cropBox.w,
+                      height: cropBox.h
+                    }
+                  ]}
+                />
+              </View>
+            )}
+                        
+            {isShutterBusy && (
+              <View style={{ position: 'absolute', bottom: 72, left: 0, right: 0, alignItems: 'center' }}>
+                <Text style={{ color: '#fff', opacity: 0.9 }}>
+                  {isCropping ? 'Processing…' : 'Capturing…'}
+                </Text>
+              </View>
+            )}
+
+            {/* Shutter row */}            
             <View style={styles.shutterRow}>
-              <Pressable style={styles.cancelBtn} onPress={() => setIsCameraOpen(false)}>
-                <Text style={styles.cancelText}>Cancel</Text>
+              <Pressable
+                style={[styles.cancelBtn, isShutterBusy && styles.btnDisabled]}
+                onPress={handleCancelCamera}
+                disabled={isShutterBusy}
+                accessibilityState={{ disabled: isShutterBusy }}
+              >
+                <Text style={[styles.cancelText, isShutterBusy && styles.btnDisabledText]}>
+                  Cancel
+                </Text>
               </Pressable>
 
-              <Pressable style={styles.shutterBtn} onPress={capturePhoto}>
-                {isCapturing ? (
+              <Pressable
+                style={[styles.shutterBtn, isShutterBusy && { opacity: 0.6 }]}
+                onPress={capturePhoto}
+                disabled={isShutterBusy}
+                accessibilityState={{ disabled: isShutterBusy }}
+              >
+                {isShutterBusy ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.shutterText}>Capture</Text>
@@ -447,6 +645,20 @@ export default function HelixScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      <UploadingOverlay
+        visible={isUploading}
+        mode={uploadMode}
+        message={uploadMsg}
+        percent={uploadMode === 'working' ? uploadPct : undefined}
+        onRequestClose={() => {
+          // Only called when mode !== 'working'
+          setIsUploading(false);
+          if (uploadMode === 'done') {
+            router.back();
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -555,6 +767,17 @@ const styles = StyleSheet.create({
   modalSafe: { flex: 1, backgroundColor: '#000' },
   cameraWrap: { flex: 1 },
   camera: { flex: 1 },
+
+  // Overlay
+  overlayWrap: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 },
+  dim: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.35)' },
+  cropBox: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    borderRadius: 8,
+  },
+
   shutterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -564,5 +787,7 @@ const styles = StyleSheet.create({
   cancelBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#222' },
   cancelText: { color: '#fff', fontSize: 16 },
   shutterBtn: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 999, backgroundColor: '#007AFF' },
-  shutterText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  shutterText: { color: '#fff', fontSize: 16, fontWeight: '700' },  
+  btnDisabled: { opacity: 0.5 },
+  btnDisabledText: { color: '#9aa0a6' },
 });
