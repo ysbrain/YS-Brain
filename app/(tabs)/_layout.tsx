@@ -35,7 +35,7 @@ export default function TabsLayout() {
           tabBarLabel: 'Home',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'home-sharp' : 'home-outline'} color={color} size={24} />
-          ),
+          ),          
         }}
       />
       <Tabs.Screen
@@ -47,6 +47,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'storefront-sharp' : 'storefront-outline'} color={color} size={24}/>
           ),
+          // popToTopOnBlur: true,
         }}
       />
       <Tabs.Screen

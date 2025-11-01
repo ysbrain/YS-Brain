@@ -549,14 +549,16 @@ export default function HelixScreen() {
       >
         <SafeAreaView style={styles.modalSafe} edges={['top', 'bottom']}>
           {/* Measure this container to position the overlay accurately */}
-          <View
-            style={styles.cameraWrap}
-            onLayout={(e) => {
-              const { width, height } = e.nativeEvent.layout;
-              setCamLayout({ width, height });
-            }}
-          >
-            <CameraView ref={cameraRef} facing="back" style={styles.camera} />
+          <View style={styles.cameraWrap}>
+            <CameraView
+              ref={cameraRef}
+              facing="back"
+              style={styles.camera}              
+              onLayout={(e) => {
+                const { width, height } = e.nativeEvent.layout; // ← measure camera view itself
+                setCamLayout({ width, height });
+              }}
+            />
 
             {/* 4:3 crop overlay (only when measured) */}
             {camLayout.width > 0 && camLayout.height > 0 && (
