@@ -1,5 +1,5 @@
 import UploadingOverlay from '@/src/components/UploadingOverlay';
-import { useUserProfile } from '@/src/data/hooks/useUserProfile';
+import { useProfile } from '@/src/contexts/ProfileContext';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -86,7 +86,7 @@ const buildStoragePath = (opts: {
 
 export default function HelixScreen() {
   const router = useRouter();
-  const { profile, loading, error } = useUserProfile();
+  const profile = useProfile();
   const [permission, requestPermission] = useCameraPermissions();
 
   const [result, setResult] = useState<ResultOption>(null);
@@ -406,9 +406,7 @@ export default function HelixScreen() {
       // Leave overlay up in "error" mode; user can tap OK to dismiss and retry
     }
   };
-
-  if (loading) return <ActivityIndicator />;
-  if (error) return <Text>Error: {error.message}</Text>;
+  
   if (!profile) return <Text>No profile found.</Text>;
 
   return (
