@@ -76,12 +76,12 @@ const guessContentType = (uri: string) => {
 };
 
 const buildStoragePath = (opts: {
-  clinicId: string; folder: string; uid: string; cycle: number | null;
+  clinicId: string; folder: string; cycle: number | null;
 }) => {
-  const { clinicId, folder, uid, cycle } = opts;
+  const { clinicId, folder, cycle } = opts;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   // e.g., clinics/clinic001/helix1/2025-10-21T06-45-12-123Z_uid_c3.jpg
-  return `clinics/${clinicId}/${folder}/${ts}_${uid}${cycle ? `_c${cycle}` : ''}.jpg`;
+  return `clinics/${clinicId}/${folder}/${ts}${cycle ? `_c${cycle}` : ''}.jpg`;
 };
 
 export default function HelixScreen() {
@@ -132,7 +132,7 @@ export default function HelixScreen() {
   
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
-    const col = collection(db, 'clinics', 'clinic001', 'helix1');
+    const col = collection(db, 'clinics', profile.clinic, recordType);
     const q = query(col, orderBy('createdAt', 'desc'), limit(1));
 
     const unsubscribe = onSnapshot(
@@ -351,9 +351,8 @@ export default function HelixScreen() {
       setUploadMsg('Uploading photo…');
 
       const storagePath = buildStoragePath({
-        clinicId: 'clinic001',
-        folder: 'helix1',
-        uid: user.uid,
+        clinicId: profile.clinic,
+        folder: recordType,
         cycle: cycleNumber,
       });
 
@@ -380,10 +379,11 @@ export default function HelixScreen() {
       // 3) Create Firestore document
       setUploadMsg('Saving record…');
 
-      const entriesRef = collection(db, 'clinics', 'clinic001', 'helix1');
+      const entriesRef = collection(db, 'clinics', profile.clinic, recordType);
       await addDoc(entriesRef, {
         result: result === 'PASS',
-        username: profile?.name ?? user.uid,
+        username: profile?.name ?? null,
+        userID: user.uid,
         cycleNumber,
         clinic: profile?.clinic ?? null,
         photoUrl,
