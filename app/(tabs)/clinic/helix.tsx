@@ -1,7 +1,7 @@
 import UploadingOverlay from '@/src/components/UploadingOverlay';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -87,6 +87,7 @@ const buildStoragePath = (opts: {
 export default function HelixScreen() {
   const router = useRouter();
   const profile = useProfile();
+  const recordType = useLocalSearchParams<{ recordType: string }>().recordType;
   const [permission, requestPermission] = useCameraPermissions();
 
   const [result, setResult] = useState<ResultOption>(null);

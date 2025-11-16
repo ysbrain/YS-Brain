@@ -1,14 +1,28 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+function equipmentSplit(equipment: string): string {
+  const equipSplit = equipment.split(' ');
+  if (equipSplit.length === 2)
+    return equipSplit[1];
+  else
+    return '';
+}
 
 export default function AutoclaveScreen() {
   const router = useRouter();
+  const equipment = useLocalSearchParams<{ equipment: string }>().equipment;
+
+  const handlePress = (item: string): void => {
+    console.log('Pressed:', item);
+    router.push({ pathname: `./${item}`, params: { recordType: item + equipmentSplit(equipment) } });
+  };
 
   return (
     <View style={styles.container}>
       <Pressable
         accessibilityRole="button"
-        onPress={() => router.push('./helix')}
+        onPress={() => handlePress('helix')}
         android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
         style={({ pressed }) => [
           styles.button,
