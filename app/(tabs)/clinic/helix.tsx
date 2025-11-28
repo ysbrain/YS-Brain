@@ -19,8 +19,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import DateText from '@/src/components/DateText';
 
 // Firestore
-import { db } from '@/src/lib/firebase'; // your initialized Firestore
+import { db, rtdb } from '@/src/lib/firebase'; // your initialized Firestore
 import { getAuth } from 'firebase/auth';
+import { get, ref as rtdbRef } from 'firebase/database';
 import {
   addDoc,
   collection,
@@ -38,12 +39,14 @@ import { SaveFormat } from 'expo-image-manipulator';
 
 // 🔥 Storage
 import { storage } from '@/src/lib/storage'; // getStorage() exported here
-import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
+import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 
 type ResultOption = 'PASS' | 'FAIL' | null;
 
+const HKTZ = 'Asia/Hong_Kong';
+
 // For "Last uploaded time" display
-function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
+function formatDateTime(d: Date, timeZone = HKTZ) {
   try {
     return new Intl.DateTimeFormat('en-GB', {
       day: '2-digit',
@@ -60,6 +63,29 @@ function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
   } catch {
     return `${d.toDateString()} ${d.toTimeString().slice(0, 8)}`;
   }
+}
+
+/** Get the current server time using RTDB's .info/serverTimeOffset */
+async function getServerNowHK(): Promise<Date> {
+  try {
+    const snap = await get(rtdbRef(rtdb, '.info/serverTimeOffset'));
+    const offset = (snap.val() as number) ?? 0;
+    return new Date(Date.now() + offset); // device now + server-provided offset
+  } catch (e) {
+    console.warn('Failed to get server time; falling back to device time', e);
+    return new Date(); // fallback only if RTDB unavailable
+  }
+}
+
+/** Compare calendar day in Hong Kong timezone */
+function isSameHKDay(a: Date, b: Date): boolean {
+  const fmt = new Intl.DateTimeFormat('en-GB', {
+    timeZone: HKTZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return fmt.format(a) === fmt.format(b);
 }
 
 // 🔎 small helpers
@@ -120,7 +146,7 @@ export default function HelixScreen() {
   const [uploadMsg, setUploadMsg] = useState<string>('');
   const [uploadPct, setUploadPct] = useState<number>(0);
   
-  // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
+  // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)  
   useEffect(() => {
     const col = collection(db, 'clinics', profile.clinic, recordType);
     const q = query(col, orderBy('createdAt', 'desc'), limit(1));
@@ -128,14 +154,36 @@ export default function HelixScreen() {
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        if (snap.empty) {
-          setLastUploadedAt(null);
-        } else {
-          const data = snap.docs[0].data();
-          const ts = data?.createdAt as Timestamp | undefined;
-          setLastUploadedAt(ts ? ts.toDate() : null);
-        }
-        setLoadingStatus(false);
+        (async () => {
+          if (snap.empty) {
+            setLastUploadedAt(null);
+            setCycleNumber(1); // ← reset to 1 when no record yet
+            setLoadingStatus(false);
+            return;
+          }
+
+          const data = snap.docs[0].data() as { createdAt?: Timestamp; cycleNumber?: number };
+          const ts = data?.createdAt;
+          const createdAt = ts ? ts.toDate() : null;
+
+          setLastUploadedAt(createdAt);
+
+          // Get current server time in HK
+          const nowHK = await getServerNowHK();
+
+          if (createdAt && isSameHKDay(createdAt, nowHK)) {
+            // newest doc is "today" (Hong Kong calendar day)
+            setCycleNumber((data.cycleNumber ?? 0) + 1);
+          } else {
+            // newest doc is NOT today
+            setCycleNumber(1);
+          }
+
+          setLoadingStatus(false);
+        })().catch((err) => {
+          console.warn('Failed while evaluating cycleNumber', err);
+          setLoadingStatus(false);
+        });
       },
       (err) => {
         console.warn('Failed to load latest upload time', err);
@@ -179,7 +227,6 @@ export default function HelixScreen() {
     const top = Math.round((ch - h) / 2);
     return { w, h, left, top };
   }, [camLayout]);
-
   
   const capturePhoto = async () => {
     if (!cameraRef.current || isShutterBusy) return; // prevent double taps
@@ -236,33 +283,6 @@ export default function HelixScreen() {
     setPhotoUri(null);
     openCamera();
   };
-  
-  // ✅ Upload the local file URI to Firebase Storage and return its download URL
-  async function uploadPhotoAndGetUrl(localUri: string, storagePath: string) {
-    // Convert the local file to a Blob (works in Expo RN)
-    const response = await fetch(localUri);
-    const blob = await response.blob(); // Blob is supported in browser-like environments
-    const metadata = { contentType: guessContentType(localUri) };
-
-    const storageRef = ref(storage, storagePath);
-    const task = uploadBytesResumable(storageRef, blob, metadata); // progress-capable
-    
-    return await new Promise<string>((resolve, reject) => {
-      task.on(
-        'state_changed',
-        (snap) => {
-          if (snap.totalBytes > 0) {
-            setUploadPct((snap.bytesTransferred / snap.totalBytes) * 100);
-          }
-        },
-        (err) => reject(err),
-        async () => {
-          const url = await getDownloadURL(task.snapshot.ref);
-          resolve(url);
-        }
-      );
-    });
-  }
 
   const handleCancelCamera = () => {
     if (isShutterBusy) return;      // ⬅️ ignore while busy
@@ -349,8 +369,8 @@ export default function HelixScreen() {
       const blob = await response.blob();
       const metadata = { contentType: guessContentType(croppedUri) };
 
-      const storageRef = ref(storage, storagePath);
-      const task = uploadBytesResumable(storageRef, blob, metadata);
+      const storageReference = storageRef(storage, storagePath);
+      const task = uploadBytesResumable(storageReference, blob, metadata);
 
       await new Promise<void>((resolve, reject) => {
         task.on(
@@ -486,7 +506,7 @@ export default function HelixScreen() {
             {loadingStatus ? (
               <Text style={styles.lastValue}>Loading…</Text>
             ) : lastUploadedAt ? (
-              <Text style={styles.lastValue}>{formatDateTime(lastUploadedAt, 'Asia/Shanghai')}</Text>
+              <Text style={styles.lastValue}>{formatDateTime(lastUploadedAt)}</Text>
             ) : (
               <Text style={styles.lastValue}>No uploads yet</Text>
             )}
