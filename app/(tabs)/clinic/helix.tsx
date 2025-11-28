@@ -7,20 +7,16 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  InputAccessoryView,
-  Keyboard,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Reusable Date component (format: "21 Oct 2025")
-import DateText from '../../../src/components/DateText';
+import DateText from '@/src/components/DateText';
 
 // Firestore
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
@@ -47,7 +43,7 @@ import { getDownloadURL, ref, uploadBytesResumable } from 'firebase/storage';
 type ResultOption = 'PASS' | 'FAIL' | null;
 
 // For "Last uploaded time" display
-function formatDateTime(d: Date, timeZone = 'Asia/Shanghai') {
+function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
   try {
     return new Intl.DateTimeFormat('en-GB', {
       day: '2-digit',
@@ -80,7 +76,7 @@ const buildStoragePath = (opts: {
 }) => {
   const { clinicId, folder, cycle } = opts;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  // e.g., clinics/clinic001/helix1/2025-10-21T06-45-12-123Z_uid_c3.jpg
+  // e.g., clinics/clinic001/helix1/2025-10-21T06-45-12-123Z_c3.jpg
   return `clinics/${clinicId}/${folder}/${ts}${cycle ? `_c${cycle}` : ''}.jpg`;
 };
 
@@ -91,13 +87,7 @@ export default function HelixScreen() {
   const [permission, requestPermission] = useCameraPermissions();
 
   const [result, setResult] = useState<ResultOption>(null);
-
-  // Cycle (digits-only string; validate: integer >=1 and <= 6 digits)
-  const [cycleStr, setCycleStr] = useState<string>('');
-  const cycleAccessoryId = 'cycle-input-accessory-id';
-  const hasOnlyDigitsMax6 = /^\d{1,6}$/.test(cycleStr);
-  const isValidCycle = hasOnlyDigitsMax6 && Number(cycleStr) >= 1;
-  const cycleNumber = isValidCycle ? Number.parseInt(cycleStr, 10) : null;
+  const [cycleNumber, setCycleNumber] = useState<number>(0);
 
   // Photo state
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -122,7 +112,7 @@ export default function HelixScreen() {
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
   // Footer enablement: require result + photo + valid cycle
-  const canUpload = Boolean(result && photoUri && isValidCycle);
+  const canUpload = Boolean(result && photoUri && cycleNumber > 0);
   
   // Upload overlay
   const [isUploading, setIsUploading] = useState(false);
@@ -318,7 +308,6 @@ export default function HelixScreen() {
       const reasons: string[] = [];
       if (!result) reasons.push('Select PASS or FAIL.');
       if (!photoUri) reasons.push('Take a photo.');
-      if (!isValidCycle) reasons.push('Enter a valid integer cycle.');
       Alert.alert('Upload disabled', reasons.join('\n'));
       return;
     }
@@ -432,42 +421,10 @@ export default function HelixScreen() {
             <Text style={styles.label}>Loading profile…</Text>
           )}
 
-          {/* Cycle input */}
-          <View style={styles.cycleRow}>
-            <Text style={styles.cycleLabel}>Cycle:</Text>
-            <TextInput
-              value={cycleStr}
-              onChangeText={(text) => {
-                const digits = text.replace(/[^\d]/g, '').slice(0, 6);
-                setCycleStr(digits);
-              }}
-              keyboardType="number-pad"
-              inputMode="numeric"
-              placeholder="e.g., 123"
-              maxLength={6}
-              blurOnSubmit
-              returnKeyType={Platform.OS === 'android' ? 'done' : 'default'}
-              inputAccessoryViewID={Platform.OS === 'ios' ? cycleAccessoryId : undefined}
-              style={[
-                styles.cycleInput,
-                cycleStr.length > 0 && !isValidCycle && styles.cycleInputInvalid,
-              ]}
-            />
-          </View>
-          {cycleStr.length > 0 && !isValidCycle && (
-            <Text style={styles.cycleHint}>Enter an integer ≥ 1 with up to 6 digits.</Text>
-          )}
-
-          {/* (iOS) "Done" bar above number pad */}
-          {Platform.OS === 'ios' && (
-            <InputAccessoryView nativeID={cycleAccessoryId}>
-              <View style={styles.accessoryBar}>
-                <Pressable style={styles.accessoryBtn} onPress={Keyboard.dismiss}>
-                  <Text style={styles.accessoryBtnText}>Done</Text>
-                </Pressable>
-              </View>
-            </InputAccessoryView>
-          )}
+          {/* Cycle */}
+          <Text style={styles.label}>
+            Cycle Number: <Text style={styles.value}>{cycleNumber}</Text>
+          </Text>
 
           {/* Result selector with a vertical separator */}
           <View style={styles.resultRow}>
@@ -674,26 +631,8 @@ const styles = StyleSheet.create({
 
   date: { fontSize: 18, fontWeight: '600' },
 
-  label: { fontSize: 16, color: '#444' },
-  value: { fontWeight: '600', color: '#000' },
-
-  // Cycle
-  cycleRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  cycleLabel: { fontSize: 16, fontWeight: '600' },
-  cycleInput: {
-    flexGrow: 1,
-    flexShrink: 1,
-    minWidth: 120,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 16,
-    backgroundColor: '#fff'
-  },
-  cycleInputInvalid: { borderColor: '#C0392B' },
-  cycleHint: { fontSize: 12, color: '#C0392B' },
+  label: { fontSize: 16,  color: '#444' },
+  value: { fontSize: 18, fontWeight: '600', color: '#000' },
 
   // Accessory bar (iOS)
   accessoryBar: {
@@ -714,7 +653,7 @@ const styles = StyleSheet.create({
 
   // Result selector with separator
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  resultLabel: { fontSize: 16, fontWeight: '600' },
+  resultLabel: { fontSize: 18, fontWeight: '600' },
   segment: {
     flexDirection: 'row',
     borderRadius: 8,
