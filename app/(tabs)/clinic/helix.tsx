@@ -17,11 +17,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Reusable Date component (format: "21 Oct 2025")
 import DateText from '@/src/components/DateText';
+import { useServerNow } from '@/src/data/hooks/useServerNow';
+import { HKTZ, isSameHKDay } from '@/src/lib/timezone';
 
 // Firestore
-import { db, rtdb } from '@/src/lib/firebase'; // your initialized Firestore
+import { db } from '@/src/lib/firebase'; // your initialized Firestore
 import { getAuth } from 'firebase/auth';
-import { get, ref as rtdbRef } from 'firebase/database';
 import {
   addDoc,
   collection,
@@ -30,7 +31,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  Timestamp,
+  Timestamp
 } from 'firebase/firestore';
 
 // ✅ Crop helper (Context API version)
@@ -42,8 +43,6 @@ import { storage } from '@/src/lib/storage'; // getStorage() exported here
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 
 type ResultOption = 'PASS' | 'FAIL' | null;
-
-const HKTZ = 'Asia/Hong_Kong';
 
 // For "Last uploaded time" display
 function formatDateTime(d: Date, timeZone = HKTZ) {
@@ -63,29 +62,6 @@ function formatDateTime(d: Date, timeZone = HKTZ) {
   } catch {
     return `${d.toDateString()} ${d.toTimeString().slice(0, 8)}`;
   }
-}
-
-/** Get the current server time using RTDB's .info/serverTimeOffset */
-async function getServerNowHK(): Promise<Date> {
-  try {
-    const snap = await get(rtdbRef(rtdb, '.info/serverTimeOffset'));
-    const offset = (snap.val() as number) ?? 0;
-    return new Date(Date.now() + offset); // device now + server-provided offset
-  } catch (e) {
-    console.warn('Failed to get server time; falling back to device time', e);
-    return new Date(); // fallback only if RTDB unavailable
-  }
-}
-
-/** Compare calendar day in Hong Kong timezone */
-function isSameHKDay(a: Date, b: Date): boolean {
-  const fmt = new Intl.DateTimeFormat('en-GB', {
-    timeZone: HKTZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  return fmt.format(a) === fmt.format(b);
 }
 
 // 🔎 small helpers
@@ -111,6 +87,9 @@ export default function HelixScreen() {
   const profile = useProfile();
   const recordType = useLocalSearchParams<{ recordType: string }>().recordType;
   const [permission, requestPermission] = useCameraPermissions();
+  
+  const { serverNow, loading: timeLoading, error: timeError, refresh: refreshServerNow } =
+    useServerNow({ ttlMs: 60_000, refreshOnForeground: true });
 
   const [result, setResult] = useState<ResultOption>(null);
   const [cycleNumber, setCycleNumber] = useState<number>(0);
@@ -161,21 +140,21 @@ export default function HelixScreen() {
             setLoadingStatus(false);
             return;
           }
-
+          
           const data = snap.docs[0].data() as { createdAt?: Timestamp; cycleNumber?: number };
-          const ts = data?.createdAt;
-          const createdAt = ts ? ts.toDate() : null;
+          const createdAt = data?.createdAt ? (data.createdAt as Timestamp).toDate() : null;
+          setLastUploadedAt(createdAt);         
+          
+          // Make sure we have serverNow; if not, refresh once
+          if (!serverNow) {
+            await refreshServerNow();
+          }
 
-          setLastUploadedAt(createdAt);
-
-          // Get current server time in HK
-          const nowHK = await getServerNowHK();
+          const nowHK = serverNow ?? new Date(); // fallback only if necessary
 
           if (createdAt && isSameHKDay(createdAt, nowHK)) {
-            // newest doc is "today" (Hong Kong calendar day)
             setCycleNumber((data.cycleNumber ?? 0) + 1);
           } else {
-            // newest doc is NOT today
             setCycleNumber(1);
           }
 
@@ -402,12 +381,6 @@ export default function HelixScreen() {
       // 4) Success: show completed state
       setUploadMode('done');
       setUploadMsg('Upload complete');
-
-      // Auto-dismiss after a short delay and navigate back
-      setTimeout(() => {
-        setIsUploading(false);
-        router.back();
-      }, 5000); // adjust to taste
     } catch (e: any) {
       console.error(e);
       setUploadMode('error');
