@@ -1,4 +1,3 @@
-import UploadingOverlay from '@/src/components/UploadingOverlay';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,11 +12,13 @@ import {
   Text,
   View
 } from 'react-native';
+
+import UploadingOverlay from '@/src/components/UploadingOverlay';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Reusable Date component (format: "21 Oct 2025")
 import DateText from '@/src/components/DateText';
-import { useServerNow } from '@/src/data/hooks/useServerNow';
+import { getServerTime } from '@/src/lib/serverTime';
 import { HKTZ, isSameHKDay } from '@/src/lib/timezone';
 
 // Firestore
@@ -87,9 +88,6 @@ export default function HelixScreen() {
   const profile = useProfile();
   const recordType = useLocalSearchParams<{ recordType: string }>().recordType;
   const [permission, requestPermission] = useCameraPermissions();
-  
-  const { serverNow, loading: timeLoading, error: timeError, refresh: refreshServerNow } =
-    useServerNow({ ttlMs: 60_000, refreshOnForeground: true });
 
   const [result, setResult] = useState<ResultOption>(null);
   const [cycleNumber, setCycleNumber] = useState<number>(0);
@@ -139,22 +137,22 @@ export default function HelixScreen() {
             setCycleNumber(1); // ← reset to 1 when no record yet
             setLoadingStatus(false);
             return;
-          }
+          }          
           
           const data = snap.docs[0].data() as { createdAt?: Timestamp; cycleNumber?: number };
-          const createdAt = data?.createdAt ? (data.createdAt as Timestamp).toDate() : null;
-          setLastUploadedAt(createdAt);         
-          
-          // Make sure we have serverNow; if not, refresh once
-          if (!serverNow) {
-            await refreshServerNow();
-          }
+          const ts = data?.createdAt;
+          const createdAt = ts ? ts.toDate() : null;
 
-          const nowHK = serverNow ?? new Date(); // fallback only if necessary
+          setLastUploadedAt(createdAt);
+
+          // Get current server time
+          const nowHK = await getServerTime();
 
           if (createdAt && isSameHKDay(createdAt, nowHK)) {
+            // newest doc is "today" (Hong Kong calendar day)
             setCycleNumber((data.cycleNumber ?? 0) + 1);
           } else {
+            // newest doc is NOT today
             setCycleNumber(1);
           }
 

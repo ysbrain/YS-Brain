@@ -1,21 +1,31 @@
-import { db } from '@/src/lib/firebase';
-import { doc, getDoc, serverTimestamp, setDoc, Timestamp } from 'firebase/firestore';
+import { rtdb } from '@/src/lib/firebase';
+import { onValue, ref } from 'firebase/database';
 
-export async function fetchServerNowViaFirestore(): Promise<Date> {
-  const tdoc = doc(db, '_time', 'now'); // /_time/now
-  await setDoc(tdoc, { serverNow: serverTimestamp() }, { merge: true });
-  const snap = await getDoc(tdoc);
-  const ts = snap.data()?.serverNow as Timestamp | undefined;
-  if (!ts) {
-    // Retry once if unresolved (rare race condition)
-    const retrySnap = await getDoc(tdoc);
-    const retryTs = retrySnap.data()?.serverNow as Timestamp | undefined;
-    if (retryTs) {
-      return retryTs.toDate();
-    } else {
-      console.warn('fetchServerNowViaFirestore: serverNow timestamp missing after retry');
-      return new Date(); // final fallback
-    }
-  }
-  return ts.toDate();
+/** Get the current server time using RTDB's .info/serverTimeOffset via onValue() */
+export async function getServerTime(): Promise<Date> {
+  const serverOffsetRef = ref(rtdb, '.info/serverTimeOffset');
+
+  return new Promise<Date>((resolve) => {
+    // Optional: safety timeout in case the listener never fires (offline, etc.)
+    const timeoutMs = 5000;
+    const timeoutId = setTimeout(() => {
+      console.warn('Timed out getting server time; falling back to device time');
+      resolve(new Date());
+    }, timeoutMs);
+
+    onValue(
+      serverOffsetRef,
+      (snap) => {
+        clearTimeout(timeoutId);
+        const offset = (snap.val() as number) ?? 0;
+        resolve(new Date(Date.now() + offset)); // device now + server-provided offset
+      },
+      (error) => {
+        clearTimeout(timeoutId);
+        console.warn('Failed to get server time; falling back to device time', error);
+        resolve(new Date()); // fallback only if RTDB unavailable
+      },
+      { onlyOnce: true } // ensures this is a one-time read (no persistent listener)
+    );
+  });
 }
