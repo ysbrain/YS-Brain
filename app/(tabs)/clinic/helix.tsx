@@ -1,7 +1,7 @@
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,8 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Reusable Date component (format: "21 Oct 2025")
 import DateText from '@/src/components/DateText';
-import { getServerTime } from '@/src/lib/serverTime';
-import { HKTZ, isSameHKDay } from '@/src/lib/timezone';
 
 // Firestore
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
@@ -46,7 +44,7 @@ import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebas
 type ResultOption = 'PASS' | 'FAIL' | null;
 
 // For "Last uploaded time" display
-function formatDateTime(d: Date, timeZone = HKTZ) {
+function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
   try {
     return new Intl.DateTimeFormat('en-GB', {
       day: '2-digit',
@@ -86,11 +84,12 @@ const buildStoragePath = (opts: {
 export default function HelixScreen() {
   const router = useRouter();
   const profile = useProfile();
-  const recordType = useLocalSearchParams<{ recordType: string }>().recordType;
   const [permission, requestPermission] = useCameraPermissions();
 
+  const { recordType, cycleString } = useLocalSearchParams<{ recordType: string; cycleString: string }>();
+  const cycleNumber = parseInt(cycleString, 10) || 0;
+
   const [result, setResult] = useState<ResultOption>(null);
-  const [cycleNumber, setCycleNumber] = useState<number>(0);
 
   // Photo state
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -131,36 +130,14 @@ export default function HelixScreen() {
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        (async () => {
-          if (snap.empty) {
-            setLastUploadedAt(null);
-            setCycleNumber(1); // ← reset to 1 when no record yet
-            setLoadingStatus(false);
-            return;
-          }          
-          
-          const data = snap.docs[0].data() as { createdAt?: Timestamp; cycleNumber?: number };
-          const ts = data?.createdAt;
-          const createdAt = ts ? ts.toDate() : null;
-
-          setLastUploadedAt(createdAt);
-
-          // Get current server time
-          const nowHK = await getServerTime();
-
-          if (createdAt && isSameHKDay(createdAt, nowHK)) {
-            // newest doc is "today" (Hong Kong calendar day)
-            setCycleNumber((data.cycleNumber ?? 0) + 1);
-          } else {
-            // newest doc is NOT today
-            setCycleNumber(1);
-          }
-
-          setLoadingStatus(false);
-        })().catch((err) => {
-          console.warn('Failed while evaluating cycleNumber', err);
-          setLoadingStatus(false);
-        });
+        if (snap.empty) {
+          setLastUploadedAt(null);
+        } else {
+          const data = snap.docs[0].data();
+          const ts = data?.createdAt as Timestamp | undefined;
+          setLastUploadedAt(ts ? ts.toDate() : null);
+        }
+        setLoadingStatus(false);
       },
       (err) => {
         console.warn('Failed to load latest upload time', err);

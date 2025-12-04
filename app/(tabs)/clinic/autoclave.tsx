@@ -1,25 +1,105 @@
+import { useProfile } from '@/src/contexts/ProfileContext';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { db } from '@/src/lib/firebase';
+import { getServerTime } from '@/src/lib/serverTime';
+import { isSameHKDay } from '@/src/lib/timezone';
+import { doc, getDoc, Timestamp } from 'firebase/firestore';
 
 function equipmentSplit(equipment: string): string {
   const equipSplit = equipment.split(' ');
-  if (equipSplit.length === 2)
-    return equipSplit[1];
-  else
-    return '';
+  if (equipSplit.length === 2) return equipSplit[1];
+  else return '';
 }
 
 export default function AutoclaveScreen() {
   const router = useRouter();
+  const profile = useProfile();
   const equipment = useLocalSearchParams<{ equipment: string }>().equipment;
+  const equipmentId = equipmentSplit(equipment);
+  
+  // ---- Cycle state
+  const [cycleCount, setCycleCount] = useState<number | null>(null);
+  const [loadingCycle, setLoadingCycle] = useState<boolean>(true);
+  const [cycleError, setCycleError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchCycle = async () => {
+      try {
+        const cycleDocRef = doc(db, 'clinics', profile.clinic, 'autoclave' + equipmentId, 'cycle');
+        const snap = await getDoc(cycleDocRef);
+        if (!snap.exists()) {
+          setCycleError('Cycle doc not found');
+          setCycleCount(null);
+        } else {
+          const data = snap.data() as { updatedAt?: Timestamp; cycleCount?: number };
+          const ts = data?.updatedAt;
+          const updatedAt = ts ? ts.toDate() : null;
+
+          // Get current server time
+          const serverTime = await getServerTime();          
+          console.log('Server time:', serverTime);
+
+          //const data = snap.data() as { cycleCount?: number };
+          if (typeof data.cycleCount === 'number') {
+            if (updatedAt && isSameHKDay(updatedAt, serverTime)) {
+              // newest doc is "today" (Hong Kong calendar day)
+              setCycleCount(data.cycleCount);
+            } else {
+              // newest doc is NOT today
+              setCycleCount(0);
+            }           
+          } else {
+            setCycleError('cycleCount field missing or not a number');
+            setCycleCount(null);
+          }
+        }
+      } catch (err: any) {
+        setCycleError(err?.message ?? 'Error loading cycle');
+        setCycleCount(0);
+      } finally {
+        setLoadingCycle(false);
+      }
+    };
+
+    fetchCycle();
+  }, []);
 
   const handlePress = (item: string): void => {
-    console.log('Pressed:', item);
-    router.push({ pathname: `./${item}`, params: { recordType: item + equipmentSplit(equipment) } });
+    console.log('Pressed:', item);    
+    if (cycleCount === null) {
+      console.warn('Cannot proceed: cycle count not loaded');
+      return;
+    }
+    router.push({
+      pathname: `./${item}`,
+      params: {
+        recordType: item + equipmentId,
+        cycleString: String(cycleCount + 1)
+      }
+    });
   };
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container}>      
+      {/* 🔹 Cycle number line */}
+      <View style={styles.cycleRow}>
+        {loadingCycle ? (
+          <View style={styles.cycleInline}>
+            <ActivityIndicator size="small" color="#3b82f6" />
+            <Text style={styles.cycleText}>  Loading cycle…</Text>
+          </View>
+        ) : cycleError ? (
+          <Text style={[styles.cycleText, styles.cycleError]}>
+            Cycle: — ({cycleError})
+          </Text>
+        ) : (
+          <Text style={styles.cycleText}>Cycles ran today: {cycleCount}</Text>
+        )}
+      </View>
+
       <Pressable
         accessibilityRole="button"
         onPress={() => handlePress('helix')}
@@ -63,8 +143,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
+    paddingTop: 12, // ensures the cycle line is visually separated from header
+  },
+  
+  // 🔹 Cycle line styling
+  cycleRow: {
+    width: 300,
+    marginBottom: 12, // sits above buttons
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    alignItems: 'center',
     justifyContent: 'center',
   },
+  cycleInline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cycleText: {
+    fontSize: 18,
+    color: '#1f2937',
+    fontWeight: '600',
+  },
+  cycleError: {
+    color: '#ef4444',
+    fontWeight: '700',
+  },
+
   button: {
     backgroundColor: '#3b82f6',
     paddingVertical: 12,
