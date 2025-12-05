@@ -42,7 +42,6 @@ export default function TabsLayout() {
         name="clinic"
         options={{
           headerShown: false,
-          title: 'Clinic - ',
           tabBarLabel: 'Clinic',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'storefront-sharp' : 'storefront-outline'} color={color} size={24}/>

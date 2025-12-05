@@ -17,14 +17,7 @@ export default function ClinicLayout() {
       <ProfileProvider profile={profile}>
         <Stack screenOptions={commonStackOptions}>
           <Stack.Screen name="index" options={{ title: 'Clinic 01' }} />
-          <Stack.Screen
-            name="autoclave"        
-            options={({ route }) => {
-              return { title: (route.params as any)?.equipment ?? 'Autoclave' };
-            }}
-          />
-          <Stack.Screen name="helix" options={{ title: 'Helix Test' }} />
-          <Stack.Screen name="spore" options={{ title: 'Spore Test' }} />
+          <Stack.Screen name="autoclave" options={{ title: 'Autoclave' }} />
           <Stack.Screen name="sterilizer" options={{ title: 'Sterilizer' }} />
         </Stack>
       </ProfileProvider>

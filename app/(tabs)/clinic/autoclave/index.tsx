@@ -74,7 +74,7 @@ export default function AutoclaveScreen() {
       return;
     }
     router.push({
-      pathname: `./${item}`,
+      pathname: `./autoclave/${item}`,
       params: {
         recordType: item + equipmentId,
         cycleString: String(cycleCount + 1)
