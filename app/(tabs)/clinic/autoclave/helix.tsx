@@ -373,25 +373,20 @@ export default function HelixScreen() {
       <View style={styles.container}>
         <View style={styles.content}>
           {/* Current date */}
-          <DateText style={styles.date} />
+          <DateText style={styles.label} />
 
           {/* Profile */}
           {profile ? (
-            <>
-              <Text style={styles.label}>
-                User: <Text style={styles.value}>{profile.name}</Text>
-              </Text>
-              <Text style={styles.label}>
-                Clinic: <Text style={styles.value}>{profile.clinic}</Text>
-              </Text>
-            </>
+            <Text style={styles.label}>
+              {profile.clinic} - {profile.name}
+            </Text>
           ) : (
             <Text style={styles.label}>Loading profile…</Text>
           )}
 
           {/* Cycle */}
-          <Text style={styles.label}>
-            Cycle Number: <Text style={styles.value}>{cycleNumber}</Text>
+          <Text style={styles.value}>
+            Cycle Number: {cycleNumber}
           </Text>
 
           {/* Result selector with a vertical separator */}
@@ -597,10 +592,8 @@ const styles = StyleSheet.create({
   content: { paddingTop: 16, gap: 16 }, // starts right below header
   footer: { marginTop: 'auto', paddingTop: 12, paddingBottom: 12, gap: 8 },
 
-  date: { fontSize: 18, fontWeight: '600' },
-
-  label: { fontSize: 16,  color: '#444' },
-  value: { fontSize: 18, fontWeight: '600', color: '#000' },
+  label: { fontSize: 18,  color: '#444' },
+  value: { fontSize: 18, fontWeight: 'bold' },
 
   // Accessory bar (iOS)
   accessoryBar: {
@@ -621,7 +614,7 @@ const styles = StyleSheet.create({
 
   // Result selector with separator
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  resultLabel: { fontSize: 18, fontWeight: '600' },
+  resultLabel: { fontSize: 18, fontWeight: 'bold' },
   segment: {
     flexDirection: 'row',
     borderRadius: 8,
@@ -633,7 +626,7 @@ const styles = StyleSheet.create({
   segmentBtnSelected: { backgroundColor: '#007AFF22' },
   segmentBtnDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#ddd' },
   segmentText: { fontSize: 16, color: '#333' },
-  segmentTextSelected: { fontWeight: '700', color: '#007AFF' },
+  segmentTextSelected: { fontWeight: 'bold', color: '#007AFF' },
 
   // Photo
   photoSection: { gap: 12 },
