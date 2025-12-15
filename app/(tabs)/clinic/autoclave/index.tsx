@@ -8,6 +8,8 @@ import { getServerTime } from '@/src/lib/serverTime';
 import { isSameHKDay } from '@/src/lib/timezone';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
 
+type AutoclaveChild = 'helix' | 'spore';
+
 function equipmentSplit(equipment: string): string {
   const equipSplit = equipment.split(' ');
   if (equipSplit.length === 2) return equipSplit[1];
@@ -67,14 +69,16 @@ export default function AutoclaveScreen() {
     fetchCycle();
   }, []);
 
-  const handlePress = (item: string): void => {
-    console.log('Pressed:', item);    
+  const handlePress = (item: AutoclaveChild): void => {
+    console.log('Pressed:', item);
     if (cycleCount === null) {
       console.warn('Cannot proceed: cycle count not loaded');
       return;
     }
+
+    const pathname: `/clinic/autoclave/${AutoclaveChild}` = `/clinic/autoclave/${item}`;
     router.push({
-      pathname: `./autoclave/${item}`,
+      pathname,
       params: {
         recordType: item + equipmentId,
         cycleString: String(cycleCount + 1)
