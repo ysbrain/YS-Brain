@@ -1,3 +1,4 @@
+import UploadingOverlay from '@/src/components/UploadingOverlay';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -7,18 +8,15 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View
 } from 'react-native';
-
-import UploadingOverlay from '@/src/components/UploadingOverlay';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
 // Reusable Date component (format: "21 Oct 2025")
 import DateText from '@/src/components/DateText';
-
 // Firestore
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
 import { getAuth } from 'firebase/auth';
@@ -32,14 +30,15 @@ import {
   serverTimestamp,
   Timestamp
 } from 'firebase/firestore';
-
 // ✅ Crop helper (Context API version)
 import { centerCropToAspect } from '@/src/lib/crop';
 import { SaveFormat } from 'expo-image-manipulator';
-
 // 🔥 Storage
 import { storage } from '@/src/lib/storage'; // getStorage() exported here
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
+
+// ✅ Time picker
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 type ResultOption = 'PASS' | 'FAIL' | null;
 
@@ -54,13 +53,20 @@ function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
       minute: '2-digit',
       second: '2-digit',
       hour12: false,
-      timeZone,
+      timeZone
     })
-    .format(d)
-    .replace(/,/g, '');
+      .format(d)
+      .replace(/,/g, '');
   } catch {
     return `${d.toDateString()} ${d.toTimeString().slice(0, 8)}`;
   }
+}
+
+// ✅ Format time strictly as HH:mm (24-hour, locale-independent)
+function toHHmm(d: Date) {
+  const hh = `${d.getHours()}`.padStart(2, '0');
+  const mm = `${d.getMinutes()}`.padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
 // 🔎 small helpers
@@ -72,9 +78,7 @@ const guessContentType = (uri: string) => {
   return 'image/jpeg';
 };
 
-const buildStoragePath = (opts: {
-  clinicId: string; folder: string; cycle: number | null;
-}) => {
+const buildStoragePath = (opts: { clinicId: string; folder: string; cycle: number | null }) => {
   const { clinicId, folder, cycle } = opts;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   // e.g., clinics/clinic001/helix1/2025-10-21T06-45-12-123Z_c3.jpg
@@ -85,11 +89,32 @@ export default function HelixScreen() {
   const router = useRouter();
   const profile = useProfile();
   const [permission, requestPermission] = useCameraPermissions();
-
-  const { recordType, cycleString } = useLocalSearchParams<{ recordType: string; cycleString: string }>();
+  const { recordType, equipmentId, cycleString } = useLocalSearchParams<{ recordType: string; equipmentId: string; cycleString: string }>();
+  const recordId = `${recordType}${equipmentId}`;
   const cycleNumber = parseInt(cycleString, 10) || 0;
 
   const [result, setResult] = useState<ResultOption>(null);
+  
+  const [startTime, setStartTime] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+  const [endTime, setEndTime] = useState<Date>(() => new Date()); // default current time
+  const [activeTimePicker, setActiveTimePicker] = useState<null | 'start' | 'end'>(null);
+
+  const onTimeChange = (event: DateTimePickerEvent, selected?: Date) => {
+    // Android: closes automatically; iOS: keep open until Done
+    if (event.type === 'dismissed') {
+      setActiveTimePicker(null);
+      return;
+    }
+    if (selected) {
+      if (activeTimePicker === 'start') setStartTime(selected);
+      if (activeTimePicker === 'end') setEndTime(selected);
+    }
+    if (Platform.OS === 'android') setActiveTimePicker(null);
+  };
 
   // Photo state
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -98,35 +123,33 @@ export default function HelixScreen() {
   const [isCropping, setIsCropping] = useState(false);
   const [wasCropped, setWasCropped] = useState(false);
   const cameraRef = useRef<CameraView>(null);
-  
+
   // derive a single busy flag for the shutter button
   const isShutterBusy = isCapturing || isCropping;
-  
+
   // ⏱️ 12s timeout support
   const CAPTURE_TIMEOUT_MS = 12_000;
   const shutterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   // If a timeout occurs, we set this to true so we can ignore late results
   const opCancelledRef = useRef(false);
-  
+
   // ⏱️ Last uploaded time — now driven by the newest doc in the collection
   const [lastUploadedAt, setLastUploadedAt] = useState<Date | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
   // Footer enablement: require result + photo + valid cycle
   const canUpload = Boolean(result && photoUri && cycleNumber > 0);
-  
+
   // Upload overlay
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMode, setUploadMode] = useState<'working' | 'done' | 'error'>('working');
   const [uploadMsg, setUploadMsg] = useState<string>('');
   const [uploadPct, setUploadPct] = useState<number>(0);
-  
-  // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)  
-  useEffect(() => {
-    const col = collection(db, 'clinics', profile.clinic, recordType);
-    const q = query(col, orderBy('createdAt', 'desc'), limit(1));
 
+  // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
+  useEffect(() => {
+    const col = collection(db, 'clinics', profile.clinic, recordId);
+    const q = query(col, orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
@@ -144,7 +167,6 @@ export default function HelixScreen() {
         setLoadingStatus(false);
       }
     );
-
     return unsubscribe;
   }, []);
 
@@ -158,7 +180,7 @@ export default function HelixScreen() {
     }
     setIsCameraOpen(true);
   };
-  
+
   // For the camera overlay frame, we need the live camera area size
   const [camLayout, setCamLayout] = useState({ width: 0, height: 0 });
 
@@ -166,35 +188,30 @@ export default function HelixScreen() {
   const cropBox = useMemo(() => {
     const { width: cw, height: ch } = camLayout;
     if (cw <= 0 || ch <= 0) return { w: 0, h: 0, left: 0, top: 0 };
-
     const M = 24; // margin around frame
     let w = Math.max(0, cw - M * 2);
-    let h = Math.round(w * 3 / 4); // 4:3 aspect => h = w * 3/4
-
+    let h = Math.round((w * 3) / 4); // 4:3 aspect => h = w * 3/4
     // If too tall, fit by height instead
     if (h > ch - M * 2) {
       h = Math.max(0, ch - M * 2);
-      w = Math.round(h * 4 / 3);
+      w = Math.round((h * 4) / 3);
     }
-
     const left = Math.round((cw - w) / 2);
     const top = Math.round((ch - h) / 2);
     return { w, h, left, top };
   }, [camLayout]);
-  
+
   const capturePhoto = async () => {
     if (!cameraRef.current || isShutterBusy) return; // prevent double taps
-
     let success = false;
-    startShutterTimer();           // ⏱️ begin 12s timer
+    startShutterTimer(); // ⏱️ begin 12s timer
 
     try {
       // 1) Start capture
       setIsCapturing(true);
-
       const shot = await cameraRef.current.takePictureAsync({
         quality: 0.9,
-        skipProcessing: true,      // we crop explicitly
+        skipProcessing: true // we crop explicitly
       });
 
       // If timeout already fired, ignore the result and bail out quietly
@@ -206,7 +223,7 @@ export default function HelixScreen() {
 
       const cropped = await centerCropToAspect(shot.uri, 4 / 3, {
         compress: 0.9,
-        format: SaveFormat.JPEG,
+        format: SaveFormat.JPEG
         // targetWidth: 1600, // optional downscale
       });
 
@@ -217,18 +234,17 @@ export default function HelixScreen() {
 
       setPhotoUri(uri);
       setWasCropped(true);
-
-      success = true;              // ✅ finished successfully
+      success = true; // ✅ finished successfully
     } catch (e) {
       console.warn('Capture/crop error', e);
       Alert.alert('Capture failed', 'Please try again.');
     } finally {
-      clearShutterTimer();         // ✅ stop the 12s timer
+      clearShutterTimer(); // ✅ stop the 12s timer
       setIsCapturing(false);
       setIsCropping(false);
 
       if (success && !opCancelledRef.current) {
-        setIsCameraOpen(false);    // close only after success
+        setIsCameraOpen(false); // close only after success
       }
     }
   };
@@ -239,10 +255,10 @@ export default function HelixScreen() {
   };
 
   const handleCancelCamera = () => {
-    if (isShutterBusy) return;      // ⬅️ ignore while busy
+    if (isShutterBusy) return; // ⬅️ ignore while busy
     setIsCameraOpen(false);
   };
-  
+
   const clearShutterTimer = () => {
     if (shutterTimerRef.current) {
       clearTimeout(shutterTimerRef.current);
@@ -254,7 +270,6 @@ export default function HelixScreen() {
     // New operation begins; clear any prior timer and reset cancelled flag
     clearShutterTimer();
     opCancelledRef.current = false;
-
     shutterTimerRef.current = setTimeout(() => {
       // ⏰ Timed out: mark operation cancelled and recover UI
       opCancelledRef.current = true;
@@ -265,9 +280,7 @@ export default function HelixScreen() {
       Alert.alert(
         'Taking longer than expected',
         'Capturing this photo is taking unusually long. Please try again.',
-        [
-          { text: 'OK' }, // user can tap Capture again
-        ]
+        [{ text: 'OK' }]
       );
     }, CAPTURE_TIMEOUT_MS);
   };
@@ -291,21 +304,20 @@ export default function HelixScreen() {
       Alert.alert('Not signed in', 'Please sign in before uploading.');
       return;
     }
-    
+
     // ⛔ Block all interaction with the full-screen overlay
     setIsUploading(true);
     setUploadMode('working');
     setUploadMsg('Processing image…');
     setUploadPct(0);
-        
+
     try {
       // 1) Ensure cropped image (you’re already cropping at capture; this is a safe fallback)
       let croppedUri = photoUri!;
       if (!wasCropped) {
         const out = await centerCropToAspect(photoUri!, 4 / 3, {
           compress: 0.9,
-          format: SaveFormat.JPEG,
-          // targetWidth: 1600, // optional
+          format: SaveFormat.JPEG
         });
         croppedUri = (out as any).localUri ?? (out as any).uri;
       }
@@ -315,14 +327,13 @@ export default function HelixScreen() {
 
       const storagePath = buildStoragePath({
         clinicId: profile.clinic,
-        folder: recordType,
-        cycle: cycleNumber,
+        folder: recordId,
+        cycle: cycleNumber
       });
 
       const response = await fetch(croppedUri);
       const blob = await response.blob();
       const metadata = { contentType: guessContentType(croppedUri) };
-
       const storageReference = storageRef(storage, storagePath);
       const task = uploadBytesResumable(storageReference, blob, metadata);
 
@@ -339,10 +350,10 @@ export default function HelixScreen() {
 
       const photoUrl = await getDownloadURL(task.snapshot.ref);
 
-      // 3) Create Firestore document
+      // 3) Create Firestore document ✅ now includes startTime & endTime
       setUploadMsg('Saving record…');
 
-      const entriesRef = collection(db, 'clinics', profile.clinic, recordType);
+      const entriesRef = collection(db, 'clinics', profile.clinic, recordId);
       await addDoc(entriesRef, {
         result: result === 'PASS',
         username: profile?.name ?? null,
@@ -350,7 +361,9 @@ export default function HelixScreen() {
         cycleNumber,
         clinic: profile?.clinic ?? null,
         photoUrl,
-        createdAt: serverTimestamp(),
+        startTime: toHHmm(startTime),
+        endTime: toHHmm(endTime),
+        createdAt: serverTimestamp()
       });
 
       // 4) Success: show completed state
@@ -360,11 +373,10 @@ export default function HelixScreen() {
       console.error(e);
       setUploadMode('error');
       setUploadMsg(e?.message ?? 'Something went wrong. Please try again.');
-
       // Leave overlay up in "error" mode; user can tap OK to dismiss and retry
     }
   };
-  
+
   if (!profile) return <Text>No profile found.</Text>;
 
   return (
@@ -372,22 +384,74 @@ export default function HelixScreen() {
       {/* Content area: sticks to top below header */}
       <View style={styles.container}>
         <View style={styles.content}>
-          {/* Current date */}
-          <DateText style={styles.label} />
 
-          {/* Profile */}
-          {profile ? (
-            <Text style={styles.label}>
-              {profile.clinic} - {profile.name}
-            </Text>
-          ) : (
-            <Text style={styles.label}>Loading profile…</Text>
-          )}
+          {/* ✅ Header row: Date (left) + Profile (right) */}
+          <View style={styles.headerRow}>
+            <DateText style={styles.label} />
+            {profile ? (
+              <Text style={styles.profileRight} numberOfLines={1}>
+                {profile.clinic} - {profile.name}
+              </Text>
+            ) : (
+              <Text style={styles.profileRight}>Loading profile…</Text>
+            )}
+          </View>
 
           {/* Cycle */}
-          <Text style={styles.value}>
-            Cycle Number: {cycleNumber}
-          </Text>
+          <Text style={styles.value}>Cycle Number: {cycleNumber}</Text>
+
+          {/* Start/End Time rows */}
+          <View style={styles.timeRowTwo}>
+            <View style={styles.timeGroup}>
+              <Text style={styles.timeLabel}>Start Time:</Text>
+              <Pressable style={styles.timeBtn} onPress={() => setActiveTimePicker('start')}>
+                <Text style={styles.timeBtnText}>{toHHmm(startTime)}</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.timeGroup}>
+              <Text style={styles.timeLabel}>End Time:</Text>
+              <Pressable style={styles.timeBtn} onPress={() => setActiveTimePicker('end')}>
+                <Text style={styles.timeBtnText}>{toHHmm(endTime)}</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Android picker (native modal) */}
+          {Platform.OS === 'android' && activeTimePicker !== null && (
+            <DateTimePicker
+              value={activeTimePicker === 'start' ? startTime : endTime}
+              mode="time"
+              is24Hour
+              display="default"
+              onChange={onTimeChange}
+            />
+          )}
+
+          {/* iOS picker (custom modal with Done) */}
+          {Platform.OS === 'ios' && (
+            <Modal visible={activeTimePicker !== null} transparent animationType="fade">
+              <View style={styles.pickerBackdrop}>
+                <View style={styles.pickerSheet}>
+                  <View style={styles.accessoryBar}>
+                    <Pressable style={styles.accessoryBtn} onPress={() => setActiveTimePicker(null)}>
+                      <Text style={styles.accessoryBtnText}>Done</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.pickerInner}>
+                    <DateTimePicker
+                      value={activeTimePicker === 'start' ? startTime : endTime}
+                      mode="time"
+                      is24Hour
+                      display="spinner"
+                      onChange={onTimeChange}
+                      style={styles.iosTimePicker}
+                    />
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          )}
 
           {/* Result selector with a vertical separator */}
           <View style={styles.resultRow}>
@@ -403,7 +467,7 @@ export default function HelixScreen() {
                     style={[
                       styles.segmentBtn,
                       withDivider && styles.segmentBtnDivider,
-                      selected && styles.segmentBtnSelected,
+                      selected && styles.segmentBtnSelected
                     ]}
                   >
                     <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
@@ -439,9 +503,7 @@ export default function HelixScreen() {
             disabled={!canUpload}
             style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
           >
-            <Text style={styles.uploadBtnText}>
-              Upload
-            </Text>
+            <Text style={styles.uploadBtnText}>Upload</Text>
           </Pressable>
 
           <View style={styles.lastRow}>
@@ -455,14 +517,14 @@ export default function HelixScreen() {
             )}
           </View>
         </View>
-      </View>      
+      </View>
 
       {/* Camera modal */}
       <Modal
         visible={isCameraOpen}
-        animationType="slide"        
+        animationType="slide"
         onRequestClose={() => {
-          if (isShutterBusy) return;    // ⬅️ ignore back while busy
+          if (isShutterBusy) return; // ⬅️ ignore back while busy
           setIsCameraOpen(false);
         }}
       >
@@ -472,7 +534,7 @@ export default function HelixScreen() {
             <CameraView
               ref={cameraRef}
               facing="back"
-              style={styles.camera}              
+              style={styles.camera}
               onLayout={(e) => {
                 const { width, height } = e.nativeEvent.layout; // ← measure camera view itself
                 setCamLayout({ width, height });
@@ -484,35 +546,43 @@ export default function HelixScreen() {
               <View pointerEvents="none" style={styles.overlayWrap}>
                 {/* Dim outside the crop rectangle */}
                 {/* Top */}
-                <View style={[
-                  styles.dim,
-                  { left: 0, top: 0, width: camLayout.width, height: cropBox.top }
-                ]} />
+                <View
+                  style={[
+                    styles.dim,
+                    { left: 0, top: 0, width: camLayout.width, height: cropBox.top }
+                  ]}
+                />
                 {/* Bottom */}
-                <View style={[
-                  styles.dim,
-                  {
-                    left: 0,
-                    top: cropBox.top + cropBox.h,
-                    width: camLayout.width,
-                    height: camLayout.height - (cropBox.top + cropBox.h)
-                  }
-                ]} />
+                <View
+                  style={[
+                    styles.dim,
+                    {
+                      left: 0,
+                      top: cropBox.top + cropBox.h,
+                      width: camLayout.width,
+                      height: camLayout.height - (cropBox.top + cropBox.h)
+                    }
+                  ]}
+                />
                 {/* Left */}
-                <View style={[
-                  styles.dim,
-                  { left: 0, top: cropBox.top, width: cropBox.left, height: cropBox.h }
-                ]} />
+                <View
+                  style={[
+                    styles.dim,
+                    { left: 0, top: cropBox.top, width: cropBox.left, height: cropBox.h }
+                  ]}
+                />
                 {/* Right */}
-                <View style={[
-                  styles.dim,
-                  {
-                    left: cropBox.left + cropBox.w,
-                    top: cropBox.top,
-                    width: camLayout.width - (cropBox.left + cropBox.w),
-                    height: cropBox.h
-                  }
-                ]} />
+                <View
+                  style={[
+                    styles.dim,
+                    {
+                      left: cropBox.left + cropBox.w,
+                      top: cropBox.top,
+                      width: camLayout.width - (cropBox.left + cropBox.w),
+                      height: cropBox.h
+                    }
+                  ]}
+                />
 
                 {/* The visible crop frame */}
                 <View
@@ -528,16 +598,24 @@ export default function HelixScreen() {
                 />
               </View>
             )}
-                        
+
             {isShutterBusy && (
-              <View style={{ position: 'absolute', bottom: 72, left: 0, right: 0, alignItems: 'center' }}>
+              <View
+                style={{
+                  position: 'absolute',
+                  bottom: 72,
+                  left: 0,
+                  right: 0,
+                  alignItems: 'center'
+                }}
+              >
                 <Text style={{ color: '#fff', opacity: 0.9 }}>
                   {isCropping ? 'Processing…' : 'Capturing…'}
                 </Text>
               </View>
             )}
 
-            {/* Shutter row */}            
+            {/* Shutter row */}
             <View style={styles.shutterRow}>
               <Pressable
                 style={[styles.cancelBtn, isShutterBusy && styles.btnDisabled]}
@@ -556,11 +634,7 @@ export default function HelixScreen() {
                 disabled={isShutterBusy}
                 accessibilityState={{ disabled: isShutterBusy }}
               >
-                {isShutterBusy ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.shutterText}>Capture</Text>
-                )}
+                {isShutterBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.shutterText}>Capture</Text>}
               </Pressable>
             </View>
           </View>
@@ -586,14 +660,66 @@ export default function HelixScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-
   // Page layout: content at top, footer at bottom
   container: { flex: 1, paddingHorizontal: 16 },
   content: { paddingTop: 16, gap: 16 }, // starts right below header
   footer: { marginTop: 'auto', paddingTop: 12, paddingBottom: 12, gap: 8 },
 
-  label: { fontSize: 18,  color: '#444' },
+  // Header row
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+
+  label: { fontSize: 18, color: '#444' },
+  profileRight: {
+    fontSize: 16,
+    color: '#444',
+    fontWeight: '600',
+    textAlign: 'right',
+    flexShrink: 1
+  },
+
   value: { fontSize: 18, fontWeight: 'bold' },
+
+  // Time rows
+  timeRowTwo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  // Each (label + button) group
+  timeGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  timeLabel: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '600',
+  },
+  timeBtn: {
+    minWidth: 88,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  timeBtnText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '700',
+  },
 
   // Accessory bar (iOS)
   accessoryBar: {
@@ -602,15 +728,43 @@ const styles = StyleSheet.create({
     borderTopColor: '#ccc',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    alignItems: 'flex-end',
+    alignItems: 'flex-end'
   },
   accessoryBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     backgroundColor: '#007AFF',
-    borderRadius: 6,
+    borderRadius: 6
   },
   accessoryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+
+  // iOS time picker modal visuals  
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',          // centers the sheet horizontally
+  },
+  pickerSheet: {
+    width: '100%',
+    maxWidth: 420,                 // important on iPad: prevents huge sheet
+    alignSelf: 'center',           // ensure it centers in the backdrop
+    backgroundColor: '#fff',
+    paddingTop: 8,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    overflow: 'hidden',
+  },
+  pickerInner: {
+    alignItems: 'center',          // centers the picker control itself
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  iosTimePicker: {    
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+  },
 
   // Result selector with separator
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -620,7 +774,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#ddd'
   },
   segmentBtn: { paddingVertical: 8, paddingHorizontal: 16, backgroundColor: '#fff' },
   segmentBtnSelected: { backgroundColor: '#007AFF22' },
@@ -637,16 +791,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     paddingVertical: 12,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: 'center'
   },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-
   secondaryBtn: {
     borderColor: '#007AFF',
     borderWidth: 1,
     paddingVertical: 10,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: 'center'
   },
   secondaryBtnText: { color: '#007AFF', fontSize: 16, fontWeight: '600' },
 
@@ -655,11 +808,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#34C759',
     paddingVertical: 12,
     borderRadius: 8,
-    alignItems: 'center',
+    alignItems: 'center'
   },
   uploadBtnDisabled: { backgroundColor: '#bbb' },
   uploadBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
   lastRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   lastLabel: { fontSize: 12, color: '#666' },
   lastValue: { fontSize: 12, color: '#333' },
@@ -676,19 +828,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderWidth: 2,
     borderColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 8
   },
 
   shutterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: 16
   },
   cancelBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#222' },
   cancelText: { color: '#fff', fontSize: 16 },
   shutterBtn: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 999, backgroundColor: '#007AFF' },
-  shutterText: { color: '#fff', fontSize: 16, fontWeight: '700' },  
+  shutterText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   btnDisabled: { opacity: 0.5 },
-  btnDisabledText: { color: '#9aa0a6' },
+  btnDisabledText: { color: '#9aa0a6' }
 });
+``

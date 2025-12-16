@@ -31,6 +31,7 @@ export default function AutoclaveScreen() {
     const fetchCycle = async () => {
       try {
         const cycleDocRef = doc(db, 'clinics', profile.clinic, 'autoclave' + equipmentId, 'cycle');
+        console.log('Fetching cycle doc from:', cycleDocRef.path);
         const snap = await getDoc(cycleDocRef);
         if (!snap.exists()) {
           setCycleError('Cycle doc not found');
@@ -39,6 +40,7 @@ export default function AutoclaveScreen() {
           const data = snap.data() as { updatedAt?: Timestamp; cycleCount?: number };
           const ts = data?.updatedAt;
           const updatedAt = ts ? ts.toDate() : null;
+          console.log('Cycle doc updatedAt:', updatedAt);
 
           // Get current server time
           const serverTime = await getServerTime();          
@@ -80,7 +82,8 @@ export default function AutoclaveScreen() {
     router.push({
       pathname,
       params: {
-        recordType: item + equipmentId,
+        recordType: item,
+        equipmentId,
         cycleString: String(cycleCount + 1)
       }
     });
