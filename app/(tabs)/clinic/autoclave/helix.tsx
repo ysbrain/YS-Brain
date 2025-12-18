@@ -21,14 +21,15 @@ import DateText from '@/src/components/DateText';
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
 import { getAuth } from 'firebase/auth';
 import {
-  addDoc,
   collection,
+  doc,
   limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  Timestamp
+  Timestamp,
+  writeBatch
 } from 'firebase/firestore';
 // ✅ Crop helper (Context API version)
 import { centerCropToAspect } from '@/src/lib/crop';
@@ -350,11 +351,23 @@ export default function HelixScreen() {
 
       const photoUrl = await getDownloadURL(task.snapshot.ref);
 
-      // 3) Create Firestore document ✅ now includes startTime & endTime
+      // 3) Create Firestore document      
       setUploadMsg('Saving record…');
 
       const entriesRef = collection(db, 'clinics', profile.clinic, recordId);
-      await addDoc(entriesRef, {
+      const newEntryRef = doc(entriesRef);
+      const cycleDocRef = doc(
+        db,
+        'clinics',
+        profile.clinic,
+        `autoclave${equipmentId}`,
+        'cycle'
+      );
+
+      // Batch both operations atomically
+      const batch = writeBatch(db);
+
+      batch.set(newEntryRef, {
         result: result === 'PASS',
         username: profile?.name ?? null,
         userID: user.uid,
@@ -363,8 +376,20 @@ export default function HelixScreen() {
         photoUrl,
         startTime: toHHmm(startTime),
         endTime: toHHmm(endTime),
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
       });
+
+      batch.set(
+        cycleDocRef,
+        {
+          cycleCount: cycleNumber,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true } // safe even if doc doesn't exist yet
+      );
+
+      // Commit both writes together
+      await batch.commit();
 
       // 4) Success: show completed state
       setUploadMode('done');

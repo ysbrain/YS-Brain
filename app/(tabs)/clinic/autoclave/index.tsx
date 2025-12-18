@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { db } from '@/src/lib/firebase';
 import { getServerTime } from '@/src/lib/serverTime';
 import { isSameHKDay } from '@/src/lib/timezone';
-import { doc, getDoc, Timestamp } from 'firebase/firestore';
+import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 
 type AutoclaveChild = 'helix' | 'spore';
 
@@ -26,50 +26,66 @@ export default function AutoclaveScreen() {
   const [cycleCount, setCycleCount] = useState<number | null>(null);
   const [loadingCycle, setLoadingCycle] = useState<boolean>(true);
   const [cycleError, setCycleError] = useState<string | null>(null);
-
+  
   useEffect(() => {
-    const fetchCycle = async () => {
-      try {
-        const cycleDocRef = doc(db, 'clinics', profile.clinic, 'autoclave' + equipmentId, 'cycle');
-        console.log('Fetching cycle doc from:', cycleDocRef.path);
-        const snap = await getDoc(cycleDocRef);
-        if (!snap.exists()) {
-          setCycleError('Cycle doc not found');
-          setCycleCount(null);
-        } else {
+    // Guard: profile/equipmentId might not be ready immediately
+    if (!profile?.clinic || !equipmentId) return;
+
+    setLoadingCycle(true);
+    setCycleError(null);
+    const cycleDocRef = doc(
+      db,
+      'clinics',
+      profile.clinic,
+      `autoclave${equipmentId}`,
+      'cycle'
+    );
+
+    console.log('Subscribing to cycle doc:', cycleDocRef.path);
+
+    const unsubscribe = onSnapshot(
+      cycleDocRef,
+      async (snap) => {
+        try {
+          if (!snap.exists()) {
+            setCycleError('Cycle doc not found');
+            setCycleCount(null);
+            return;
+          }
+
           const data = snap.data() as { updatedAt?: Timestamp; cycleCount?: number };
           const ts = data?.updatedAt;
           const updatedAt = ts ? ts.toDate() : null;
-          console.log('Cycle doc updatedAt:', updatedAt);
 
-          // Get current server time
-          const serverTime = await getServerTime();          
-          console.log('Server time:', serverTime);
+          const serverTime = await getServerTime();
 
-          //const data = snap.data() as { cycleCount?: number };
           if (typeof data.cycleCount === 'number') {
             if (updatedAt && isSameHKDay(updatedAt, serverTime)) {
-              // newest doc is "today" (Hong Kong calendar day)
               setCycleCount(data.cycleCount);
             } else {
-              // newest doc is NOT today
               setCycleCount(0);
-            }           
+            }
           } else {
             setCycleError('cycleCount field missing or not a number');
             setCycleCount(null);
           }
+        } catch (err: any) {
+          setCycleError(err?.message ?? 'Error processing cycle snapshot');
+          setCycleCount(0);
+        } finally {
+          setLoadingCycle(false);
         }
-      } catch (err: any) {
+      },
+      (err) => {
+        console.warn('Cycle snapshot error:', err);
         setCycleError(err?.message ?? 'Error loading cycle');
         setCycleCount(0);
-      } finally {
         setLoadingCycle(false);
       }
-    };
+    );
 
-    fetchCycle();
-  }, []);
+    return () => unsubscribe();
+  }, [profile?.clinic, equipmentId]);
 
   const handlePress = (item: AutoclaveChild): void => {
     console.log('Pressed:', item);
