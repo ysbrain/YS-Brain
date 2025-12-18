@@ -41,6 +41,7 @@ import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebas
 // ✅ Time picker
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
+type IndicatorOption = '134°C - 4min' | '121°C - 20min';
 type ResultOption = 'PASS' | 'FAIL' | null;
 
 // For "Last uploaded time" display
@@ -93,8 +94,10 @@ export default function HelixScreen() {
   const { recordType, equipmentId, cycleString } = useLocalSearchParams<{ recordType: string; equipmentId: string; cycleString: string }>();
   const recordId = `${recordType}${equipmentId}`;
   const cycleNumber = parseInt(cycleString, 10) || 0;
-
-  const [result, setResult] = useState<ResultOption>(null);
+  
+  const [indicator, setIndicator] = useState<IndicatorOption>('134°C - 4min');
+  const [resultInt, setResultInt] = useState<ResultOption>(null);
+  const [resultExt, setResultExt] = useState<ResultOption>(null);
   
   const [startTime, setStartTime] = useState<Date>(() => {
     const d = new Date();
@@ -138,8 +141,8 @@ export default function HelixScreen() {
   const [lastUploadedAt, setLastUploadedAt] = useState<Date | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
-  // Footer enablement: require result + photo + valid cycle
-  const canUpload = Boolean(result && photoUri && cycleNumber > 0);
+  // Footer enablement: require results + photo + valid cycle
+  const canUpload = Boolean(indicator && resultInt && resultExt && photoUri && cycleNumber > 0);
 
   // Upload overlay
   const [isUploading, setIsUploading] = useState(false);
@@ -293,8 +296,9 @@ export default function HelixScreen() {
 
   const handleUpload = async () => {
     if (!canUpload) {
-      const reasons: string[] = [];
-      if (!result) reasons.push('Select PASS or FAIL.');
+      const reasons: string[] = [];      
+      if (!resultInt) reasons.push('Select Internal Result (PASS or FAIL).');
+      if (!resultExt) reasons.push('Select External Result (PASS or FAIL).');
       if (!photoUri) reasons.push('Take a photo.');
       Alert.alert('Upload disabled', reasons.join('\n'));
       return;
@@ -368,14 +372,16 @@ export default function HelixScreen() {
       const batch = writeBatch(db);
 
       batch.set(newEntryRef, {
-        result: result === 'PASS',
         username: profile?.name ?? null,
         userID: user.uid,
-        cycleNumber,
         clinic: profile?.clinic ?? null,
+        cycleNumber,
+        timeStarted: toHHmm(startTime),
+        timeEnded: toHHmm(endTime),
+        mechanicalIndicator: indicator,
+        resultInt,
+        resultExt,
         photoUrl,
-        startTime: toHHmm(startTime),
-        endTime: toHHmm(endTime),
         createdAt: serverTimestamp(),
       });
 
@@ -477,18 +483,69 @@ export default function HelixScreen() {
               </View>
             </Modal>
           )}
+          
+          {/* Mechanical Indicator selector */}          
+          <View style={styles.mechanicalBlock}>
+            <Text style={styles.mechanicalLabel}>Mechanical Indicator</Text>
+            <View style={styles.segmentColumn}>
+              {(['134°C - 4min', '121°C - 20min'] as const).map((opt, idx) => {
+                const selected = indicator === opt;
+                const withDivider = idx === 0; // divider between the two rows
+                return (
+                  <Pressable
+                    key={`mech-${opt}`}
+                    onPress={() => setIndicator(opt)}
+                    style={[
+                      styles.segmentBtnColumn,
+                      withDivider && styles.segmentBtnDividerHorizontal,
+                      selected && styles.segmentBtnSelected,
+                    ]}
+                  >
+                    <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
+                      {opt}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
 
           {/* Result selector with a vertical separator */}
           <View style={styles.resultRow}>
-            <Text style={styles.resultLabel}>Result:</Text>
+            <Text style={styles.resultLabel}>Internal Result:</Text>
             <View style={styles.segment}>
               {(['PASS', 'FAIL'] as const).map((opt, idx) => {
-                const selected = result === opt;
-                const withDivider = idx === 0; // add separator after first (between PASS and FAIL)
+                const selected = resultInt === opt;
+                const withDivider = idx === 0;
                 return (
                   <Pressable
-                    key={opt}
-                    onPress={() => setResult(opt)}
+                    key={`internal-${opt}`}
+                    onPress={() => setResultInt(opt)}
+                    style={[
+                      styles.segmentBtn,
+                      withDivider && styles.segmentBtnDivider,
+                      selected && styles.segmentBtnSelected
+                    ]}
+                  >
+                    <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
+                      {opt}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.resultRow}>
+            <Text style={styles.resultLabel}>External Result:</Text>
+            <View style={styles.segment}>
+              {(['PASS', 'FAIL'] as const).map((opt, idx) => {
+                const selected = resultExt === opt;
+                const withDivider = idx === 0;
+                return (
+                  <Pressable
+                    key={`external-${opt}`}
+                    onPress={() => setResultExt(opt)}
                     style={[
                       styles.segmentBtn,
                       withDivider && styles.segmentBtnDivider,
@@ -790,10 +847,46 @@ const styles = StyleSheet.create({
     maxWidth: 360,
     alignSelf: 'center',
   },
+  
+  // Mechanical Indicator vertical block
+  mechanicalBlock: {
+    gap: 8,
+  },
+  mechanicalLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111',
+  },
+  // Vertical segmented container
+  segmentColumn: {
+    flexDirection: 'column',
+    borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+  },
+  // Each row button (full width)
+  segmentBtnColumn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Horizontal divider between rows
+  segmentBtnDividerHorizontal: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ddd',
+  },
 
   // Result selector with separator
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  resultLabel: { fontSize: 18, fontWeight: 'bold' },
+  resultLabel: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    minWidth: 130,   // helps align both rows
+  },
   segment: {
     flexDirection: 'row',
     borderRadius: 8,
@@ -869,4 +962,3 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.5 },
   btnDisabledText: { color: '#9aa0a6' }
 });
-``
