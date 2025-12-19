@@ -5,6 +5,12 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, ListRenderItem, Pressable, StyleSheet, Text, View } from 'react-native';
 
+function equipmentSplit(equipment: string): string {
+  const equipSplit = equipment.split(' ');
+  if (equipSplit.length === 2) return equipSplit[1];
+  else return '';
+}
+
 export default function ClinicScreen() {
   const [equipment, setEquipment] = useState<string[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -39,7 +45,13 @@ export default function ClinicScreen() {
     console.log('Pressed:', item);
     if (item.includes('Autoclave')) {
       console.log('Navigating to Autoclave screen');
-      router.push({ pathname: '/clinic/autoclave', params: { equipment: item } });
+      router.push({ pathname: '/clinic/autoclave', params: { equipmentId: equipmentSplit(item) } });
+    } else if (item.includes('Temperature')) {
+      console.log('Navigating to Temperature screen');
+      router.push({ pathname: '/clinic/temperature', params: { equipmentId: equipmentSplit(item) } });
+    } else if (item.includes('Ultrasonic')) {
+      console.log('Navigating to Ultrasonic screen');
+      router.push('/clinic/ultrasonic');
     }
   };
 

@@ -1,14 +1,13 @@
 import UploadingOverlay from '@/src/components/UploadingOverlay';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -21,27 +20,22 @@ import DateText from '@/src/components/DateText';
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
 import { getAuth } from 'firebase/auth';
 import {
+  addDoc,
   collection,
-  doc,
   limit,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
-  Timestamp,
-  writeBatch
+  Timestamp
 } from 'firebase/firestore';
-// ✅ Crop helper (Context API version)
+// Crop helper (Context API version)
 import { centerCropToAspect } from '@/src/lib/crop';
 import { SaveFormat } from 'expo-image-manipulator';
 // 🔥 Storage
 import { storage } from '@/src/lib/storage'; // getStorage() exported here
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 
-// ✅ Time picker
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-
-type IndicatorOption = '134°C - 4min' | '121°C - 20min';
 type ResultOption = 'PASS' | 'FAIL' | null;
 
 // For "Last uploaded time" display
@@ -64,13 +58,6 @@ function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
   }
 }
 
-// ✅ Format time strictly as HH:mm (24-hour, locale-independent)
-function toHHmm(d: Date) {
-  const hh = `${d.getHours()}`.padStart(2, '0');
-  const mm = `${d.getMinutes()}`.padStart(2, '0');
-  return `${hh}:${mm}`;
-}
-
 // 🔎 small helpers
 const guessContentType = (uri: string) => {
   const ext = uri.split('.').pop()?.toLowerCase();
@@ -80,45 +67,18 @@ const guessContentType = (uri: string) => {
   return 'image/jpeg';
 };
 
-const buildStoragePath = (opts: { clinicId: string; folder: string; cycle: number | null }) => {
-  const { clinicId, folder, cycle } = opts;
+const buildStoragePath = (opts: { clinicId: string; folder: string }) => {
+  const { clinicId, folder } = opts;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  // e.g., clinics/clinic001/helix1/2025-10-21T06-45-12-123Z_c3.jpg
-  return `clinics/${clinicId}/${folder}/${ts}${cycle ? `_c${cycle}` : ''}.jpg`;
+  return `clinics/${clinicId}/${folder}/${ts}.jpg`;
 };
 
-export default function HelixScreen() {
+export default function UltrasonicScreen() {
   const router = useRouter();
   const profile = useProfile();
   const [permission, requestPermission] = useCameraPermissions();
-  const { recordType, equipmentId, cycleString } = useLocalSearchParams<{ recordType: string; equipmentId: string; cycleString: string }>();
-  const recordId = `${recordType}${equipmentId}`;
-  const cycleNumber = parseInt(cycleString, 10) || 0;
   
-  const [indicator, setIndicator] = useState<IndicatorOption>('134°C - 4min');
-  const [resultInt, setResultInt] = useState<ResultOption>(null);
-  const [resultExt, setResultExt] = useState<ResultOption>(null);
-  
-  const [startTime, setStartTime] = useState<Date>(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
-  const [endTime, setEndTime] = useState<Date>(() => new Date()); // default current time
-  const [activeTimePicker, setActiveTimePicker] = useState<null | 'start' | 'end'>(null);
-
-  const onTimeChange = (event: DateTimePickerEvent, selected?: Date) => {
-    // Android: closes automatically; iOS: keep open until Done
-    if (event.type === 'dismissed') {
-      setActiveTimePicker(null);
-      return;
-    }
-    if (selected) {
-      if (activeTimePicker === 'start') setStartTime(selected);
-      if (activeTimePicker === 'end') setEndTime(selected);
-    }
-    if (Platform.OS === 'android') setActiveTimePicker(null);
-  };
+  const [result, setResult] = useState<ResultOption>(null);
 
   // Photo state
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -141,8 +101,8 @@ export default function HelixScreen() {
   const [lastUploadedAt, setLastUploadedAt] = useState<Date | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
-  // Footer enablement: require results + photo + valid cycle
-  const canUpload = Boolean(indicator && resultInt && resultExt && photoUri && cycleNumber > 0);
+  // Upload: require results + photo
+  const canUpload = Boolean(result && photoUri);
 
   // Upload overlay
   const [isUploading, setIsUploading] = useState(false);
@@ -152,7 +112,7 @@ export default function HelixScreen() {
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
-    const col = collection(db, 'clinics', profile.clinic, recordId);
+    const col = collection(db, 'clinics', profile.clinic, 'ultrasonic');
     const q = query(col, orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(
       q,
@@ -297,8 +257,7 @@ export default function HelixScreen() {
   const handleUpload = async () => {
     if (!canUpload) {
       const reasons: string[] = [];      
-      if (!resultInt) reasons.push('Select Internal Result (PASS or FAIL).');
-      if (!resultExt) reasons.push('Select External Result (PASS or FAIL).');
+      if (!result) reasons.push('Select Result (PASS or FAIL).');
       if (!photoUri) reasons.push('Take a photo.');
       Alert.alert('Upload disabled', reasons.join('\n'));
       return;
@@ -332,8 +291,7 @@ export default function HelixScreen() {
 
       const storagePath = buildStoragePath({
         clinicId: profile.clinic,
-        folder: recordId,
-        cycle: cycleNumber
+        folder: 'ultrasonic'
       });
 
       const response = await fetch(croppedUri);
@@ -358,44 +316,15 @@ export default function HelixScreen() {
       // 3) Create Firestore document      
       setUploadMsg('Saving record…');
 
-      const entriesRef = collection(db, 'clinics', profile.clinic, recordId);
-      const newEntryRef = doc(entriesRef);
-      const cycleDocRef = doc(
-        db,
-        'clinics',
-        profile.clinic,
-        `autoclave${equipmentId}`,
-        'cycle'
-      );
-
-      // Batch both operations atomically
-      const batch = writeBatch(db);
-
-      batch.set(newEntryRef, {
+      const entriesRef = collection(db, 'clinics', profile.clinic, 'ultrasonic');
+      await addDoc(entriesRef, {
         username: profile?.name ?? null,
         userID: user.uid,
         clinic: profile?.clinic ?? null,
-        cycleNumber,
-        timeStarted: toHHmm(startTime),
-        timeEnded: toHHmm(endTime),
-        mechanicalIndicator: indicator,
-        resultInternal: resultInt === 'PASS',
-        resultExternal: resultExt === 'PASS',
+        result: result === 'PASS',
         photoUrl,
         createdAt: serverTimestamp(),
       });
-
-      batch.set(
-        cycleDocRef,
-        {
-          cycleCount: cycleNumber,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true } // safe even if doc doesn't exist yet
-      );
-
-      // Commit both writes together
-      await batch.commit();
 
       // 4) Success: show completed state
       setUploadMode('done');
@@ -406,6 +335,10 @@ export default function HelixScreen() {
       setUploadMsg(e?.message ?? 'Something went wrong. Please try again.');
       // Leave overlay up in "error" mode; user can tap OK to dismiss and retry
     }
+  };
+
+  const openLogs = () => {
+    router.push('/clinic/logs');
   };
 
   if (!profile) return <Text>No profile found.</Text>;
@@ -428,128 +361,21 @@ export default function HelixScreen() {
             )}
           </View>
 
-          {/* Cycle */}
-          <Text style={styles.value}>Cycle Number: {cycleNumber}</Text>
-
-          {/* Start/End Time rows */}
-          <View style={styles.timeRowTwo}>
-            <View style={styles.timeGroup}>
-              <Text style={styles.timeLabel}>Start Time:</Text>
-              <Pressable style={styles.timeBtn} onPress={() => setActiveTimePicker('start')}>
-                <Text style={styles.timeBtnText}>{toHHmm(startTime)}</Text>
-              </Pressable>
-            </View>
-
-            <View style={styles.timeGroup}>
-              <Text style={styles.timeLabel}>End Time:</Text>
-              <Pressable style={styles.timeBtn} onPress={() => setActiveTimePicker('end')}>
-                <Text style={styles.timeBtnText}>{toHHmm(endTime)}</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Android picker (native modal) */}
-          {Platform.OS === 'android' && activeTimePicker !== null && (
-            <DateTimePicker
-              value={activeTimePicker === 'start' ? startTime : endTime}
-              mode="time"
-              is24Hour
-              display="default"
-              onChange={onTimeChange}
-            />
-          )}
-
-          {/* iOS picker (custom modal with Done) */}
-          {Platform.OS === 'ios' && (
-            <Modal visible={activeTimePicker !== null} transparent animationType="fade">
-              <View style={styles.pickerBackdrop}>
-                <View style={styles.pickerSheet}>
-                  <View style={styles.accessoryBar}>
-                    <Pressable style={styles.accessoryBtn} onPress={() => setActiveTimePicker(null)}>
-                      <Text style={styles.accessoryBtnText}>Done</Text>
-                    </Pressable>
-                  </View>
-                  <View style={styles.pickerInner}>
-                    <DateTimePicker
-                      value={activeTimePicker === 'start' ? startTime : endTime}
-                      mode="time"
-                      is24Hour
-                      display="spinner"
-                      onChange={onTimeChange}
-                      style={styles.iosTimePicker}
-                    />
-                  </View>
-                </View>
-              </View>
-            </Modal>
-          )}
-          
-          {/* Mechanical Indicator selector */}          
-          <View style={styles.mechanicalBlock}>
-            <Text style={styles.mechanicalLabel}>Mechanical Indicator</Text>
-            <View style={styles.segmentColumn}>
-              {(['134°C - 4min', '121°C - 20min'] as const).map((opt, idx) => {
-                const selected = indicator === opt;
-                const withDivider = idx === 0; // divider between the two rows
-                return (
-                  <Pressable
-                    key={`mech-${opt}`}
-                    onPress={() => setIndicator(opt)}
-                    style={[
-                      styles.segmentBtnColumn,
-                      withDivider && styles.segmentBtnDividerHorizontal,
-                      selected && styles.segmentBtnSelected,
-                    ]}
-                  >
-                    <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
-                      {opt}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
           {/* Result selector with a vertical separator */}
           <View style={styles.resultRow}>
-            <Text style={styles.resultLabel}>Internal Result:</Text>
+            <Text style={styles.resultLabel}>Result:</Text>
             <View style={styles.segment}>
               {(['PASS', 'FAIL'] as const).map((opt, idx) => {
-                const selected = resultInt === opt;
-                const withDivider = idx === 0;
+                const selected = result === opt;
+                const withDivider = idx === 0; // add separator after first (between PASS and FAIL)
                 return (
                   <Pressable
-                    key={`internal-${opt}`}
-                    onPress={() => setResultInt(opt)}
+                    key={opt}
+                    onPress={() => setResult(opt)}
                     style={[
                       styles.segmentBtn,
                       withDivider && styles.segmentBtnDivider,
-                      selected && styles.segmentBtnSelected
-                    ]}
-                  >
-                    <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
-                      {opt}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-
-          <View style={styles.resultRow}>
-            <Text style={styles.resultLabel}>External Result:</Text>
-            <View style={styles.segment}>
-              {(['PASS', 'FAIL'] as const).map((opt, idx) => {
-                const selected = resultExt === opt;
-                const withDivider = idx === 0;
-                return (
-                  <Pressable
-                    key={`external-${opt}`}
-                    onPress={() => setResultExt(opt)}
-                    style={[
-                      styles.segmentBtn,
-                      withDivider && styles.segmentBtnDivider,
-                      selected && styles.segmentBtnSelected
+                      selected && styles.segmentBtnSelected,
                     ]}
                   >
                     <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
@@ -578,14 +404,18 @@ export default function HelixScreen() {
           </View>
         </View>
 
+        <Pressable
+          onPress={handleUpload}
+          disabled={!canUpload}
+          style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
+        >
+          <Text style={styles.uploadBtnText}>Upload</Text>
+        </Pressable>
+
         {/* Footer stays at bottom: Upload button + Last uploaded */}
         <View style={styles.footer}>
-          <Pressable
-            onPress={handleUpload}
-            disabled={!canUpload}
-            style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
-          >
-            <Text style={styles.uploadBtnText}>Upload</Text>
+          <Pressable style={styles.primaryBtn} onPress={openLogs}>
+            <Text style={styles.primaryBtnText}>Logs</Text>
           </Pressable>
 
           <View style={styles.lastRow}>
@@ -766,126 +596,11 @@ const styles = StyleSheet.create({
 
   value: { fontSize: 18, fontWeight: 'bold' },
 
-  // Time rows
-  timeRowTwo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-
-  // Each (label + button) group
-  timeGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  timeLabel: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '600',
-  },
-  timeBtn: {
-    minWidth: 88,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  timeBtnText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '700',
-  },
-
-  // Accessory bar (iOS)
-  accessoryBar: {
-    backgroundColor: '#F2F2F2',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ccc',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'flex-end'
-  },
-  accessoryBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#007AFF',
-    borderRadius: 6
-  },
-  accessoryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-
-  // iOS time picker modal visuals  
-  pickerBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',          // centers the sheet horizontally
-  },
-  pickerSheet: {
-    width: '100%',
-    maxWidth: 420,                 // important on iPad: prevents huge sheet
-    alignSelf: 'center',           // ensure it centers in the backdrop
-    backgroundColor: '#fff',
-    paddingTop: 8,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    overflow: 'hidden',
-  },
-  pickerInner: {
-    alignItems: 'center',          // centers the picker control itself
-    justifyContent: 'center',
-    paddingVertical: 6,
-  },
-  iosTimePicker: {    
-    width: '100%',
-    maxWidth: 360,
-    alignSelf: 'center',
-  },
-  
-  // Mechanical Indicator vertical block
-  mechanicalBlock: {
-    gap: 8,
-  },
-  mechanicalLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#111',
-  },
-  // Vertical segmented container
-  segmentColumn: {
-    flexDirection: 'column',
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  // Each row button (full width)
-  segmentBtnColumn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Horizontal divider between rows
-  segmentBtnDividerHorizontal: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
-  },
-
   // Result selector with separator
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   resultLabel: {
     fontSize: 16,
-    fontWeight: 'bold',
-    minWidth: 130,   // helps align both rows
+    fontWeight: 'bold'
   },
   segment: {
     flexDirection: 'row',
@@ -923,6 +638,7 @@ const styles = StyleSheet.create({
 
   // Footer controls
   uploadBtn: {
+    marginTop: 12,
     backgroundColor: '#34C759',
     paddingVertical: 12,
     borderRadius: 8,

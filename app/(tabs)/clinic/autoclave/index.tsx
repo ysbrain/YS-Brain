@@ -10,17 +10,10 @@ import { doc, onSnapshot, Timestamp } from 'firebase/firestore';
 
 type AutoclaveChild = 'helix' | 'spore';
 
-function equipmentSplit(equipment: string): string {
-  const equipSplit = equipment.split(' ');
-  if (equipSplit.length === 2) return equipSplit[1];
-  else return '';
-}
-
 export default function AutoclaveScreen() {
   const router = useRouter();
   const profile = useProfile();
-  const equipment = useLocalSearchParams<{ equipment: string }>().equipment;
-  const equipmentId = equipmentSplit(equipment);
+  const equipmentId = useLocalSearchParams<{ equipmentId: string }>().equipmentId;
   
   // ---- Cycle state
   const [cycleCount, setCycleCount] = useState<number | null>(null);

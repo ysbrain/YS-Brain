@@ -25,7 +25,9 @@ export default function ClinicLayout() {
           />
           <Stack.Screen name="autoclave/helix" options={{ title: 'Helix Test' }} />
           <Stack.Screen name="autoclave/spore" options={{ title: 'Spore Test' }} />
-          <Stack.Screen name="sterilizer" options={{ title: 'Sterilizer' }} />
+          <Stack.Screen name="temperature" options={{ title: 'Temperature' }} />
+          <Stack.Screen name="ultrasonic" options={{ title: 'Ultrasonic' }} />
+          <Stack.Screen name="logs" options={{ title: 'Logs' }} />
         </Stack>
       </ProfileProvider>
     </SafeAreaProvider>
