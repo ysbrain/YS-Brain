@@ -52,6 +52,9 @@ export default function ClinicScreen() {
     } else if (item.includes('Ultrasonic')) {
       console.log('Navigating to Ultrasonic screen');
       router.push('/clinic/ultrasonic');
+    } else if (item.includes('AED')) {
+      console.log('Navigating to AED screen');
+      router.push('/clinic/aed');
     }
   };
 

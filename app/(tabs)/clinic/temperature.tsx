@@ -60,7 +60,8 @@ export default function TemperatureScreen() {
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
   // Upload: require results
-  const canUpload = temperatureValue !== null;
+  const [uploading, setUploading] = useState(false);
+  const canUpload = temperatureValue !== null && !uploading;
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
@@ -177,7 +178,7 @@ export default function TemperatureScreen() {
 
   const handleUpload = async () => {    
     if (temperatureValue === null) {
-      Alert.alert('Invalid temperature', 'Please enter a valid temperature (0.0–99.9).');
+      Alert.alert('Invalid temperature', 'Please enter a valid temperature.');
       return;
     }
 
@@ -185,22 +186,41 @@ export default function TemperatureScreen() {
     if (!user) {
       Alert.alert('Not signed in', 'Please sign in before uploading.');
       return;
-    }
+    }    
     
     try {
+      setUploading(true);
+
       const entriesRef = collection(db, 'clinics', profile.clinic, recordId);
+
       await addDoc(entriesRef, {
         username: profile?.name ?? null,
         userID: user.uid,
         clinic: profile?.clinic ?? null,
-        temperature: temperatureValue, // validated number
+        temperature: temperatureValue,
         createdAt: serverTimestamp(),
-      });     
+      });
+
+      // Completed message, then go back when dismissed
+      Alert.alert(
+        'Completed',
+        'Temperature uploaded successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.back(),
+          },
+        ],
+        {
+          cancelable: false, // prevents dismiss by tapping outside / back button
+        }
+      );
     } catch (e: any) {
       console.error(e);
+      Alert.alert('Upload failed', e?.message ?? 'Please try again.');
+    } finally {
+      setUploading(false);
     }
-
-    router.back();
   };
 
   const openLogs = () => {
@@ -249,14 +269,16 @@ export default function TemperatureScreen() {
           onPress={handleUpload}
           disabled={!canUpload}
           style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
-        >
-          <Text style={styles.uploadBtnText}>Upload</Text>
+        >          
+          <Text style={styles.uploadBtnText}>
+            {uploading ? 'Uploading…' : 'Upload'}
+          </Text>
         </Pressable>
       </View>
   
       {/* Footer stays at bottom: Upload button + Last uploaded */}
-      <View style={styles.footer}>
-        <Pressable style={styles.primaryBtn} onPress={openLogs}>
+      <View style={styles.footer}>        
+        <Pressable style={styles.primaryBtn} onPress={openLogs} disabled={uploading}>
           <Text style={styles.primaryBtnText}>Logs</Text>
         </Pressable>
   
