@@ -402,15 +402,15 @@ export default function UltrasonicScreen() {
               </>
             )}
           </View>
-        </View>
 
-        <Pressable
-          onPress={handleUpload}
-          disabled={!canUpload}
-          style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
-        >
-          <Text style={styles.uploadBtnText}>Upload</Text>
-        </Pressable>
+          <Pressable
+            onPress={handleUpload}
+            disabled={!canUpload}
+            style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
+          >
+            < Text style={styles.uploadBtnText}>Upload</Text>
+          </Pressable>
+        </View>
 
         {/* Footer stays at bottom: Upload button + Last uploaded */}
         <View style={styles.footer}>
@@ -593,8 +593,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     flexShrink: 1
   },
-
-  value: { fontSize: 18, fontWeight: 'bold' },
 
   // Result selector with separator
   resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },

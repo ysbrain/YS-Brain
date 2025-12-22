@@ -6,6 +6,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View
 } from 'react-native';
 // Reusable Date component (format: "21 Oct 2025")
@@ -49,14 +50,17 @@ export default function TemperatureScreen() {
   const profile = useProfile();
   const equipmentId = useLocalSearchParams<{ equipmentId: string }>().equipmentId;
   const recordId = `temperature${equipmentId}`;
-  const [cycleNumber, setCycleNumber] = useState<number>(0);
+  
+  const [temperatureText, setTemperatureText] = useState<string>('');
+  const [temperatureValue, setTemperatureValue] = useState<number | null>(null);
+  const [temperatureError, setTemperatureError] = useState<string | null>(null);
 
   // ⏱️ Last uploaded time — now driven by the newest doc in the collection
   const [lastUploadedAt, setLastUploadedAt] = useState<Date | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
   // Upload: require results
-  const canUpload = Boolean(cycleNumber > 0);
+  const canUpload = temperatureValue !== null;
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
@@ -80,11 +84,100 @@ export default function TemperatureScreen() {
       }
     );
     return unsubscribe;
-  }, []);
+  }, []);    
+  
+  const sanitizeForTyping = (raw: string) => {
+    // Normalize comma to dot, remove spaces
+    let s = raw.replace(/\s+/g, '').replace(',', '.');
 
-  const handleUpload = async () => {
-    if (!canUpload) {
-      Alert.alert('Upload disabled');
+    // Keep only digits and dot
+    s = s.replace(/[^0-9.]/g, '');
+
+    // Keep only the first dot
+    const firstDot = s.indexOf('.');
+    if (firstDot !== -1) {
+      s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
+    }
+
+    // Split parts (do NOT remove leading zeros here)
+    const [intRaw = '', decRaw = ''] = s.split('.');
+
+    // Limit to "99.9" shape while typing:
+    // - integer: up to 2 digits
+    // - decimal: up to 1 digit
+    const intPart = intRaw.slice(0, 2);
+    const hasDot = s.includes('.');
+    const decPart = decRaw.slice(0, 1);
+
+    // Rebuild
+    const text = hasDot ? `${intPart}.${decPart}` : intPart;
+
+    // Compute a value only when it's not an incomplete decimal like "12."
+    // (i.e., if it ends with '.' and no decimal digit yet => value null)
+    const incompleteDecimal = hasDot && decPart.length === 0 && raw.includes('.');
+    if (text === '' || text === '.' || incompleteDecimal) {
+      return { text: text === '.' ? '0.' : text, value: null, error: null };
+    }
+
+    const num = Number.parseFloat(text);
+    if (Number.isNaN(num)) return { text, value: null, error: null };
+
+      // Validate range while typing (optional but recommended)
+    if (num < 0 || num > 99.9) {
+      return { text, value: null, error: 'Enter 0.0 to 99.9' };
+    }
+
+    return { text, value: num, error: null };
+  };  
+  
+  const onChangeTemperature = (text: string) => {
+    const { text: cleaned, value, error } = sanitizeForTyping(text);
+    setTemperatureText(cleaned);
+    setTemperatureValue(value);
+    setTemperatureError(error);
+  };
+  
+  const normalizeTemperatureOnBlur = () => {
+    const raw = temperatureText.trim().replace(',', '.');
+
+    // If empty, do nothing
+    if (!raw) {
+      setTemperatureValue(null);
+      setTemperatureError(null);
+      return;
+    }
+
+    // Handle cases like "0." or "12." -> treat as "0.0" / "12.0"
+    const candidate = raw.endsWith('.') ? `${raw}0` : raw;
+
+    const num = Number.parseFloat(candidate);
+
+    if (Number.isNaN(num)) {
+      setTemperatureValue(null);
+      setTemperatureError('Enter 0.0 to 99.9');
+      return;
+    }
+
+    if (num < 0 || num > 99.9) {
+      setTemperatureValue(null);
+      setTemperatureError('Enter 0.0 to 99.9');
+      return;
+    }
+
+    // ✅ This enforces 1 decimal place AND removes leading zeros
+    // "09.5" -> 9.5 -> "9.5"
+    // "00.0" -> 0 -> "0.0"
+    // "36"   -> 36 -> "36.0"
+    const formatted = num.toFixed(1);
+
+    setTemperatureText(formatted);
+    setTemperatureValue(num);
+    setTemperatureError(null);
+  };
+
+  const handleUpload = async () => {    
+    if (temperatureValue === null) {
+      Alert.alert('Invalid temperature', 'Please enter a valid temperature (0.0–99.9).');
       return;
     }
 
@@ -93,20 +186,21 @@ export default function TemperatureScreen() {
       Alert.alert('Not signed in', 'Please sign in before uploading.');
       return;
     }
-
-    try {      
-      // Create Firestore document      
-      const entriesRef = collection(db, 'clinics', profile.clinic, 'ultrasonic');
+    
+    try {
+      const entriesRef = collection(db, 'clinics', profile.clinic, recordId);
       await addDoc(entriesRef, {
         username: profile?.name ?? null,
         userID: user.uid,
         clinic: profile?.clinic ?? null,
-        temperature: cycleNumber,
+        temperature: temperatureValue, // validated number
         createdAt: serverTimestamp(),
-      });       
+      });     
     } catch (e: any) {
       console.error(e);
     }
+
+    router.back();
   };
 
   const openLogs = () => {
@@ -116,61 +210,77 @@ export default function TemperatureScreen() {
   if (!profile) return <Text>No profile found.</Text>;
 
   return (
-    <View>
-      {/* Content area: sticks to top below header */}
-      <View style={styles.container}>
-        <View style={styles.content}>
+    /* Content area: sticks to top below header */
+    <View style={styles.container}>
+      <View style={styles.content}>  
+        {/* ✅ Header row: Date (left) + Profile (right) */}
+        <View style={styles.headerRow}>
+          <DateText style={styles.label} />
+          {profile ? (
+            <Text style={styles.profileRight} numberOfLines={1}>
+              {profile.clinic} - {profile.name}
+            </Text>
+          ) : (
+            <Text style={styles.profileRight}>Loading profile…</Text>
+          )}
+        </View>
+        
+        <View style={styles.inputCard}>
+          <Text style={styles.inputLabel}>Temperature (°C)</Text>
+          
+          <TextInput
+            value={temperatureText}
+            onChangeText={onChangeTemperature}
+            onBlur={normalizeTemperatureOnBlur}
+            placeholder="e.g. 36.5"
+            keyboardType="decimal-pad"
+            inputMode="decimal"
+            maxLength={4}              // "99.9"
+            returnKeyType="done"
+            style={[styles.input, temperatureError ? styles.inputError : null]}
+          />
+
+          {!!temperatureError && (
+            <Text style={styles.errorText}>{temperatureError}</Text>
+          )}
+        </View>
+
+        <Pressable
+          onPress={handleUpload}
+          disabled={!canUpload}
+          style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
+        >
+          <Text style={styles.uploadBtnText}>Upload</Text>
+        </Pressable>
+      </View>
   
-          {/* ✅ Header row: Date (left) + Profile (right) */}
-          <View style={styles.headerRow}>
-            <DateText style={styles.label} />
-            {profile ? (
-              <Text style={styles.profileRight} numberOfLines={1}>
-                {profile.clinic} - {profile.name}
-              </Text>
-            ) : (
-              <Text style={styles.profileRight}>Loading profile…</Text>
-            )}
-          </View>
+      {/* Footer stays at bottom: Upload button + Last uploaded */}
+      <View style={styles.footer}>
+        <Pressable style={styles.primaryBtn} onPress={openLogs}>
+          <Text style={styles.primaryBtnText}>Logs</Text>
+        </Pressable>
   
-          <Pressable
-            onPress={handleUpload}
-            disabled={!canUpload}
-            style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
-          >
-            <Text style={styles.uploadBtnText}>Upload</Text>
-          </Pressable>
-  
-          {/* Footer stays at bottom: Upload button + Last uploaded */}
-          <View style={styles.footer}>
-            <Pressable style={styles.primaryBtn} onPress={openLogs}>
-              <Text style={styles.primaryBtnText}>Logs</Text>
-            </Pressable>
-  
-            <View style={styles.lastRow}>
-              <Text style={styles.lastLabel}>Last uploaded:</Text>
-              {loadingStatus ? (
-                <Text style={styles.lastValue}>Loading…</Text>
-              ) : lastUploadedAt ? (
-                <Text style={styles.lastValue}>{formatDateTime(lastUploadedAt)}</Text>
-              ) : (
-                <Text style={styles.lastValue}>No uploads yet</Text>
-              )}
-            </View>
-          </View>
+        <View style={styles.lastRow}>
+          <Text style={styles.lastLabel}>Last uploaded:</Text>
+          {loadingStatus ? (
+            <Text style={styles.lastValue}>Loading…</Text>
+          ) : lastUploadedAt ? (
+            <Text style={styles.lastValue}>{formatDateTime(lastUploadedAt)}</Text>
+          ) : (
+            <Text style={styles.lastValue}>No uploads yet</Text>
+          )}
         </View>
       </View>
     </View>
   );
 }
-
+  
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
   // Page layout: content at top, footer at bottom
   container: { flex: 1, paddingHorizontal: 16 },
   content: { paddingTop: 16, gap: 16 }, // starts right below header
   footer: { marginTop: 'auto', paddingTop: 12, paddingBottom: 12, gap: 8 },
-
+  
   // Header row
   headerRow: {
     flexDirection: 'row',
@@ -178,156 +288,52 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12
   },
-
+  
   label: { fontSize: 18, color: '#444' },
-  profileRight: {
+    profileRight: {
     fontSize: 16,
     color: '#444',
     fontWeight: '600',
     textAlign: 'right',
     flexShrink: 1
   },
-
-  value: { fontSize: 18, fontWeight: 'bold' },
-
-  // Time rows
-  timeRowTwo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-
-  // Each (label + button) group
-  timeGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  timeLabel: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '600',
-  },
-  timeBtn: {
-    minWidth: 88,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  timeBtnText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontWeight: '700',
-  },
-
-  // Accessory bar (iOS)
-  accessoryBar: {
-    backgroundColor: '#F2F2F2',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#ccc',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'flex-end'
-  },
-  accessoryBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#007AFF',
-    borderRadius: 6
-  },
-  accessoryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-
-  // iOS time picker modal visuals  
-  pickerBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    justifyContent: 'flex-end',
-    alignItems: 'center',          // centers the sheet horizontally
-  },
-  pickerSheet: {
-    width: '100%',
-    maxWidth: 420,                 // important on iPad: prevents huge sheet
-    alignSelf: 'center',           // ensure it centers in the backdrop
-    backgroundColor: '#fff',
-    paddingTop: 8,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    overflow: 'hidden',
-  },
-  pickerInner: {
-    alignItems: 'center',          // centers the picker control itself
-    justifyContent: 'center',
-    paddingVertical: 6,
-  },
-  iosTimePicker: {    
-    width: '100%',
-    maxWidth: 360,
-    alignSelf: 'center',
-  },
   
-  // Mechanical Indicator vertical block
-  mechanicalBlock: {
-    gap: 8,
+  inputCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
   },
-  mechanicalLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
+
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
+  },
+
+  input: {
+    borderWidth: 1,
+    borderColor: '#C7C7CC',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 18,
     color: '#111',
   },
-  // Vertical segmented container
-  segmentColumn: {
-    flexDirection: 'column',
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  // Each row button (full width)
-  segmentBtnColumn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Horizontal divider between rows
-  segmentBtnDividerHorizontal: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#ddd',
+
+  inputError: {
+    borderColor: '#FF3B30',
   },
 
-  // Result selector with separator
-  resultRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  resultLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    minWidth: 130,   // helps align both rows
+  errorText: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#FF3B30',
+    fontWeight: '600',
   },
-  segment: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#ddd'
-  },
-  segmentBtn: { paddingVertical: 8, paddingHorizontal: 16, backgroundColor: '#fff' },
-  segmentBtnSelected: { backgroundColor: '#007AFF22' },
-  segmentBtnDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#ddd' },
-  segmentText: { fontSize: 16, color: '#333' },
-  segmentTextSelected: { fontWeight: 'bold', color: '#007AFF' },
-
-  // Photo
-  photoSection: { gap: 12 },
-  preview: { width: '100%', aspectRatio: 4 / 3, borderRadius: 8, backgroundColor: '#eee' },
-
+  
   // Buttons
   primaryBtn: {
     backgroundColor: '#007AFF',
@@ -336,17 +342,10 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  secondaryBtn: {
-    borderColor: '#007AFF',
-    borderWidth: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  secondaryBtnText: { color: '#007AFF', fontSize: 16, fontWeight: '600' },
-
+  
   // Footer controls
   uploadBtn: {
+    marginTop: 12,
     backgroundColor: '#34C759',
     paddingVertical: 12,
     borderRadius: 8,
@@ -356,33 +355,5 @@ const styles = StyleSheet.create({
   uploadBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   lastRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   lastLabel: { fontSize: 12, color: '#666' },
-  lastValue: { fontSize: 12, color: '#333' },
-
-  // Camera modal
-  modalSafe: { flex: 1, backgroundColor: '#000' },
-  cameraWrap: { flex: 1 },
-  camera: { flex: 1 },
-
-  // Overlay
-  overlayWrap: { position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 },
-  dim: { position: 'absolute', backgroundColor: 'rgba(0,0,0,0.35)' },
-  cropBox: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    borderRadius: 8
-  },
-
-  shutterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16
-  },
-  cancelBtn: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#222' },
-  cancelText: { color: '#fff', fontSize: 16 },
-  shutterBtn: { paddingVertical: 10, paddingHorizontal: 24, borderRadius: 999, backgroundColor: '#007AFF' },
-  shutterText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  btnDisabled: { opacity: 0.5 },
-  btnDisabledText: { color: '#9aa0a6' }
+  lastValue: { fontSize: 12, color: '#333' }
 });
