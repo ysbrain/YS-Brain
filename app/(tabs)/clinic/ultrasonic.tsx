@@ -8,6 +8,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -35,6 +36,8 @@ import { SaveFormat } from 'expo-image-manipulator';
 // 🔥 Storage
 import { storage } from '@/src/lib/storage'; // getStorage() exported here
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
+// Time picker
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 type ResultOption = 'PASS' | 'FAIL' | null;
 
@@ -58,6 +61,13 @@ function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
   }
 }
 
+// Format time strictly as HH:mm (24-hour, locale-independent)
+function toHHmm(d: Date) {
+  const hh = `${d.getHours()}`.padStart(2, '0');
+  const mm = `${d.getMinutes()}`.padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
 // 🔎 small helpers
 const guessContentType = (uri: string) => {
   const ext = uri.split('.').pop()?.toLowerCase();
@@ -79,6 +89,21 @@ export default function UltrasonicScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   
   const [result, setResult] = useState<ResultOption>(null);
+
+  const [replacementTime, setReplacementTime] = useState<Date>(() => new Date()); // default current time
+  const [timePicker, setTimePicker] = useState<'replacement' | null>(null);
+
+  const onTimeChange = (event: DateTimePickerEvent, selected?: Date) => {
+    // Android: closes automatically; iOS: keep open until Done
+    if (event.type === 'dismissed') {
+      setTimePicker(null);
+      return;
+    }
+    if (selected) {
+      if (timePicker === 'replacement') setReplacementTime(selected);
+    }
+    if (Platform.OS === 'android') setTimePicker(null);
+  };
 
   // Photo state
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -322,6 +347,7 @@ export default function UltrasonicScreen() {
         userID: user.uid,
         clinic: profile?.clinic ?? null,
         result: result === 'PASS',
+        replacementTime: toHHmm(replacementTime),
         photoUrl,
         createdAt: serverTimestamp(),
       });
@@ -386,6 +412,52 @@ export default function UltrasonicScreen() {
               })}
             </View>
           </View>
+
+          {/* Time row */}
+          <View style={styles.timeRow}>
+            <View style={styles.timeGroup}>
+              <Text style={styles.timeLabel}>更換藥水(每天):</Text>
+              <Pressable style={styles.timeBtn} onPress={() => setTimePicker('replacement')}>
+                <Text style={styles.timeBtnText}>{toHHmm(replacementTime)}</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Android picker (native modal) */}
+          {Platform.OS === 'android' && timePicker !== null && (
+            <DateTimePicker
+              value={replacementTime}
+              mode="time"
+              is24Hour
+              display="default"
+              onChange={onTimeChange}
+            />
+          )}
+
+          {/* iOS picker (custom modal with Done) */}
+          {Platform.OS === 'ios' && (
+            <Modal visible={timePicker !== null} transparent animationType="fade">
+              <View style={styles.pickerBackdrop}>
+                <View style={styles.pickerSheet}>
+                  <View style={styles.accessoryBar}>
+                    <Pressable style={styles.accessoryBtn} onPress={() => setTimePicker(null)}>
+                      <Text style={styles.accessoryBtnText}>Done</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.pickerInner}>
+                    <DateTimePicker
+                      value={replacementTime}
+                      mode="time"
+                      is24Hour
+                      display="spinner"
+                      onChange={onTimeChange}
+                      style={styles.iosTimePicker}
+                    />
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          )}
 
           {/* Photo capture */}
           <View style={styles.photoSection}>
@@ -612,6 +684,87 @@ const styles = StyleSheet.create({
   segmentBtnDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#ddd' },
   segmentText: { fontSize: 16, color: '#333' },
   segmentTextSelected: { fontWeight: 'bold', color: '#007AFF' },
+
+  // Time row
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  // Time picker
+  timeGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  timeLabel: {
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
+  timeBtn: {
+    minWidth: 88,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  timeBtnText: {
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '700',
+  },
+
+  // Accessory bar (iOS)
+  accessoryBar: {
+    backgroundColor: '#F2F2F2',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#ccc',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'flex-end'
+  },
+  accessoryBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#007AFF',
+    borderRadius: 6
+  },
+  accessoryBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+
+  // iOS time picker modal visuals  
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+    alignItems: 'center',          // centers the sheet horizontally
+  },
+  pickerSheet: {
+    width: '100%',
+    maxWidth: 420,                 // important on iPad: prevents huge sheet
+    alignSelf: 'center',           // ensure it centers in the backdrop
+    backgroundColor: '#fff',
+    paddingTop: 8,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    overflow: 'hidden',
+  },
+  pickerInner: {
+    alignItems: 'center',          // centers the picker control itself
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  iosTimePicker: {    
+    width: '100%',
+    maxWidth: 360,
+    alignSelf: 'center',
+  },
 
   // Photo
   photoSection: { gap: 12 },

@@ -31,14 +31,13 @@ import {
   Timestamp,
   writeBatch
 } from 'firebase/firestore';
-// ✅ Crop helper (Context API version)
+// Crop helper (Context API version)
 import { centerCropToAspect } from '@/src/lib/crop';
 import { SaveFormat } from 'expo-image-manipulator';
 // 🔥 Storage
 import { storage } from '@/src/lib/storage'; // getStorage() exported here
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
-
-// ✅ Time picker
+// Time picker
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 type IndicatorOption = '134°C - 4min' | '121°C - 20min';
@@ -64,7 +63,7 @@ function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
   }
 }
 
-// ✅ Format time strictly as HH:mm (24-hour, locale-independent)
+// Format time strictly as HH:mm (24-hour, locale-independent)
 function toHHmm(d: Date) {
   const hh = `${d.getHours()}`.padStart(2, '0');
   const mm = `${d.getMinutes()}`.padStart(2, '0');
@@ -855,7 +854,6 @@ const styles = StyleSheet.create({
   mechanicalLabel: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#111',
   },
   // Vertical segmented container
   segmentColumn: {
