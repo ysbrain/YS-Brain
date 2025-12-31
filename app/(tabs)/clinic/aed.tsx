@@ -56,7 +56,13 @@ export default function AedScreen() {
   const [lastUploadedAt, setLastUploadedAt] = useState<Date | null>(null);
   const [loadingStatus, setLoadingStatus] = useState<boolean>(true);
 
-  // Upload: require results + photo
+  const [equipmentChecks, setEquipmentChecks] = useState({
+    n95: false,
+    masks: false,
+    ppe: false,
+  });
+
+  // Upload: require results + equipment checks
   const canUpload = Boolean(result);
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
@@ -84,13 +90,44 @@ export default function AedScreen() {
   }, []);
 
   const handleUpload = async () => {
-    if (!canUpload) {
-      const reasons: string[] = [];      
-      if (!result) reasons.push('Select Result (PASS or FAIL).');
-      Alert.alert('Upload disabled', reasons.join('\n'));
+    if (!result) {
+      Alert.alert('Upload disabled', 'Select Result (PASS or FAIL).');
       return;
     }
 
+    // Check which equipment is NOT selected
+    const missingEquipment: string[] = [];
+    if (!equipmentChecks.n95) missingEquipment.push('N95');
+    if (!equipmentChecks.masks) missingEquipment.push('外科口罩');
+    if (!equipmentChecks.ppe) missingEquipment.push('PPE');
+
+    // If any equipment is missing, show alert
+    if (missingEquipment.length > 0) {
+      Alert.alert(
+        'Missing Equipment Verification',
+        `The following equipment is not selected. Continue?\n\n• ${missingEquipment.join('\n• ')}`,
+        [
+          {
+            text: 'Cancel',
+            onPress: () => {}, // Dismiss alert
+            style: 'cancel'
+          },
+          {
+            text: 'Continue',
+            onPress: async () => {
+              await performUpload();
+            },
+            style: 'default'
+          }
+        ]
+      );
+      return;
+    }
+
+    await performUpload();
+  };
+
+  const performUpload = async () => {
     const user = getAuth().currentUser;
     if (!user) {
       Alert.alert('Not signed in', 'Please sign in before uploading.');
@@ -104,10 +141,13 @@ export default function AedScreen() {
         userID: user.uid,
         clinic: profile?.clinic ?? null,
         result: result === 'PASS',
+        equipment: equipmentChecks,
+        allChecked: Object.values(equipmentChecks).every(v => v),
         createdAt: serverTimestamp(),
       });
     } catch (e: any) {
       console.error(e);
+      Alert.alert('Upload failed', 'An error occurred. Please try again.');
     }
 
     router.back();
@@ -156,6 +196,30 @@ export default function AedScreen() {
                   <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>
                     {opt}
                   </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Protective Equipment Inventory */}
+        <View style={styles.equipmentSection}>
+          <Text style={styles.equipmentLabel}>Protective Equipment Inventory:</Text>
+          <View style={styles.checkboxGroup}>
+            {(['n95', 'masks', 'ppe'] as const).map((item) => {
+              const isChecked = equipmentChecks[item];
+              const displayName = item === 'n95' ? 'N95' : item === 'masks' ? '外科口罩' : 'PPE';
+              
+              return (
+                <Pressable
+                  key={item}
+                  onPress={() => setEquipmentChecks(prev => ({ ...prev, [item]: !prev[item] }))}
+                  style={styles.checkboxContainer}
+                >
+                  <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
+                    {isChecked && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.checkboxLabel}>{displayName}</Text>
                 </Pressable>
               );
             })}
@@ -233,6 +297,53 @@ const styles = StyleSheet.create({
   segmentBtnDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#ddd' },
   segmentText: { fontSize: 16, color: '#333' },
   segmentTextSelected: { fontWeight: 'bold', color: '#007AFF' },
+
+  // Equipment inventory section
+  equipmentSection: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0'
+  },
+  equipmentLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12
+  },
+  checkboxGroup: {
+    gap: 10
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#007AFF',
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff'
+  },
+  checkboxChecked: {
+    backgroundColor: '#007AFF'
+  },
+  checkmark: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold'
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500'
+  },
 
   // Buttons
   primaryBtn: {
