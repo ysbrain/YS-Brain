@@ -8,12 +8,21 @@ const Ctx = createContext<AuthCtx>({ user: null, initializing: true });
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState(true);
-
+  
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setInitializing(false);
-    });
+    const unsub = onAuthStateChanged(
+      auth,
+      (u) => {
+        setUser(u);
+        setInitializing(false);
+      },
+      (err) => {
+        console.warn("Auth state error", err);
+        setUser(null);
+        setInitializing(false);
+      }
+    );
+
     return unsub;
   }, []);
 

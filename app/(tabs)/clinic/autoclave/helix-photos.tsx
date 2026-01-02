@@ -1,5 +1,6 @@
 import DateText from '@/src/components/DateText';
 import UploadingOverlay from '@/src/components/UploadingOverlay';
+import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { centerCropToAspect } from '@/src/lib/crop';
 import { db } from '@/src/lib/firebase';
@@ -8,7 +9,6 @@ import { storage } from '@/src/lib/storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { SaveFormat } from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { getAuth } from 'firebase/auth';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
 import { useMemo, useRef, useState } from 'react';
@@ -51,6 +51,7 @@ export default function HelixPhotosScreen() {
   const router = useRouter();
   const profile = useProfile();
   const [permission, requestPermission] = useCameraPermissions();
+  const { user } = useAuth();
 
   const {
     recordType,
@@ -224,11 +225,7 @@ export default function HelixPhotosScreen() {
       return;
     }
 
-    const user = getAuth().currentUser;
-    if (!user) {
-      Alert.alert('Not signed in', 'Please sign in before uploading.');
-      return;
-    }
+    if (!user) return;
 
     setIsUploading(true);
     setUploadMode('working');

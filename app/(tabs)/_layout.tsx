@@ -4,13 +4,12 @@ import { useEffect } from 'react';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-
 export default function TabsLayout() {
-  const { user, initializing } = useAuth();  
-
+  const { user, initializing } = useAuth();
   const router = useRouter();
   
   if (initializing) return null; // splash/loading
+  if (!user) return null; // prevent rendering tabs before redirect
 
   useEffect(() => {
     if (!user) {
