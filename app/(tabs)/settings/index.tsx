@@ -1,13 +1,10 @@
 import { auth } from '@/src/lib/auth';
-import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
 
 export default function SettingsScreen() {
-  const router = useRouter();
-
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.button} onPress={() => signOut(auth)}>

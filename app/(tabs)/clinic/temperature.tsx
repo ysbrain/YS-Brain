@@ -12,8 +12,8 @@ import {
 // Reusable Date component (format: "21 Oct 2025")
 import DateText from '@/src/components/DateText';
 // Firestore
+import { useAuth } from '@/src/contexts/AuthContext';
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
-import { getAuth } from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -49,6 +49,7 @@ export default function TemperatureScreen() {
   const router = useRouter();
   const profile = useProfile();
   const equipmentId = useLocalSearchParams<{ equipmentId: string }>().equipmentId;
+  const { user } = useAuth();
   const recordId = `temperature${equipmentId}`;
   
   const [temperatureText, setTemperatureText] = useState<string>('');
@@ -65,6 +66,8 @@ export default function TemperatureScreen() {
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
+    if (!profile?.clinic || !recordId) return;
+
     const col = collection(db, 'clinics', profile.clinic, recordId);
     const q = query(col, orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(
@@ -85,7 +88,7 @@ export default function TemperatureScreen() {
       }
     );
     return unsubscribe;
-  }, []);    
+  }, [profile?.clinic, recordId]);    
   
   const sanitizeForTyping = (raw: string) => {
     // Normalize comma to dot, remove spaces
@@ -182,11 +185,7 @@ export default function TemperatureScreen() {
       return;
     }
 
-    const user = getAuth().currentUser;
-    if (!user) {
-      Alert.alert('Not signed in', 'Please sign in before uploading.');
-      return;
-    }    
+    if (!user) return;
     
     try {
       setUploading(true);

@@ -11,8 +11,8 @@ import {
 // Reusable Date component (format: "21 Oct 2025")
 import DateText from '@/src/components/DateText';
 // Firestore
+import { useAuth } from '@/src/contexts/AuthContext';
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
-import { getAuth } from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -49,6 +49,7 @@ function formatDateTime(d: Date, timeZone = 'Asia/Hong_Kong') {
 export default function AedScreen() {
   const router = useRouter();
   const profile = useProfile();
+  const { user } = useAuth();
   
   const [result, setResult] = useState<ResultOption>(null);
 
@@ -60,6 +61,7 @@ export default function AedScreen() {
     n95: false,
     masks: false,
     ppe: false,
+    gloves: false
   });
 
   // Upload: require results + equipment checks
@@ -67,6 +69,8 @@ export default function AedScreen() {
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
+    if (!profile?.clinic) return;
+
     const col = collection(db, 'clinics', profile.clinic, 'aed');
     const q = query(col, orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(
@@ -87,7 +91,7 @@ export default function AedScreen() {
       }
     );
     return unsubscribe;
-  }, []);
+  }, [profile?.clinic]);
 
   const handleUpload = async () => {
     if (!result) {
@@ -99,7 +103,8 @@ export default function AedScreen() {
     const missingEquipment: string[] = [];
     if (!equipmentChecks.n95) missingEquipment.push('N95');
     if (!equipmentChecks.masks) missingEquipment.push('外科口罩');
-    if (!equipmentChecks.ppe) missingEquipment.push('PPE');
+    if (!equipmentChecks.ppe) missingEquipment.push('個人保護裝備PPE');
+    if (!equipmentChecks.gloves) missingEquipment.push('手套');
 
     // If any equipment is missing, show alert
     if (missingEquipment.length > 0) {
@@ -128,11 +133,7 @@ export default function AedScreen() {
   };
 
   const performUpload = async () => {
-    const user = getAuth().currentUser;
-    if (!user) {
-      Alert.alert('Not signed in', 'Please sign in before uploading.');
-      return;
-    }
+    if (!user) return;
 
     try {
       const entriesRef = collection(db, 'clinics', profile.clinic, 'aed');
@@ -206,9 +207,9 @@ export default function AedScreen() {
         <View style={styles.equipmentSection}>
           <Text style={styles.equipmentLabel}>Protective Equipment Inventory:</Text>
           <View style={styles.checkboxGroup}>
-            {(['n95', 'masks', 'ppe'] as const).map((item) => {
+            {(['n95', 'masks', 'ppe', 'gloves'] as const).map((item) => {
               const isChecked = equipmentChecks[item];
-              const displayName = item === 'n95' ? 'N95' : item === 'masks' ? '外科口罩' : 'PPE';
+              const displayName = item === 'n95' ? 'N95' : item === 'masks' ? '外科口罩' : item === 'ppe' ? '個人保護裝備PPE' : '手套';
               
               return (
                 <Pressable

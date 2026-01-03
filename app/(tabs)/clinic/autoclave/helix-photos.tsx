@@ -33,14 +33,6 @@ type IndicatorOption = '134°C - 4min' | '121°C - 20min';
 type Target = 'internal' | 'external';
 
 // ---- helpers (same as helix.tsx) ----
-const guessContentType = (uri: string) => {
-  const ext = uri.split('.').pop()?.toLowerCase();
-  if (ext === 'png') return 'image/png';
-  if (ext === 'webp') return 'image/webp';
-  if (ext === 'heic' || ext === 'heif') return 'image/heic';
-  return 'image/jpeg';
-};
-
 const buildStoragePath = (opts: { clinicId: string; folder: string; cycle: number | null }) => {
   const { clinicId, folder, cycle } = opts;
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -295,8 +287,6 @@ export default function HelixPhotosScreen() {
       setUploadMsg(e?.message ?? 'Something went wrong. Please try again.');
     }
   };
-
-  if (!profile) return <Text>No profile found.</Text>;
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>

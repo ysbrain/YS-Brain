@@ -18,8 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 // Reusable Date component (format: "21 Oct 2025")
 import DateText from '@/src/components/DateText';
 // Firestore
+import { useAuth } from '@/src/contexts/AuthContext';
 import { db } from '@/src/lib/firebase'; // your initialized Firestore
-import { getAuth } from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -87,6 +87,7 @@ export default function UltrasonicScreen() {
   const router = useRouter();
   const profile = useProfile();
   const [permission, requestPermission] = useCameraPermissions();
+  const { user } = useAuth();
   
   const [result, setResult] = useState<ResultOption>(null);
 
@@ -137,6 +138,8 @@ export default function UltrasonicScreen() {
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
   useEffect(() => {
+    if (!profile?.clinic) return;
+
     const col = collection(db, 'clinics', profile.clinic, 'ultrasonic');
     const q = query(col, orderBy('createdAt', 'desc'), limit(1));
     const unsubscribe = onSnapshot(
@@ -157,7 +160,7 @@ export default function UltrasonicScreen() {
       }
     );
     return unsubscribe;
-  }, []);
+  }, [profile?.clinic]);
 
   const openCamera = async () => {
     if (!permission?.granted) {
@@ -288,11 +291,7 @@ export default function UltrasonicScreen() {
       return;
     }
 
-    const user = getAuth().currentUser;
-    if (!user) {
-      Alert.alert('Not signed in', 'Please sign in before uploading.');
-      return;
-    }
+    if (!user) return;
 
     // ⛔ Block all interaction with the full-screen overlay
     setIsUploading(true);
