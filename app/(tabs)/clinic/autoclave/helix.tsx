@@ -144,13 +144,6 @@ export default function HelixScreen() {
     return unsubscribe;
   }, [profile?.clinic, recordId]);
 
-  const openLogs = () => {    
-    router.push({
-      pathname: "/clinic/logs",
-      params: { recordId },
-    });
-  };
-
   return (
     /* Content area: sticks to top below header */
     <View style={styles.container}>
@@ -300,29 +293,25 @@ export default function HelixScreen() {
             })}
           </View>
         </View>
-          
+      </View>
+
+      {/* Footer stays at bottom: Upload button + Last uploaded */}
+      <View style={styles.footer}>
         <View style={styles.photoSection}>
+          {!canProceed && (
+            <Text style={{ fontSize: 12, color: '#666', textAlign: 'center' }}>
+              Fill in results first to continue.
+            </Text>
+          )}
+
           <Pressable
             style={[styles.primaryBtn, !canProceed && { opacity: 0.6 }]}
             onPress={goToPhotoScreen}
             disabled={!canProceed}
           >
             <Text style={styles.primaryBtnText}>Take Photos</Text>
-          </Pressable>
-
-          {!canProceed && (
-            <Text style={{ fontSize: 12, color: '#666', textAlign: 'center' }}>
-              Fill in results first to continue.
-            </Text>
-          )}
+          </Pressable>          
         </View>
-      </View>
-
-      {/* Footer stays at bottom: Upload button + Last uploaded */}
-      <View style={styles.footer}>
-        <Pressable style={styles.primaryBtn} onPress={openLogs}>
-          <Text style={styles.primaryBtnText}>Logs</Text>
-        </Pressable>
 
         <View style={styles.lastRow}>
           <Text style={styles.lastLabel}>Last uploaded:</Text>

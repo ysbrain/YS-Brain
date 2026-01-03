@@ -362,15 +362,6 @@ export default function UltrasonicScreen() {
     }
   };
 
-  const openLogs = () => {    
-    router.push({
-      pathname: "/clinic/logs",
-      params: { recordId: 'ultrasonic' },
-    });
-  };
-
-  if (!profile) return <Text>No profile found.</Text>;
-
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
       {/* Content area: sticks to top below header */}
@@ -475,21 +466,17 @@ export default function UltrasonicScreen() {
                 </Pressable>
               </>
             )}
-          </View>
+          </View>          
+        </View>
 
+        {/* Footer stays at bottom: Upload button + Last uploaded */}
+        <View style={styles.footer}>
           <Pressable
             onPress={handleUpload}
             disabled={!canUpload}
             style={[styles.uploadBtn, !canUpload && styles.uploadBtnDisabled]}
           >
             < Text style={styles.uploadBtnText}>Upload</Text>
-          </Pressable>
-        </View>
-
-        {/* Footer stays at bottom: Upload button + Last uploaded */}
-        <View style={styles.footer}>
-          <Pressable style={styles.primaryBtn} onPress={openLogs}>
-            <Text style={styles.primaryBtnText}>Logs</Text>
           </Pressable>
 
           <View style={styles.lastRow}>

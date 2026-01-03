@@ -45,7 +45,7 @@ export default function ClinicScreen() {
     console.log('Pressed:', item);
     if (item.includes('Autoclave')) {
       console.log('Navigating to Autoclave screen');
-      router.push({ pathname: '/clinic/autoclave', params: { equipmentId: equipmentSplit(item) } });
+      router.push({ pathname: '/clinic/autoclave', params: { equipmentId: equipmentSplit(item), title: item } });
     } else if (item.includes('Temperature')) {
       console.log('Navigating to Temperature screen');
       router.push({ pathname: '/clinic/temperature', params: { equipmentId: equipmentSplit(item) } });

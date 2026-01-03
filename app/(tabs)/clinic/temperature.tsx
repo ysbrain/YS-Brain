@@ -222,13 +222,6 @@ export default function TemperatureScreen() {
     }
   };
 
-  const openLogs = () => {    
-    router.push({
-      pathname: "/clinic/logs",
-      params: { recordId },
-    });
-  };
-
   if (!profile) return <Text>No profile found.</Text>;
 
   return (
@@ -266,7 +259,10 @@ export default function TemperatureScreen() {
             <Text style={styles.errorText}>{temperatureError}</Text>
           )}
         </View>
-
+      </View>
+  
+      {/* Footer stays at bottom: Upload button + Last uploaded */}
+      <View style={styles.footer}>        
         <Pressable
           onPress={handleUpload}
           disabled={!canUpload}
@@ -275,13 +271,6 @@ export default function TemperatureScreen() {
           <Text style={styles.uploadBtnText}>
             {uploading ? 'Uploading…' : 'Upload'}
           </Text>
-        </Pressable>
-      </View>
-  
-      {/* Footer stays at bottom: Upload button + Last uploaded */}
-      <View style={styles.footer}>        
-        <Pressable style={styles.primaryBtn} onPress={openLogs} disabled={uploading}>
-          <Text style={styles.primaryBtnText}>Logs</Text>
         </Pressable>
   
         <View style={styles.lastRow}>

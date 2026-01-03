@@ -172,13 +172,6 @@ export default function AedScreen() {
     }
   };
 
-  const openLogs = () => {    
-    router.push({
-      pathname: "/clinic/logs",
-      params: { recordId: 'aed' },
-    });
-  };
-
   return (
     /* Content area: sticks to top below header */
     <View style={styles.container}>
@@ -245,7 +238,10 @@ export default function AedScreen() {
             })}
           </View>
         </View>
+      </View>
 
+      {/* Footer stays at bottom: Upload button + Last uploaded */}
+      <View style={styles.footer}>
         <Pressable
           onPress={handleUpload}
           disabled={!canUpload}
@@ -253,14 +249,7 @@ export default function AedScreen() {
         >
           < Text style={styles.uploadBtnText}>Upload</Text>
         </Pressable>
-      </View>
-
-      {/* Footer stays at bottom: Upload button + Last uploaded */}
-      <View style={styles.footer}>
-        <Pressable style={styles.primaryBtn} onPress={openLogs}>
-          <Text style={styles.primaryBtnText}>Logs</Text>
-        </Pressable>
-
+        
         <View style={styles.lastRow}>
           <Text style={styles.lastLabel}>Last uploaded:</Text>
           {loadingStatus ? (
@@ -364,15 +353,6 @@ const styles = StyleSheet.create({
     color: '#333',
     fontWeight: '500'
   },
-
-  // Buttons
-  primaryBtn: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 
   // Footer controls
   uploadBtn: {

@@ -181,13 +181,6 @@ export default function SporeScreen() {
     }
   };
 
-  const openLogs = () => {    
-    router.push({
-      pathname: "/clinic/logs",
-      params: { recordId },
-    });
-  };
-
   return (
     /* Content area: sticks to top below header */
     <View style={styles.container}>
@@ -285,8 +278,11 @@ export default function SporeScreen() {
               );
             })}
           </View>
-        </View>
+        </View>        
+      </View>
 
+      {/* Footer stays at bottom: Upload button + Last uploaded */}
+      <View style={styles.footer}>
         {/* Upload button */}
         <Pressable
           onPress={handleUpload}
@@ -297,14 +293,7 @@ export default function SporeScreen() {
             {uploading ? 'Uploading…' : 'Upload'}
           </Text>
         </Pressable>
-      </View>
-
-      {/* Footer stays at bottom: Upload button + Last uploaded */}
-      <View style={styles.footer}>
-        <Pressable style={styles.primaryBtn} onPress={openLogs}>
-          <Text style={styles.primaryBtnText}>Logs</Text>
-        </Pressable>
-
+        
         <View style={styles.lastRow}>
           <Text style={styles.lastLabel}>Last uploaded:</Text>
           {loadingStatus ? (
@@ -445,15 +434,6 @@ const styles = StyleSheet.create({
   segmentBtnDivider: { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: '#ddd' },
   segmentText: { fontSize: 16, color: '#333' },
   segmentTextSelected: { fontWeight: 'bold', color: '#007AFF' },
-
-  // Buttons
-  primaryBtn: {
-    backgroundColor: '#007AFF',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
-  },
-  primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 
   // Footer controls
   uploadBtn: {
