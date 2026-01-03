@@ -11,6 +11,7 @@ export const commonStackOptions: NativeStackNavigationOptions = {
   // Keep the back chevron visible but hide the text label for a cleaner look.
   // Use an empty back title and prefer the minimal display mode (icon only) on iOS/web.
   headerBackButtonDisplayMode: 'minimal',
+  contentStyle: { backgroundColor: '#f0fff4ff' },
 };
 
 

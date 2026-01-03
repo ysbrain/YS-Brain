@@ -212,8 +212,8 @@ export default function UltrasonicScreen() {
 
       const cropped = await centerCropToAspect(shot.uri, 4 / 3, {
         compress: 0.9,
-        format: SaveFormat.JPEG
-        // targetWidth: 1600, // optional downscale
+        format: SaveFormat.JPEG,
+        targetWidth: 800, // optional downscale
       });
 
       if (opCancelledRef.current) return; // timed out during crop -> ignore

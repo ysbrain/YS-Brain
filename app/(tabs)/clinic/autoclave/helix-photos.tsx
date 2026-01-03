@@ -11,7 +11,7 @@ import { SaveFormat } from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore';
 import { getDownloadURL, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -23,10 +23,10 @@ import {
   StyleSheet,
   Text,
   useWindowDimensions,
-  View,
+  View
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import ViewShot, { captureRef } from 'react-native-view-shot';
+import ViewShot from 'react-native-view-shot';
 
 type ResultOption = 'PASS' | 'FAIL';
 type IndicatorOption = '134°C - 4min' | '121°C - 20min';
@@ -79,6 +79,22 @@ export default function HelixPhotosScreen() {
   // ---- 2-photo state ----
   const [internalUri, setInternalUri] = useState<string | null>(null);
   const [externalUri, setExternalUri] = useState<string | null>(null);
+  
+  const [mergeIntLoaded, setMergeIntLoaded] = useState(false);
+  const [mergeExtLoaded, setMergeExtLoaded] = useState(false);
+
+  useEffect(() => {
+    setMergeIntLoaded(false);
+    setMergeExtLoaded(false);
+  }, [internalUri, externalUri]);  
+  
+  const TARGET_W_PX = 800;
+  const TARGET_H_PX = 1200;
+
+  const pr = PixelRatio.get();
+  const MERGE_W = TARGET_W_PX / pr; // dp
+  const MERGE_H = TARGET_H_PX / pr; // dp
+  const HALF_H = MERGE_H / 2;
 
   // ---- camera modal state ----
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -160,7 +176,7 @@ export default function HelixPhotosScreen() {
   };
 
   // ---- merge via ViewShot (hidden stacked view) ----
-  const viewShotRef = useRef<ViewShot>(null);
+  const viewShotRef = useRef<ViewShot | null>(null);
   const [intLoaded, setIntLoaded] = useState(false);
   const [extLoaded, setExtLoaded] = useState(false);
 
@@ -179,45 +195,16 @@ export default function HelixPhotosScreen() {
   const [uploadMode, setUploadMode] = useState<'working' | 'done' | 'error'>('working');
   const [uploadMsg, setUploadMsg] = useState('');
   const [uploadPct, setUploadPct] = useState(0);
-
-  const mergeImagesVertically = async (): Promise<string> => {
-    if (!internalUri || !externalUri) throw new Error('Missing photos');
-    if (!viewShotRef.current) throw new Error('Merge view not ready');
-
-    // Ensure <Image> nodes have loaded before capture (more reliable)
-    if (!intLoaded || !extLoaded) {
-      await new Promise<void>((resolve) => {
-        const t = setInterval(() => {
-          if (intLoaded && extLoaded) {
-            clearInterval(t);
-            resolve();
-          }
-        }, 50);
-      });
-    }
-
-    // Output target: two 4:3 photos stacked.
-    // Example: each 1600x1200; merged 1600x2400.
-    const targetWidthPx = 1600;
-    const targetHeightPx = 2400;
-    const pr = PixelRatio.get();
-    const width = targetWidthPx / pr;
-    const height = targetHeightPx / pr;
-
-    // allow one tick for layout stability
-    await new Promise((r) => setTimeout(r, 50));
-
-    const uri = await captureRef(viewShotRef, {
-      format: 'jpg',
-      quality: 0.9,
-      result: 'tmpfile',
-      width,
-      height,
+  
+  const uriToBlob = (uri: string): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.onload = () => resolve(xhr.response);
+      xhr.onerror = () => reject(new TypeError("Network request failed"));
+      xhr.responseType = "blob";
+      xhr.open("GET", uri, true);
+      xhr.send(null);
     });
-
-    if (!uri) throw new Error('Failed to merge images');
-    return uri;
-  };
 
   const handleUpload = async () => {
     if (!canUpload) {
@@ -233,8 +220,13 @@ export default function HelixPhotosScreen() {
     setUploadPct(0);
 
     try {
-      // 1) Merge (internal top, external bottom)
-      const mergedUri = await mergeImagesVertically();
+      // 1) Merge (internal top, external bottom)      
+      const vs = viewShotRef.current;
+      if (!vs || typeof (vs as any).capture !== "function") {
+        throw new Error("ViewShot capture() not available");
+      }
+
+      const mergedUri = await (vs as any).capture(); // no args
 
       // 2) Upload merged image to Storage (same pattern as before)
       setUploadMsg('Uploading photo…');
@@ -243,13 +235,14 @@ export default function HelixPhotosScreen() {
         folder: recordId,
         cycle: cycleNumber,
       });
-
-      const response = await fetch(mergedUri);
-      const blob = await response.blob();
-      const metadata = { contentType: guessContentType(mergedUri) };
-
+      
+      const blob = await uriToBlob(mergedUri);
+      if (!(blob as any).size) throw new Error("Blob size is 0 — local URI → blob failed.");
+      
       const storageReference = storageRef(storage, storagePath);
-      const task = uploadBytesResumable(storageReference, blob, metadata);
+      const task = uploadBytesResumable(storageReference, blob, {
+        contentType: "image/jpeg",
+      });
 
       await new Promise<void>((resolve, reject) => {
         task.on(
@@ -399,17 +392,42 @@ export default function HelixPhotosScreen() {
         </View>
       </View>
 
-      {/* Hidden merge renderer: internal (top) + external (bottom) */}
+      {/* Hidden merge renderer: internal (top) + external (bottom) */}      
       {internalUri && externalUri && (
         <ViewShot
           ref={viewShotRef}
-          style={styles.hiddenMerge}
-          options={{ format: 'jpg', quality: 0.9, result: 'tmpfile' }}
+          style={[
+            styles.hiddenMerge,
+            { width: MERGE_W, height: MERGE_H }
+          ]}
+          options={{
+            format: "jpg",
+            quality: 0.9,
+            result: "tmpfile",
+            width: MERGE_W,
+            height: MERGE_H,
+            useRenderInContext: true,
+          }}
         >
-          {/* collapsable={false} helps view-shot find the native view reliably */}
-          <View collapsable={false} style={styles.mergeCanvas}>
-            <Image source={{ uri: internalUri }} style={styles.mergeImg} resizeMode="cover" />
-            <Image source={{ uri: externalUri }} style={styles.mergeImg} resizeMode="cover" />
+          <View
+            collapsable={false}
+            style={[
+              styles.mergeCanvas,
+              { width: MERGE_W, height: MERGE_H }
+            ]}
+          >
+            <Image
+              source={{ uri: internalUri! }}
+              style={{ width: MERGE_W, height: HALF_H }}
+              resizeMode="cover"
+              onLoadEnd={() => setMergeIntLoaded(true)}
+            />
+            <Image
+              source={{ uri: externalUri! }}
+              style={{ width: MERGE_W, height: HALF_H }}
+              resizeMode="cover"
+              onLoadEnd={() => setMergeExtLoaded(true)}
+            />
           </View>
         </ViewShot>
       )}
@@ -529,6 +547,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingHorizontal: 16,
+    backgroundColor: '#f0fff4ff',
   },
 
   scrollContent: {
@@ -600,11 +619,18 @@ const styles = StyleSheet.create({
   uploadBtnDisabled: { backgroundColor: '#bbb' },
   uploadBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
-  // ---- hidden merge renderer ----
-  hiddenMerge: { position: 'absolute', left: -9999, top: -9999, opacity: 0 },
-  // base layout is 400 wide; capture() output is controlled by width/height passed to capture()
-  mergeCanvas: { width: 400, backgroundColor: '#000' },
-  mergeImg: { width: 400, height: 300 }, // 4:3 each; stacked => 600 tall
+  // ---- hidden merge renderer ----    
+  hiddenMerge: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    opacity: 1,                // IMPORTANT: keep at 1
+    pointerEvents: "none",
+    zIndex: -999,              // behind everything
+  },
+  mergeCanvas: {
+    backgroundColor: "#000",   // avoid weird transparent edges
+  },
 
   // ---- camera modal ----
   modalSafe: { flex: 1, backgroundColor: '#000' },
