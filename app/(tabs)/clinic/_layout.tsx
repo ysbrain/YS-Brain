@@ -29,7 +29,8 @@ export default function ClinicLayout() {
           <Stack.Screen name="temperature" options={{ title: 'Temperature' }} />
           <Stack.Screen name="ultrasonic" options={{ title: 'Ultrasonic' }} />
           <Stack.Screen name="aed" options={{ title: 'AED' }} />
-          <Stack.Screen name="logs" options={{ title: 'Logs' }} />
+          <Stack.Screen name="logs/index" options={{ title: 'Logs' }} />
+          <Stack.Screen name="logs/[docId]" options={{ title: "Log Details" }} />
         </Stack>
       </ProfileProvider>
     </SafeAreaProvider>

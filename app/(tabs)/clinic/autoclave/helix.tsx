@@ -144,8 +144,11 @@ export default function HelixScreen() {
     return unsubscribe;
   }, [profile?.clinic, recordId]);
 
-  const openLogs = () => {
-    router.push('/clinic/logs');
+  const openLogs = () => {    
+    router.push({
+      pathname: "/clinic/logs",
+      params: { recordId },
+    });
   };
 
   return (

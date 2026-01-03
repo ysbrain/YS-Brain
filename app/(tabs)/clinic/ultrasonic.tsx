@@ -362,8 +362,11 @@ export default function UltrasonicScreen() {
     }
   };
 
-  const openLogs = () => {
-    router.push('/clinic/logs');
+  const openLogs = () => {    
+    router.push({
+      pathname: "/clinic/logs",
+      params: { recordId: 'ultrasonic' },
+    });
   };
 
   if (!profile) return <Text>No profile found.</Text>;

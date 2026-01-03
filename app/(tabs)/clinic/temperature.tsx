@@ -222,8 +222,11 @@ export default function TemperatureScreen() {
     }
   };
 
-  const openLogs = () => {
-    router.push('/clinic/logs');
+  const openLogs = () => {    
+    router.push({
+      pathname: "/clinic/logs",
+      params: { recordId },
+    });
   };
 
   if (!profile) return <Text>No profile found.</Text>;

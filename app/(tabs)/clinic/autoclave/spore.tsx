@@ -181,8 +181,11 @@ export default function SporeScreen() {
     }
   };
 
-  const openLogs = () => {
-    router.push('/clinic/logs');
+  const openLogs = () => {    
+    router.push({
+      pathname: "/clinic/logs",
+      params: { recordId },
+    });
   };
 
   return (

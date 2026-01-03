@@ -64,7 +64,8 @@ export default function AedScreen() {
     gloves: false
   });
 
-  // Upload: require results + equipment checks
+  // Upload: require results
+  const [uploading, setUploading] = useState(false);
   const canUpload = Boolean(result);
 
   // 🔁 Subscribe to the newest entry (by createdAt DESC, LIMIT 1)
@@ -136,6 +137,8 @@ export default function AedScreen() {
     if (!user) return;
 
     try {
+      setUploading(true);
+
       const entriesRef = collection(db, 'clinics', profile.clinic, 'aed');
       await addDoc(entriesRef, {
         username: profile?.name ?? null,
@@ -146,19 +149,35 @@ export default function AedScreen() {
         allChecked: Object.values(equipmentChecks).every(v => v),
         createdAt: serverTimestamp(),
       });
+
+      // Completed message, then go back when dismissed
+      Alert.alert(
+        'Completed',
+        'AED result uploaded successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.back(),
+          },
+        ],
+        {
+          cancelable: false, // prevents dismiss by tapping outside / back button
+        }
+      );
     } catch (e: any) {
       console.error(e);
-      Alert.alert('Upload failed', 'An error occurred. Please try again.');
+      Alert.alert('Upload failed', e?.message ?? 'Please try again.');
+    } finally {
+      setUploading(false);
     }
-
-    router.back();
   };
 
-  const openLogs = () => {
-    router.push('/clinic/logs');
+  const openLogs = () => {    
+    router.push({
+      pathname: "/clinic/logs",
+      params: { recordId: 'aed' },
+    });
   };
-
-  if (!profile) return <Text>No profile found.</Text>;
 
   return (
     /* Content area: sticks to top below header */
