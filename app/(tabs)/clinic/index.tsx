@@ -1,6 +1,7 @@
 
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
+import { useRouter } from 'expo-router';
 import {
   collection,
   DocumentData,
@@ -26,18 +27,19 @@ type ApplianceItem = {
 };
 
 type Room = {
-  id: string; // Firestore doc id
+  id: string;
   roomIndex: number;
   roomName: string;
+  description: string;
   applianceList: ApplianceItem[];
 };
 
 function roomFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Room {
   const data = doc.data();
-
   const applianceListRaw = Array.isArray(data.applianceList) ? data.applianceList : [];
+
   const applianceList: ApplianceItem[] = applianceListRaw.map((a: any) => ({
-    id: String(a?.id ?? ''), // you said id is always present
+    id: String(a.id),
     name: String(a?.name ?? 'Unnamed appliance'),
     type: String(a?.type ?? ''),
   }));
@@ -46,11 +48,13 @@ function roomFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Room {
     id: doc.id,
     roomIndex: Number(data.roomIndex ?? 0),
     roomName: String(data.roomName ?? 'Unnamed room'),
-    applianceList, // preserves stored order
+    description: String(data.description ?? ''),
+    applianceList,
   };
 }
 
 export default function ClinicScreen() {
+  const router = useRouter();
   const profile = useProfile();
   const clinicId = profile?.clinic;
 
@@ -96,6 +100,17 @@ export default function ClinicScreen() {
     console.log('Add appliance pressed for room:', room.id);
   };
   
+  const goRoomDetail = (room: Room) => {
+    router.push({
+      pathname: `clinic/room/${room.id}`,
+      params: {
+        roomName: room.roomName,
+        description: room.description,
+        applianceList: JSON.stringify(room.applianceList), // preserve order & quick render
+      },
+    });
+  };
+  
   const renderRoom = ({ item }: { item: Room }) => {
     const appliances = item.applianceList ?? [];
     const applianceCount = appliances.length;
@@ -109,56 +124,77 @@ export default function ClinicScreen() {
     // append an additional "+ new appliance" chip.
     const showAddForOddUnder8 =
       applianceCount > 0 && applianceCount < 8 && applianceCount % 2 === 1;
-
+    
     return (
-      <View style={styles.roomCard}>
-        <Text style={styles.roomTitle}>{item.roomName}</Text>
+      <Pressable
+        onPress={() => goRoomDetail(item)}
+        style={({ pressed }) => [{ opacity: pressed ? 0.95 : 1 }]}
+      >
+        <View style={styles.roomCard}>
+          <Text style={styles.roomTitle}>{item.roomName}</Text>
 
-        <View style={styles.chipsWrap}>
-          {applianceCount > 0 ? (
-            <>
-              {visibleAppliances.map((a) => (
-                <View key={`${item.id}:${a.id}`} style={styles.applianceChip}>
-                  <Text style={styles.applianceName} numberOfLines={1}>
-                    {a.name}
-                  </Text>
-                  {!!a.type && (
-                    <Text style={styles.applianceType} numberOfLines={1}>
-                      {a.type}
+          <View style={styles.chipsWrap}>
+            {applianceCount > 0 ? (
+              <>
+                {visibleAppliances.map((a) => (
+                  <Pressable
+                    key={`${item.id}:${a.id}`}
+                    onPress={(e) => {
+                      // Important: do nothing but prevent parent Pressable from triggering
+                      e.stopPropagation?.();
+                    }}
+                    style={styles.applianceChip}
+                  >
+                    <Text style={styles.applianceName} numberOfLines={1}>
+                      {a.name}
                     </Text>
-                  )}
-                </View>
-              ))}
+                    {!!a.type && (
+                      <Text style={styles.applianceType} numberOfLines={1}>
+                        {a.type}
+                      </Text>
+                    )}
+                  </Pressable>
+                ))}
 
-              {showMoreChip && (
-                // display-only for now (you can make Pressable later)
-                <View style={[styles.applianceChip, styles.moreChip]}>
-                  <Text style={styles.moreChipText} numberOfLines={1}>
-                    +{applianceCount - 7} more
-                  </Text>
-                </View>
-              )}
+                {showMoreChip && (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      // Later you can navigate/expand
+                    }}
+                    style={[styles.applianceChip, styles.moreChip]}
+                  >
+                    <Text style={styles.moreChipText} numberOfLines={1}>
+                      +{applianceCount - 7} more
+                    </Text>
+                  </Pressable>
+                )}
 
-              {showAddForOddUnder8 && (
-                <Pressable
-                  onPress={() => onAddAppliance(item)}
-                  style={({ pressed }) => [styles.addChip, pressed && { opacity: 0.75 }]}
-                >
-                  <Text style={styles.addChipText}>+ new appliance</Text>
-                </Pressable>
-              )}
-            </>
-          ) : (
-            // applianceCount === 0: keep existing behavior
-            <Pressable
-              onPress={() => onAddAppliance(item)}
-              style={({ pressed }) => [styles.addChip, pressed && { opacity: 0.75 }]}
-            >
-              <Text style={styles.addChipText}>+ new appliance</Text>
-            </Pressable>
-          )}
+                {showAddForOddUnder8 && (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      // display-only for now; later call add flow
+                    }}
+                    style={styles.addChip}
+                  >
+                    <Text style={styles.addChipText}>+ new appliance</Text>
+                  </Pressable>
+                )}
+              </>
+            ) : (
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                }}
+                style={styles.addChip}
+              >
+                <Text style={styles.addChipText}>+ new appliance</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
-      </View>
+      </Pressable>
     );
   };
 
