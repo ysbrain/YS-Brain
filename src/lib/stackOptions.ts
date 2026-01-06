@@ -5,7 +5,7 @@ export const commonStackOptions: NativeStackNavigationOptions = {
   headerLargeTitle: false, // or true everywhere if you prefer large titles on iOS
   headerTitleAlign: 'left',
   headerTitleStyle: { fontSize: 36, fontWeight: 'bold' },
-  headerStyle: { backgroundColor: '#002E5D' },
+  headerStyle: { backgroundColor: '#102E5C' },
   headerTintColor: '#fff',
   headerShadowVisible: true,
   // Keep the back chevron visible but hide the text label for a cleaner look.

@@ -1,107 +1,196 @@
-import { db } from '@/src/lib/firebase';
-import { Clinic, clinicConverter } from '@/src/types/clinic';
-import { useRouter } from 'expo-router';
-import { doc, onSnapshot } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, ListRenderItem, Pressable, StyleSheet, Text, View } from 'react-native';
 
-function equipmentSplit(equipment: string): string {
-  const equipSplit = equipment.split(' ');
-  if (equipSplit.length === 2) return equipSplit[1];
-  else return '';
+import { useProfile } from '@/src/contexts/ProfileContext';
+import { db } from '@/src/lib/firebase';
+import {
+  collection,
+  DocumentData,
+  onSnapshot,
+  orderBy,
+  query,
+  QueryDocumentSnapshot,
+} from 'firebase/firestore';
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+
+type ApplianceItem = {
+  id: string;
+  name: string;
+  type: string;
+};
+
+type Room = {
+  id: string; // Firestore doc id
+  roomIndex: number;
+  roomName: string;
+  applianceList: ApplianceItem[];
+};
+
+function roomFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Room {
+  const data = doc.data();
+
+  const applianceListRaw = Array.isArray(data.applianceList) ? data.applianceList : [];
+  const applianceList: ApplianceItem[] = applianceListRaw.map((a: any) => ({
+    id: String(a?.id ?? ''), // you said id is always present
+    name: String(a?.name ?? 'Unnamed appliance'),
+    type: String(a?.type ?? ''),
+  }));
+
+  return {
+    id: doc.id,
+    roomIndex: Number(data.roomIndex ?? 0),
+    roomName: String(data.roomName ?? 'Unnamed room'),
+    applianceList, // preserves stored order
+  };
 }
 
 export default function ClinicScreen() {
-  const [equipment, setEquipment] = useState<string[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const profile = useProfile();
+  const clinicId = profile?.clinic;
+
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [loadingRooms, setLoadingRooms] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const router = useRouter();
-    
+  const roomsPathReady = useMemo(() => Boolean(clinicId), [clinicId]);
+
   useEffect(() => {
-    const ref = doc(db, 'clinics', 'clinic001').withConverter(clinicConverter);
+    if (!roomsPathReady) {
+      setRooms([]);
+      setLoadingRooms(false);
+      setError(null);
+      return;
+    }
+
+    setLoadingRooms(true);
+    setError(null);
+
+    // Rooms query: order by roomIndex asc
+    const roomsRef = collection(db, 'clinics', clinicId!, 'rooms');
+    const roomsQuery = query(roomsRef, orderBy('roomIndex', 'asc'));
+
     const unsubscribe = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists()) {
-          const clinic = snap.data() as Clinic;
-          setEquipment(clinic.equipment ?? []);
-        } else {
-          setEquipment([]);
-          setError('Clinic not found.');
-        }
-        setLoading(false);
+      roomsQuery,
+      (snapshot) => {
+        setRooms(snapshot.docs.map(roomFromDoc));
+        setLoadingRooms(false);
       },
       (err) => {
-        setError(err.message);
-        setLoading(false);
+        console.error('Rooms snapshot error:', err);
+        setError('Failed to load rooms.');
+        setLoadingRooms(false);
       }
     );
+
     return unsubscribe;
-  }, []);
+  }, [roomsPathReady, clinicId]);
+
+  const onAddAppliance = (room: Room) => {
+    // TODO: Implement later
+    console.log('Add appliance pressed for room:', room.id);
+  };
   
-  const handlePress = (item: string): void => {
-    // TODO: navigate or perform an action per equipment item
-    console.log('Pressed:', item);
-    if (item.includes('Autoclave')) {
-      console.log('Navigating to Autoclave screen');
-      router.push({ pathname: '/clinic/autoclave', params: { equipmentId: equipmentSplit(item), title: item } });
-    } else if (item.includes('Temperature')) {
-      console.log('Navigating to Temperature screen');
-      router.push({ pathname: '/clinic/temperature', params: { equipmentId: equipmentSplit(item) } });
-    } else if (item.includes('Ultrasonic')) {
-      console.log('Navigating to Ultrasonic screen');
-      router.push('/clinic/ultrasonic');
-    } else if (item.includes('AED')) {
-      console.log('Navigating to AED screen');
-      router.push('/clinic/aed');
-    }
+  const renderRoom = ({ item }: { item: Room }) => {
+    const appliances = item.applianceList ?? [];
+    const applianceCount = appliances.length;
+
+    // Rule: show up to 8 chips
+    const showMoreChip = applianceCount > 8;
+    const visibleAppliances = showMoreChip ? appliances.slice(0, 7) : appliances;
+
+    // Rule:
+    // If applianceCount is odd AND < 8 AND > 0 (i.e., 1,3,5,7),
+    // append an additional "+ new appliance" chip.
+    const showAddForOddUnder8 =
+      applianceCount > 0 && applianceCount < 8 && applianceCount % 2 === 1;
+
+    return (
+      <View style={styles.roomCard}>
+        <Text style={styles.roomTitle}>{item.roomName}</Text>
+
+        <View style={styles.chipsWrap}>
+          {applianceCount > 0 ? (
+            <>
+              {visibleAppliances.map((a) => (
+                <View key={`${item.id}:${a.id}`} style={styles.applianceChip}>
+                  <Text style={styles.applianceName} numberOfLines={1}>
+                    {a.name}
+                  </Text>
+                  {!!a.type && (
+                    <Text style={styles.applianceType} numberOfLines={1}>
+                      {a.type}
+                    </Text>
+                  )}
+                </View>
+              ))}
+
+              {showMoreChip && (
+                // display-only for now (you can make Pressable later)
+                <View style={[styles.applianceChip, styles.moreChip]}>
+                  <Text style={styles.moreChipText} numberOfLines={1}>
+                    +{applianceCount - 7} more
+                  </Text>
+                </View>
+              )}
+
+              {showAddForOddUnder8 && (
+                <Pressable
+                  onPress={() => onAddAppliance(item)}
+                  style={({ pressed }) => [styles.addChip, pressed && { opacity: 0.75 }]}
+                >
+                  <Text style={styles.addChipText}>+ new appliance</Text>
+                </Pressable>
+              )}
+            </>
+          ) : (
+            // applianceCount === 0: keep existing behavior
+            <Pressable
+              onPress={() => onAddAppliance(item)}
+              style={({ pressed }) => [styles.addChip, pressed && { opacity: 0.75 }]}
+            >
+              <Text style={styles.addChipText}>+ new appliance</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    );
   };
 
-  const renderItem: ListRenderItem<string> = ({ item }) => (
-    <Pressable
-      onPress={() => handlePress(item)}
-      style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
-      accessibilityRole="button"
-    >
-      <Text style={styles.buttonText}>{item}</Text>
-    </Pressable>
-  );
-
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.hint}>Loading clinic equipment…</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.error}>Error: {error}</Text>
-      </View>
-    );
-  }
-
-  if (!equipment.length) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.hint}>No equipment found.</Text>
-      </View>
-    );
-  }
-
-
   return (
-    <View style={styles.container}>      
-      <FlatList
-        data={equipment}
-        keyExtractor={(item, idx) => `${item}-${idx}`}
-        contentContainerStyle={styles.listContent}
-        renderItem={renderItem}
-      />
+    <View style={styles.container}>
+      {!roomsPathReady ? (
+        <View style={styles.center}>
+          <Text style={styles.hintText}>No clinic selected in profile.</Text>
+        </View>
+      ) : loadingRooms ? (
+        <View style={styles.center}>
+          <ActivityIndicator />
+          <Text style={styles.hintText}>Loading rooms…</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={rooms}
+          keyExtractor={(r) => r.id}
+          renderItem={renderRoom}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Text style={styles.hintText}>No rooms found.</Text>
+            </View>
+          }
+        />
+      )}
     </View>
   );
 }
@@ -109,38 +198,106 @@ export default function ClinicScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  listContent: {
+    paddingVertical: 8,
+    paddingBottom: 24,
+    gap: 12,
+  },
+  center: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 24,
   },
-  listContent: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  button: {
-    backgroundColor: '#3b82f6',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginVertical: 20,
-    width: 300,
+  hintText: {
+    marginTop: 8,
+    color: '#666',
+  },
+  errorText: {
+    color: '#B00020',
+    fontWeight: '600',
+  },
+
+  roomCard: {
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 22,
+    padding: 16,
+    backgroundColor: '#FFF',
+  },
+  roomTitle: {
+    fontSize: 16,
+    fontWeight: '700',    
+    marginBottom: 12,
+  },
+
+  /**
+   * ✅ Two-per-row centered grid:
+   * - flexWrap to wrap
+   * - justifyContent center to keep rows centered
+   * - each chip width ~48% so 2 chips fit with gap
+   */
+  chipsWrap: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    // iOS shadow (optional)
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    // Android elevation (optional)
-    elevation: 2,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 12,
   },
-  // Applied only while pressing (via style callback)
-  buttonPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.98 }],
+
+  /**
+   * ✅ Bigger chip for better fit & readability
+   * width: '48%' makes 2 chips per row (with gap)
+   */
+  applianceChip: {
+    width: '48%',
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFF',
+    minHeight: 64,
+    justifyContent: 'center',
   },
-  buttonText: {
-    fontSize: 24,
-    color: '#fff',
-    fontWeight: 'bold',
-  },  
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  hint: { marginTop: 8, color: '#666' },
-  error: { color: 'crimson' },
+  applianceName: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  applianceType: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#444',
+    fontWeight: '600',
+  },
+
+  // "+ more" chip styling
+  moreChip: {
+    backgroundColor: '#F3F3F3',
+    borderStyle: 'dashed',
+  },
+  moreChipText: {
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  // Add appliance button (when empty)
+  addChip: {
+    width: '48%',
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFF',
+    minHeight: 64,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addChipText: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
 });
