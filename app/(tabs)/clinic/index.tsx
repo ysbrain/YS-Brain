@@ -20,6 +20,9 @@ import {
   View,
 } from 'react-native';
 
+import { getApplianceIcon } from '@/src/lib/applianceIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 type ApplianceItem = {
   id: string;
   name: string;
@@ -136,18 +139,26 @@ export default function ClinicScreen() {
           <View style={styles.chipsWrap}>
             {applianceCount > 0 ? (
               <>
-                {visibleAppliances.map((a) => (
+                {visibleAppliances.map((a) => (                  
                   <Pressable
                     key={`${item.id}:${a.id}`}
                     onPress={(e) => {
-                      // Important: do nothing but prevent parent Pressable from triggering
-                      e.stopPropagation?.();
+                      e.stopPropagation?.(); // keep your "chip press doesn't open room" behavior
                     }}
                     style={styles.applianceChip}
                   >
-                    <Text style={styles.applianceName} numberOfLines={1}>
-                      {a.name}
-                    </Text>
+                    <View style={styles.chipTopRow}>
+                      <MaterialCommunityIcons
+                        name={getApplianceIcon(a.type).name}
+                        size={22}
+                        color={getApplianceIcon(a.type).color ?? '#111'}
+                        style={styles.chipIcon}
+                      />
+                      <Text style={styles.applianceName} numberOfLines={1}>
+                        {a.name}
+                      </Text>
+                    </View>
+
                     {!!a.type && (
                       <Text style={styles.applianceType} numberOfLines={1}>
                         {a.type}
@@ -163,10 +174,11 @@ export default function ClinicScreen() {
                       // Later you can navigate/expand
                     }}
                     style={[styles.applianceChip, styles.moreChip]}
-                  >
-                    <Text style={styles.moreChipText} numberOfLines={1}>
-                      +{applianceCount - 7} more
-                    </Text>
+                  >                    
+                    <View style={styles.chipTopRow}>
+                      <MaterialCommunityIcons name="dots-horizontal" size={22} color="#111" />
+                      <Text style={styles.moreChipText}>+{applianceCount - 7} more</Text>
+                    </View>
                   </Pressable>
                 )}
 
@@ -306,6 +318,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#444',
     fontWeight: '600',
+  },
+  
+  chipTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  chipIcon: {
+    marginTop: 1,
   },
 
   // "+ more" chip styling
