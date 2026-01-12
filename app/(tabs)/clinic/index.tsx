@@ -20,6 +20,7 @@ import {
   View,
 } from 'react-native';
 
+import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -66,6 +67,25 @@ export default function ClinicScreen() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Modal state
+  const [typeModalVisible, setTypeModalVisible] = useState(false);
+  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
+
+  const openTypeModalForRoom = (room: Room) => {
+    setActiveRoom(room);
+    setTypeModalVisible(true);
+  };
+
+  const closeTypeModal = () => {
+    setTypeModalVisible(false);
+    setActiveRoom(null);
+  };
+
+  const onSelectModule = (module: ModuleItem) => {
+    // display-only for now
+    console.log('Selected module:', module.id, module.moduleName, 'for room:', activeRoom?.id);
+  };
 
   const roomsPathReady = useMemo(() => Boolean(clinicId), [clinicId]);
 
@@ -116,6 +136,13 @@ export default function ClinicScreen() {
     });
   };
   
+  const NewApplianceChipContent = () => (
+    <View style={styles.addChipRow}>
+      <MaterialCommunityIcons name="plus-circle-outline" size={22} color="#111" />
+      <Text style={styles.addChipText}>New Appliance</Text>
+    </View>
+  );
+  
   const renderRoom = ({ item }: { item: Room }) => {
     const appliances = item.applianceList ?? [];
     const applianceCount = appliances.length;
@@ -126,7 +153,7 @@ export default function ClinicScreen() {
 
     // Rule:
     // If applianceCount is odd AND < 8 AND > 0 (i.e., 1,3,5,7),
-    // append an additional "+ new appliance" chip.
+    // append an additional "+ appliance" chip.
     const showAddForOddUnder8 =
       applianceCount > 0 && applianceCount < 8 && applianceCount % 2 === 1;
     
@@ -188,11 +215,11 @@ export default function ClinicScreen() {
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation?.();
-                      // display-only for now; later call add flow
+                      openTypeModalForRoom(item);
                     }}
                     style={styles.addChip}
                   >
-                    <Text style={styles.addChipText}>+ new appliance</Text>
+                    <NewApplianceChipContent />
                   </Pressable>
                 )}
               </>
@@ -200,10 +227,11 @@ export default function ClinicScreen() {
               <Pressable
                 onPress={(e) => {
                   e.stopPropagation?.();
+                  openTypeModalForRoom(item);
                 }}
                 style={styles.addChip}
               >
-                <Text style={styles.addChipText}>+ new appliance</Text>
+                <NewApplianceChipContent />
               </Pressable>
             )}
           </View>
@@ -241,6 +269,12 @@ export default function ClinicScreen() {
           }
         />
       )}
+      
+      <SelectApplianceTypeModal
+        visible={typeModalVisible}
+        onClose={closeTypeModal}
+        onSelect={onSelectModule}
+      />
     </View>
   );
 }
@@ -358,5 +392,11 @@ const styles = StyleSheet.create({
   addChipText: {
     fontSize: 15,
     fontWeight: '800',
+  },  
+  addChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
 });

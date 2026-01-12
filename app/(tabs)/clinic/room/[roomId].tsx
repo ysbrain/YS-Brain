@@ -7,6 +7,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
 
+import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
@@ -57,6 +58,14 @@ export default function RoomDetailScreen() {
 
   const [loading, setLoading] = useState(true);
   const [applianceMap, setApplianceMap] = useState<Record<string, ApplianceDoc>>({});
+  
+  // Modal state (add here)
+  const [typeModalVisible, setTypeModalVisible] = useState(false);
+
+  const onSelectModule = (module: ModuleItem) => {
+    // display-only for now
+    console.log('Selected module:', module.id, module.moduleName, 'for room:', roomId);
+  };
 
   useEffect(() => {
     if (!clinicId || !roomId) return;
@@ -116,14 +125,11 @@ export default function RoomDetailScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Appliances & Modules</Text>
 
-            {/* 3) Display-only for now */}
             <Pressable
-              onPress={() => {
-                // display-only for now
-              }}
+              onPress={() => setTypeModalVisible(true)}
               style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.8 }]}
             >
-              <Text style={styles.newButtonText}>+ New Appliance</Text>
+              <Text style={styles.newButtonText}>+ Appliance</Text>
             </Pressable>
           </View>
 
@@ -193,6 +199,13 @@ export default function RoomDetailScreen() {
           </View>
         </View>
       </ScrollView>
+      
+      {/* Modal */}
+      <SelectApplianceTypeModal
+        visible={typeModalVisible}
+        onClose={() => setTypeModalVisible(false)}
+        onSelect={onSelectModule}
+      />
     </>
   );
 }
