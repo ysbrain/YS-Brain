@@ -7,11 +7,14 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
 
+import { getApplianceIcon } from '@/src/utils/applianceIcons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 type ApplianceListItem = {
   id: string;
   name: string;
-  type: string;
+  typeKey: string;
+  typeLabel: string;
 };
 
 type ApplianceDoc = {
@@ -44,7 +47,8 @@ export default function RoomDetailScreen() {
       return raw.map((x: any) => ({
         id: String(x.id),
         name: String(x?.name ?? ''),
-        type: String(x?.type ?? ''),
+        typeKey: String(x?.typeKey ?? ''),
+        typeLabel: String(x?.typeLabel ?? ''),
       }));
     } catch {
       return [];
@@ -91,7 +95,8 @@ export default function RoomDetailScreen() {
       return {
         id: base.id,
         name: doc?.applianceName ?? base.name,
-        type: doc?.applianceType ?? base.type,
+        typeKey: doc?.applianceType ?? base.typeKey,
+        typeLabel: doc?.applianceType ?? base.typeLabel,
       };
     });
   }, [baseApplianceList, applianceMap]);
@@ -134,12 +139,11 @@ export default function RoomDetailScreen() {
           ) : (
             <View style={styles.applianceList}>
               {/** 5) List in the same order as applianceList array */}
-              {orderedAppliances.map((a) => (
+              {orderedAppliances.map((a) => (                
                 <Pressable
                   key={a.id}
                   onPress={() => {
-                    // Display-only for now.
-                    // Later: open config modal / navigate to config screen
+                    // display-only for now; later open config modal/sheet
                     console.log('Appliance pressed:', a.id);
                   }}
                   style={({ pressed }) => [
@@ -147,17 +151,34 @@ export default function RoomDetailScreen() {
                     pressed && styles.applianceRowPressed,
                   ]}
                   accessibilityRole="button"
-                  hitSlop={6}
                 >
-                  <Text style={styles.applianceName} numberOfLines={1}>
-                    {a.name}
-                  </Text>
+                  <View style={styles.rowTop}>
+                    <View style={styles.rowIconWrap}>
+                      <MaterialCommunityIcons
+                        name={getApplianceIcon(a.typeKey).name}
+                        size={26}
+                        color={getApplianceIcon(a.typeKey).color ?? '#111'}
+                      />
+                    </View>
 
-                  {!!a.type && (
-                    <Text style={styles.applianceType} numberOfLines={1}>
-                      {a.type}
-                    </Text>
-                  )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.applianceName} numberOfLines={1}>
+                        {a.name}
+                      </Text>
+                      {!!a.typeLabel && (
+                        <Text style={styles.applianceType} numberOfLines={1}>
+                          {a.typeLabel}
+                        </Text>
+                      )}
+                    </View>
+
+                    {/* Optional chevron to indicate "config" later */}
+                    <MaterialCommunityIcons
+                      name="chevron-right"
+                      size={26}
+                      color="#777"
+                    />
+                  </View>
                 </Pressable>
               ))}
             </View>
@@ -281,6 +302,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#444',
     fontWeight: '700',
+  },
+  
+  rowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  rowIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#111',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
   },
 
   activitiesBox: {

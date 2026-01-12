@@ -20,13 +20,14 @@ import {
   View,
 } from 'react-native';
 
-import { getApplianceIcon } from '@/src/lib/applianceIcons';
+import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 type ApplianceItem = {
   id: string;
   name: string;
-  type: string;
+  typeKey: string;
+  typeLabel: string;
 };
 
 type Room = {
@@ -44,7 +45,8 @@ function roomFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Room {
   const applianceList: ApplianceItem[] = applianceListRaw.map((a: any) => ({
     id: String(a.id),
     name: String(a?.name ?? 'Unnamed appliance'),
-    type: String(a?.type ?? ''),
+    typeKey: String(a?.typeKey ?? ''),
+    typeLabel: String(a?.typeLabel ?? ''),
   }));
 
   return {
@@ -149,9 +151,9 @@ export default function ClinicScreen() {
                   >
                     <View style={styles.chipTopRow}>
                       <MaterialCommunityIcons
-                        name={getApplianceIcon(a.type).name}
+                        name={getApplianceIcon(a.typeKey).name}
                         size={22}
-                        color={getApplianceIcon(a.type).color ?? '#111'}
+                        color={getApplianceIcon(a.typeKey).color ?? '#111'}
                         style={styles.chipIcon}
                       />
                       <Text style={styles.applianceName} numberOfLines={1}>
@@ -159,9 +161,9 @@ export default function ClinicScreen() {
                       </Text>
                     </View>
 
-                    {!!a.type && (
+                    {!!a.typeLabel && (
                       <Text style={styles.applianceType} numberOfLines={1}>
-                        {a.type}
+                        {a.typeLabel}
                       </Text>
                     )}
                   </Pressable>
