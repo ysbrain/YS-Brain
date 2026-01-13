@@ -31,12 +31,14 @@ export type ModuleItem = {
 
 type Props = {
   visible: boolean;
+  roomName: string;
   onClose: () => void;
   onSelect?: (module: ModuleItem) => void; // display-only for now
 };
 
 export default function SelectApplianceTypeModal({
   visible,
+  roomName,
   onClose,
   onSelect,
 }: Props) {
@@ -84,8 +86,7 @@ export default function SelectApplianceTypeModal({
     return (
       <Pressable
         onPress={() => {
-          onSelect?.(item); // display-only for now
-          onClose();
+          onSelect?.(item);
         }}
         style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
       >
@@ -144,6 +145,19 @@ export default function SelectApplianceTypeModal({
           <Pressable onPress={onClose} style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}>
             <MaterialCommunityIcons name="close" size={22} color="#111" />
           </Pressable>
+        </View>
+        
+        <View style={styles.addToRoomRow}>
+          <Text style={styles.addToRoomLabel}>Add to Room:</Text>
+
+          <MaterialCommunityIcons name="door" size={18} color="#111" />
+          <Text style={styles.roomText} numberOfLines={1}>
+            {roomName}
+          </Text>
+        </View>
+
+        <View style={styles.content}>
+          <Text style={styles.label}>Choose Module:</Text>
         </View>
 
         {loading ? (
@@ -217,6 +231,30 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingBottom: 24,
   },
+  
+  addToRoomRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#111',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 6,
+  },
+  addToRoomLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  roomText: {
+    fontSize: 13,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+
+  content: { padding: 16, paddingBottom: 10, gap: 12 },
+
+  label: { fontSize: 13, fontWeight: '900' },
   
   row: {
     borderWidth: 1,

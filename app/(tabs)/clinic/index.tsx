@@ -20,9 +20,11 @@ import {
   View,
 } from 'react-native';
 
-import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+import AddApplianceModal from '@/src/components/AddApplianceModal';
+import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 
 type ApplianceItem = {
   id: string;
@@ -67,24 +69,34 @@ export default function ClinicScreen() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  // Modal state
+      
   const [typeModalVisible, setTypeModalVisible] = useState(false);
-  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
+  const [addModalVisible, setAddModalVisible] = useState(false);
 
-  const openTypeModalForRoom = (room: Room) => {
-    setActiveRoom(room);
+  const [activeRoom, setActiveRoom] = useState<{ id: string; roomName: string } | null>(null);
+  const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
+
+  const openSelectModule = (room: Room) => {
+    setActiveRoom({ id: room.id, roomName: room.roomName });
     setTypeModalVisible(true);
   };
 
-  const closeTypeModal = () => {
+  const onModulePicked = (m: ModuleItem) => {
+    setSelectedModule(m);
     setTypeModalVisible(false);
-    setActiveRoom(null);
+    setAddModalVisible(true);
   };
 
-  const onSelectModule = (module: ModuleItem) => {
-    // display-only for now
-    console.log('Selected module:', module.id, module.moduleName, 'for room:', activeRoom?.id);
+  const backToModuleSelect = () => {
+    setAddModalVisible(false);
+    setTypeModalVisible(true);
+  };
+
+  const closeAllModals = () => {
+    setTypeModalVisible(false);
+    setAddModalVisible(false);
+    setSelectedModule(null);
+    setActiveRoom(null);
   };
 
   const roomsPathReady = useMemo(() => Boolean(clinicId), [clinicId]);
@@ -119,16 +131,12 @@ export default function ClinicScreen() {
 
     return unsubscribe;
   }, [roomsPathReady, clinicId]);
-
-  const onAddAppliance = (room: Room) => {
-    // TODO: Implement later
-    console.log('Add appliance pressed for room:', room.id);
-  };
   
   const goRoomDetail = (room: Room) => {
     router.push({
-      pathname: `clinic/room/${room.id}`,
+      pathname: "/clinic/room/[roomId]",
       params: {
+        roomId: String(room.id),
         roomName: room.roomName,
         description: room.description,
         applianceList: JSON.stringify(room.applianceList), // preserve order & quick render
@@ -215,7 +223,7 @@ export default function ClinicScreen() {
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation?.();
-                      openTypeModalForRoom(item);
+                      openSelectModule(item);
                     }}
                     style={styles.addChip}
                   >
@@ -227,7 +235,7 @@ export default function ClinicScreen() {
               <Pressable
                 onPress={(e) => {
                   e.stopPropagation?.();
-                  openTypeModalForRoom(item);
+                  openSelectModule(item);
                 }}
                 style={styles.addChip}
               >
@@ -272,8 +280,19 @@ export default function ClinicScreen() {
       
       <SelectApplianceTypeModal
         visible={typeModalVisible}
-        onClose={closeTypeModal}
-        onSelect={onSelectModule}
+        roomName={activeRoom?.roomName ?? ''}
+        onClose={() => setTypeModalVisible(false)}
+        onSelect={onModulePicked}
+      />
+
+      <AddApplianceModal
+        visible={addModalVisible}
+        clinicId={clinicId!}
+        roomId={activeRoom?.id ?? ''}
+        roomName={activeRoom?.roomName ?? ''}
+        selectedModule={selectedModule}
+        onBack={backToModuleSelect}
+        onCloseAll={closeAllModals}
       />
     </View>
   );
@@ -397,6 +416,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
+    gap: 5,
   },
 });

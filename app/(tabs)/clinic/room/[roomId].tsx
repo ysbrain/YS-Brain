@@ -1,15 +1,19 @@
 
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { collection, DocumentData, onSnapshot, QuerySnapshot } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import { collection, DocumentData, onSnapshot } from 'firebase/firestore';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
 
-import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+import AddApplianceModal from '@/src/components/AddApplianceModal';
+import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
+
+import { orderBy, query, QueryDocumentSnapshot } from 'firebase/firestore';
 
 type ApplianceListItem = {
   id: string;
@@ -59,43 +63,56 @@ export default function RoomDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [applianceMap, setApplianceMap] = useState<Record<string, ApplianceDoc>>({});
   
-  // Modal state (add here)
+  // Modal state    
   const [typeModalVisible, setTypeModalVisible] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
 
-  const onSelectModule = (module: ModuleItem) => {
-    // display-only for now
-    console.log('Selected module:', module.id, module.moduleName, 'for room:', roomId);
+  const onModulePicked = (m: ModuleItem) => {
+    setSelectedModule(m);
+    setTypeModalVisible(false);
+    setAddModalVisible(true);
   };
 
+  const backToModuleSelect = () => {
+    setAddModalVisible(false);
+    setTypeModalVisible(true);
+  };
+
+  const closeAllModals = () => {
+    setTypeModalVisible(false);
+    setAddModalVisible(false);
+    setSelectedModule(null);
+  };
+  
+  type RoomOption = { id: string; roomName: string; roomIndex: number };
+
+  const [rooms, setRooms] = useState<RoomOption[]>([]);
+  
   useEffect(() => {
-    if (!clinicId || !roomId) return;
+    if (!clinicId) return;
 
-    setLoading(true);
+    const roomsRef = collection(db, 'clinics', clinicId, 'rooms');
+    const q = query(roomsRef, orderBy('roomIndex', 'asc'));
 
-    const appliancesRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
     const unsub = onSnapshot(
-      appliancesRef,
-      (snap: QuerySnapshot<DocumentData>) => {
-        const nextMap: Record<string, ApplianceDoc> = {};
-        snap.docs.forEach((d) => {
+      q,
+      (snap) => {
+        const list = snap.docs.map((d: QueryDocumentSnapshot<DocumentData>) => {
           const data = d.data();
-          nextMap[d.id] = {
+          return {
             id: d.id,
-            applianceName: data.applianceName,
-            applianceType: data.applianceType,
+            roomName: String(data.roomName ?? ''),
+            roomIndex: Number(data.roomIndex ?? 0),
           };
         });
-        setApplianceMap(nextMap);
-        setLoading(false);
+        setRooms(list);
       },
-      (err) => {
-        console.error('Appliances snapshot error:', err);
-        setLoading(false);
-      }
+      (err) => console.error('rooms list snapshot error', err)
     );
 
     return unsub;
-  }, [clinicId, roomId]);
+  }, [clinicId]);
 
   // Merge base list (order + quick display) with Firestore docs (latest values)
   const orderedAppliances = useMemo(() => {
@@ -103,9 +120,9 @@ export default function RoomDetailScreen() {
       const doc = applianceMap[base.id];
       return {
         id: base.id,
-        name: doc?.applianceName ?? base.name,
-        typeKey: doc?.applianceType ?? base.typeKey,
-        typeLabel: doc?.applianceType ?? base.typeLabel,
+        name: doc?.applianceName ?? base.name,        
+        typeKey: (doc as any)?.typeKey ?? base.typeKey,
+        typeLabel: (doc as any)?.typeLabel ?? base.typeLabel,
       };
     });
   }, [baseApplianceList, applianceMap]);
@@ -203,8 +220,19 @@ export default function RoomDetailScreen() {
       {/* Modal */}
       <SelectApplianceTypeModal
         visible={typeModalVisible}
+        roomName={roomName}
         onClose={() => setTypeModalVisible(false)}
-        onSelect={onSelectModule}
+        onSelect={onModulePicked}
+      />
+
+      <AddApplianceModal
+        visible={addModalVisible}
+        clinicId={clinicId!}
+        roomId={roomId}
+        roomName={roomName}
+        selectedModule={selectedModule}
+        onBack={backToModuleSelect}
+        onCloseAll={closeAllModals}
       />
     </>
   );
