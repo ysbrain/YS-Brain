@@ -23,7 +23,7 @@ import {
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import AddApplianceModal from '@/src/components/AddApplianceModal';
+import AddApplianceToRoomModal from '@/src/components/AddAplianceToRoomModal';
 import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 
 type ApplianceItem = {
@@ -288,10 +288,10 @@ export default function ClinicScreen() {
         }}
         onSelect={onModulePicked}
       />
-      
-      {/* only mount AddApplianceModal when roomId is valid */}
+
+      {/* only mount AddApplianceToRoomModal when roomId is valid */}
       {!!activeRoom?.id && (
-        <AddApplianceModal
+        <AddApplianceToRoomModal
           visible={addModalVisible}
           clinicId={clinicId!}
           roomId={activeRoom.id}

@@ -10,7 +10,7 @@ import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import AddApplianceModal from '@/src/components/AddApplianceModal';
+import AddApplianceToRoomModal from '@/src/components/AddAplianceToRoomModal';
 import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 
 type ApplianceListItem = {
@@ -233,8 +233,8 @@ export default function RoomDetailScreen() {
         onClose={() => setTypeModalVisible(false)}
         onSelect={onModulePicked}
       />
-
-      <AddApplianceModal
+      
+      <AddApplianceToRoomModal
         visible={addModalVisible}
         clinicId={clinicId!}
         roomId={roomId}
