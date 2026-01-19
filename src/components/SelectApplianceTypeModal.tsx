@@ -1,3 +1,5 @@
+import { db } from '@/src/lib/firebase';
+import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import {
   collection,
@@ -7,7 +9,7 @@ import {
   query,
   QuerySnapshot,
 } from 'firebase/firestore';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -18,12 +20,9 @@ import {
   View,
 } from 'react-native';
 
-import { db } from '@/src/lib/firebase';
-import { getApplianceIcon } from '@/src/utils/applianceIcons';
-
 export type ModuleItem = {
-  id: string;           // document id (typeKey), e.g. waterLineTest
-  moduleIndex: number;     // for sorting
+  id: string;
+  moduleIndex: number;
   moduleName: string;
   description: string;
   official: boolean;
@@ -33,7 +32,7 @@ type Props = {
   visible: boolean;
   roomName: string;
   onClose: () => void;
-  onSelect?: (module: ModuleItem) => void; // display-only for now
+  onSelect?: (module: ModuleItem) => void;
 };
 
 export default function SelectApplianceTypeModal({
@@ -46,11 +45,14 @@ export default function SelectApplianceTypeModal({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!visible) return;
+    // When closing, optionally reset UI state
+    if (!visible) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 
-    // clinics/_common/modules sorted by moduleIndex asc
     const ref = collection(db, 'clinics', '_common', 'modules');
     const q = query(ref, orderBy('moduleIndex', 'asc'));
 
@@ -77,79 +79,83 @@ export default function SelectApplianceTypeModal({
       }
     );
 
-    return unsub;
+    return () => unsub();
   }, [visible]);
-  
-  const renderItem = ({ item }: { item: ModuleItem }) => {
-    const icon = getApplianceIcon(item.id);
 
-    return (
-      <Pressable
-        onPress={() => {
-          onSelect?.(item);
-        }}
-        style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
-      >
-        {/* Tag pinned top-right of the bracket */}
-        <View
-          style={[
-            styles.tagPinned,
-            item.official ? styles.tagOfficial : styles.tagCustom,
-          ]}
+  const renderItem = useCallback(
+    ({ item }: { item: ModuleItem }) => {
+      const icon = getApplianceIcon(item.id);
+
+      return (
+        <Pressable
+          onPress={() => onSelect?.(item)}
+          style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Select module ${item.moduleName}`}
         >
-          <Text style={styles.tagText}>
-            {item.official ? 'OFFICIAL' : 'CUSTOM'}
-          </Text>
-        </View>
-
-        <View style={styles.rowTop}>
-          <View style={styles.iconWrap}>
-            <MaterialCommunityIcons
-              name={icon.name}
-              size={26}
-              color={icon.color ?? '#111'}
-            />
-          </View>
-
-          <View style={{ flex: 1, paddingRight: 88 /* room for tag */ }}>
-            <Text style={styles.moduleName} numberOfLines={1}>
-              {item.moduleName}
+          <View
+            style={[
+              styles.tagPinned,
+              item.official ? styles.tagOfficial : styles.tagCustom,
+            ]}
+          >
+            <Text style={styles.tagText}>
+              {item.official ? 'OFFICIAL' : 'CUSTOM'}
             </Text>
-
-            {!!item.description && (
-              <Text style={styles.moduleDesc} numberOfLines={2}>
-                {item.description}
-              </Text>
-            )}
           </View>
-        </View>
-      </Pressable>
-    );
-  };
+
+          <View style={styles.rowTop}>
+            <View style={styles.iconWrap}>
+              <MaterialCommunityIcons
+                name={icon.name}
+                size={26}
+                color={icon.color ?? '#111'}
+              />
+            </View>
+
+            <View style={{ flex: 1, paddingRight: 88 }}>
+              <Text style={styles.moduleName} numberOfLines={1}>
+                {item.moduleName}
+              </Text>
+
+              {!!item.description && (
+                <Text style={styles.moduleDesc} numberOfLines={2}>
+                  {item.description}
+                </Text>
+              )}
+            </View>
+          </View>
+        </Pressable>
+      );
+    },
+    [onSelect]
+  );
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       transparent
+      statusBarTranslucent
       onRequestClose={onClose}
     >
-      {/* Backdrop */}
       <Pressable style={styles.backdrop} onPress={onClose} />
 
-      {/* Sheet */}
       <View style={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>Select Appliance Type</Text>
-
-          <Pressable onPress={onClose} style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}>
+          <Pressable
+            onPress={onClose}
+            style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          >
             <MaterialCommunityIcons name="close" size={22} color="#111" />
           </Pressable>
         </View>
-        
+
         <View style={styles.addToRoomRow}>
           <Text style={styles.addToRoomLabel}>Add to Room:</Text>
-
           <MaterialCommunityIcons name="door" size={18} color="#111" />
           <Text style={styles.roomText} numberOfLines={1}>
             {roomName}
@@ -163,7 +169,7 @@ export default function SelectApplianceTypeModal({
         {loading ? (
           <View style={styles.loadingBox}>
             <ActivityIndicator />
-            <Text style={styles.loadingText}>Loading modules…</Text>
+            <Text style={styles.loadingText}>Loading modules...</Text>
           </View>
         ) : (
           <FlatList
@@ -180,10 +186,8 @@ export default function SelectApplianceTypeModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
+  // ... keep your styles as-is
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   sheet: {
     position: 'absolute',
     left: 0,
@@ -206,10 +210,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  sheetTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-  },
+  sheetTitle: { fontSize: 16, fontWeight: '900' },
   closeBtn: {
     borderWidth: 1,
     borderColor: '#111',
@@ -222,16 +223,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  loadingText: {
-    color: '#666',
-    fontWeight: '700',
-  },
-  listContent: {
-    padding: 14,
-    gap: 12,
-    paddingBottom: 24,
-  },
-  
+  loadingText: { color: '#666', fontWeight: '700' },
+  listContent: { padding: 14, gap: 12, paddingBottom: 24 },
   addToRoomRow: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -242,20 +235,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 6,
   },
-  addToRoomLabel: {
-    fontSize: 13,
-    fontWeight: '900',
-  },
-  roomText: {
-    fontSize: 13,
-    fontWeight: '800',
-    flexShrink: 1,
-  },
-
+  addToRoomLabel: { fontSize: 13, fontWeight: '900' },
+  roomText: { fontSize: 13, fontWeight: '800', flexShrink: 1 },
   content: { padding: 16, paddingBottom: 10, gap: 12 },
-
   label: { fontSize: 13, fontWeight: '900' },
-  
   row: {
     borderWidth: 1,
     borderColor: '#111',
@@ -263,15 +246,9 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 12,
     backgroundColor: '#fff',
-    position: 'relative', // important for absolute tag
+    position: 'relative',
   },
-
-  rowTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconWrap: {
     width: 44,
     height: 44,
@@ -282,20 +259,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-
-  moduleName: {
-    fontSize: 15,
-    fontWeight: '900',
-  },
-
-  moduleDesc: {
-    marginTop: 6,
-    fontSize: 13,
-    color: '#444',
-    fontWeight: '600',
-  },
-
-  // Tag pinned to top-right of the bracket
+  moduleName: { fontSize: 15, fontWeight: '900' },
+  moduleDesc: { marginTop: 6, fontSize: 13, color: '#444', fontWeight: '600' },
   tagPinned: {
     position: 'absolute',
     top: 10,
@@ -306,17 +271,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
   },
-
-  tagOfficial: {
-    backgroundColor: '#EAF7EA',
-  },
-
-  tagCustom: {
-    backgroundColor: '#F3F3F3',
-  },
-
-  tagText: {
-    fontSize: 12,
-    fontWeight: '900',
-  },
+  tagOfficial: { backgroundColor: '#EAF7EA' },
+  tagCustom: { backgroundColor: '#F3F3F3' },
+  tagText: { fontSize: 12, fontWeight: '900' },
 });

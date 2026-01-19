@@ -76,7 +76,8 @@ export default function ClinicScreen() {
   const [activeRoom, setActiveRoom] = useState<{ id: string; roomName: string } | null>(null);
   const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
 
-  const openSelectModule = (room: Room) => {
+  const openSelectModule = (room: Room) => {    
+    setSelectedModule(null);              // avoid stale selection
     setActiveRoom({ id: room.id, roomName: room.roomName });
     setTypeModalVisible(true);
   };
@@ -281,19 +282,25 @@ export default function ClinicScreen() {
       <SelectApplianceTypeModal
         visible={typeModalVisible}
         roomName={activeRoom?.roomName ?? ''}
-        onClose={() => setTypeModalVisible(false)}
+        onClose={() => {
+          setTypeModalVisible(false);
+          setSelectedModule(null);
+        }}
         onSelect={onModulePicked}
       />
-
-      <AddApplianceModal
-        visible={addModalVisible}
-        clinicId={clinicId!}
-        roomId={activeRoom?.id ?? ''}
-        roomName={activeRoom?.roomName ?? ''}
-        selectedModule={selectedModule}
-        onBack={backToModuleSelect}
-        onCloseAll={closeAllModals}
-      />
+      
+      {/* only mount AddApplianceModal when roomId is valid */}
+      {!!activeRoom?.id && (
+        <AddApplianceModal
+          visible={addModalVisible}
+          clinicId={clinicId!}
+          roomId={activeRoom.id}
+          roomName={activeRoom.roomName}
+          selectedModule={selectedModule}
+          onBack={backToModuleSelect}
+          onCloseAll={closeAllModals}
+        />
+      )}
     </View>
   );
 }

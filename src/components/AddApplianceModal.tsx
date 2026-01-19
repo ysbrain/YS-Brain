@@ -1,4 +1,3 @@
-
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
@@ -8,11 +7,10 @@ import {
   runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -81,7 +79,7 @@ export default function AddApplianceModal({
   const [datePickerField, setDatePickerField] = useState<string | null>(null);
   const [tempDate, setTempDate] = useState<Date>(new Date());
 
-  const [footerHeight, setFooterHeight] = useState(0);
+  const scrollViewRef = useRef<KeyboardAwareScrollView>(null);
 
   // Reset defaults each time this modal opens / module changes
   useEffect(() => {
@@ -245,138 +243,130 @@ export default function AddApplianceModal({
       {/* Backdrop */}
       <Pressable style={styles.backdrop} onPress={onCloseAll} />
 
-      <View style={styles.sheet}>        
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          // tweak this if needed (header height + small buffer)
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+      <View style={styles.sheet}>
+        {/* Header */}
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>Add Appliance</Text>
+          <Pressable onPress={onCloseAll} style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}>
+            <MaterialCommunityIcons name="close" size={22} color="#111" />
+          </Pressable>
+        </View>
+
+        {/* Scrollable content */}          
+        <KeyboardAwareScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          enableOnAndroid={true}
+          enableAutomaticScroll={true}
+          extraScrollHeight={40}
+          scrollEventThrottle={16}
+          keyboardOpeningTime={0}
         >
-          {/* Header */}
-          <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Add Appliance</Text>
-            <Pressable onPress={onCloseAll} style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}>
-              <MaterialCommunityIcons name="close" size={22} color="#111" />
-            </Pressable>
-          </View>
+          {/* Module chip */}
+          <Text style={styles.label}>Module</Text>
+          <View style={styles.moduleChip}>
+            {/* Tag pinned top-right */}
+            {!!selectedModule && (
+              <View style={[styles.tagPinned, selectedModule.official ? styles.tagOfficial : styles.tagCustom]}>
+                <Text style={styles.tagText}>{selectedModule.official ? 'OFFICIAL' : 'CUSTOM'}</Text>
+              </View>
+            )}
 
-          {/* Scrollable content */}          
-          <KeyboardAwareScrollView
-            contentContainerStyle={[styles.content, { paddingBottom: footerHeight + 24 }]}
-            keyboardShouldPersistTaps="handled"
-            enableOnAndroid
-            extraScrollHeight={20}
-          >
+            <View style={styles.moduleRow}>
+              <View style={styles.iconWrap}>
+                <MaterialCommunityIcons name={moduleIcon.name} size={26} color={moduleIcon.color ?? '#111'} />
+              </View>
 
-            {/* Module chip */}
-            <Text style={styles.label}>Module</Text>
-            <View style={styles.moduleChip}>
-              {/* Tag pinned top-right */}
-              {!!selectedModule && (
-                <View style={[styles.tagPinned, selectedModule.official ? styles.tagOfficial : styles.tagCustom]}>
-                  <Text style={styles.tagText}>{selectedModule.official ? 'OFFICIAL' : 'CUSTOM'}</Text>
-                </View>
-              )}
-
-              <View style={styles.moduleRow}>
-                <View style={styles.iconWrap}>
-                  <MaterialCommunityIcons name={moduleIcon.name} size={26} color={moduleIcon.color ?? '#111'} />
-                </View>
-
-                <View style={{ flex: 1, paddingRight: 88 }}>
-                  <Text style={styles.moduleName} numberOfLines={1}>
-                    {selectedModule?.moduleName ?? ''}
+              <View style={{ flex: 1, paddingRight: 88 }}>
+                <Text style={styles.moduleName} numberOfLines={1}>
+                  {selectedModule?.moduleName ?? ''}
+                </Text>
+                {!!selectedModule?.description && (
+                  <Text style={styles.moduleDesc} numberOfLines={2}>
+                    {selectedModule.description}
                   </Text>
-                  {!!selectedModule?.description && (
-                    <Text style={styles.moduleDesc} numberOfLines={2}>
-                      {selectedModule.description}
-                    </Text>
-                  )}
-                </View>
+                )}
               </View>
             </View>
+          </View>
 
-            {/* Appliance Name */}
-            <Text style={styles.label}>Appliance Name</Text>
-            <TextInput
-              value={applianceName}
-              onChangeText={setApplianceName}
-              placeholder="Enter appliance name"
-              style={styles.input}    
-            />
+          {/* Appliance Name */}
+          <Text style={styles.label}>Appliance Name</Text>
+          <TextInput
+            value={applianceName}
+            onChangeText={setApplianceName}
+            placeholder="Enter appliance name"
+            style={styles.input}    
+          />
 
-            {/* Setup Configuration */}
-            {loadingConfig ? (
-              <View style={styles.loadingRow}>
-                <ActivityIndicator />
-                <Text style={styles.loadingText}>Loading setup configuration…</Text>
-              </View>
-            ) : setupConfig.length > 0 ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Setup Configuration</Text>
+          {/* Setup Configuration */}
+          {loadingConfig ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator />
+              <Text style={styles.loadingText}>Loading setup configuration…</Text>
+            </View>
+          ) : setupConfig.length > 0 ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Setup Configuration</Text>
 
-                {setupConfig.map((f) => {
-                  const val = setupValues[f.field] ?? '';
-                  if (f.type === 'string') {
-                    return (
-                      <View key={f.field} style={styles.fieldBlock}>
-                        <Text style={styles.fieldLabel}>{f.field}</Text>
-                        <TextInput
-                          value={val}
-                          onChangeText={(t) => updateSetupValue(f.field, t)}
-                          placeholder={`Enter ${f.field}`}
-                          style={styles.input}
-                        />
-                      </View>
-                    );
-                  }
-
-                  if (f.type === 'number') {
-                    return (
-                      <View key={f.field} style={styles.fieldBlock}>
-                        <Text style={styles.fieldLabel}>{f.field}</Text>
-                        <TextInput
-                          value={val}
-                          onChangeText={(t) => updateSetupValue(f.field, t.replace(/[^0-9.]/g, ''))}
-                          placeholder={`Enter ${f.field}`}
-                          keyboardType="numeric"                          
-                          returnKeyType="done"
-                          submitBehavior='blurAndSubmit'
-                          style={styles.input}
-                        />
-                      </View>
-                    );
-                  }
-
-                  // date
+              {setupConfig.map((f) => {
+                const val = setupValues[f.field] ?? '';
+                if (f.type === 'string') {
                   return (
                     <View key={f.field} style={styles.fieldBlock}>
                       <Text style={styles.fieldLabel}>{f.field}</Text>
-                      <Pressable
-                        onPress={() => onPickDate(f.field)}
-                        style={({ pressed }) => [styles.input, styles.dateInput, pressed && { opacity: 0.85 }]}
-                      >
-                        <Text style={{ fontWeight: '700', color: val ? '#111' : '#777' }}>
-                          {val || 'Select date'}
-                        </Text>
-                        <MaterialCommunityIcons name="calendar" size={20} color="#111" />
-                      </Pressable>
+                      <TextInput
+                        value={val}
+                        onChangeText={(t) => updateSetupValue(f.field, t)}
+                        placeholder={`Enter ${f.field}`}
+                        style={styles.input}
+                      />
                     </View>
                   );
-                })}
-              </View>
-            ) : null}
-          </KeyboardAwareScrollView>
+                }
+
+                if (f.type === 'number') {
+                  return (
+                    <View key={f.field} style={styles.fieldBlock}>
+                      <Text style={styles.fieldLabel}>{f.field}</Text>
+                      <TextInput
+                        value={val}
+                        onChangeText={(t) => updateSetupValue(f.field, t.replace(/[^0-9.]/g, ''))}
+                        placeholder={`Enter ${f.field}`}
+                        keyboardType="numeric"                          
+                        returnKeyType="done"
+                        submitBehavior='blurAndSubmit'
+                        style={styles.input}
+                      />
+                    </View>
+                  );
+                }
+
+                // date
+                return (
+                  <View key={f.field} style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>{f.field}</Text>
+                    <Pressable
+                      onPress={() => onPickDate(f.field)}
+                      style={({ pressed }) => [styles.input, styles.dateInput, pressed && { opacity: 0.85 }]}
+                    >
+                      <Text style={{ fontWeight: '700', color: val ? '#111' : '#777' }}>
+                        {val || 'Select date'}
+                      </Text>
+                      <MaterialCommunityIcons name="calendar" size={20} color="#111" />
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
 
           {/* Footer Buttons */}
-          <View
-            style={styles.footer}
-            onLayout={(e) => setFooterHeight(e.nativeEvent.layout.height)}
-          >
+          <View style={styles.footerInner}>
             <Pressable onPress={onBack} style={({ pressed }) => [styles.footerBtn, pressed && { opacity: 0.8 }]}>
               <Text style={styles.footerBtnText}>← Back</Text>
             </Pressable>
-
             <Pressable
               onPress={handleAddToRoom}
               disabled={!canSubmit}
@@ -389,17 +379,17 @@ export default function AddApplianceModal({
               <Text style={[styles.footerBtnText, styles.primaryBtnText]}>Add to Room</Text>
             </Pressable>
           </View>
+        </KeyboardAwareScrollView>        
 
-          {/* DateTimePicker overlay (only when needed) */}
-          {datePickerField && (
-            <DateTimePicker
-              value={tempDate}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={handleDateChange}
-            />
-          )}
-        </KeyboardAvoidingView>
+        {/* DateTimePicker overlay (only when needed) */}
+        {datePickerField && (
+          <DateTimePicker
+            value={tempDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+          />
+        )}
       </View>
     </Modal>
   );
@@ -413,7 +403,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    maxHeight: '90%',
+    height: '85%',
     backgroundColor: '#fff',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
@@ -434,7 +424,11 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 16, fontWeight: '900' },
   closeBtn: { borderWidth: 1, borderColor: '#111', borderRadius: 12, padding: 8 },
 
-  content: { padding: 16, paddingBottom: 10, gap: 12 },
+  content: {
+    padding: 16,
+    gap: 12,
+    paddingBottom: 200, // CRITICAL: Must be large enough for footer + keyboard breathing room
+  },
 
   label: { fontSize: 13, fontWeight: '900' },
 
@@ -511,14 +505,16 @@ const styles = StyleSheet.create({
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8 },
   loadingText: { color: '#666', fontWeight: '700' },
 
-  footer: {
+  footerInner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 12,
-    padding: 14,
+    marginTop: 20, // Add space before footer
     borderTopWidth: 1,
     borderTopColor: '#111',
+    paddingTop: 14,
   },
+  
   footerBtn: {
     borderWidth: 1,
     borderColor: '#111',

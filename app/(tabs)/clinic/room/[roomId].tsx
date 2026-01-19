@@ -1,6 +1,6 @@
 
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { collection, DocumentData, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -13,13 +13,17 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AddApplianceModal from '@/src/components/AddApplianceModal';
 import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 
-import { orderBy, query, QueryDocumentSnapshot } from 'firebase/firestore';
-
 type ApplianceListItem = {
   id: string;
   name: string;
   typeKey: string;
   typeLabel: string;
+};
+
+type RoomDocShape = {
+  roomName: string;
+  description: string;
+  applianceList: ApplianceListItem[];
 };
 
 type ApplianceDoc = {
@@ -29,7 +33,7 @@ type ApplianceDoc = {
   // add more fields later if you need
 };
 
-export default function RoomDetailScreen() {
+export default function RoomDetailScreen() {  
   const profile = useProfile();
   const clinicId = profile?.clinic;
 
@@ -37,33 +41,80 @@ export default function RoomDetailScreen() {
     roomId: string;
     roomName?: string;
     description?: string;
-    applianceList?: string; // JSON string
+    applianceList?: string;
   }>();
 
   const roomId = params.roomId;
-  const roomName = params.roomName ?? 'Room';
-  const description = params.description ?? '';
 
-  // Parse applianceList passed from clinic.tsx (preserves order)
-  const baseApplianceList: ApplianceListItem[] = useMemo(() => {
+  // Initial fallback from route params (fast render)
+  const initialRoom: RoomDocShape = useMemo(() => {
+    const roomName = params.roomName ?? 'Room';
+    const description = params.description ?? '';
+
+    let applianceList: ApplianceListItem[] = [];
     try {
       const raw = params.applianceList ? JSON.parse(params.applianceList) : [];
-      if (!Array.isArray(raw)) return [];
-      return raw.map((x: any) => ({
-        id: String(x.id),
-        name: String(x?.name ?? ''),
-        typeKey: String(x?.typeKey ?? ''),
-        typeLabel: String(x?.typeLabel ?? ''),
-      }));
+      if (Array.isArray(raw)) {
+        applianceList = raw.map((x: any) => ({
+          id: String(x.id),
+          name: String(x?.name ?? ''),
+          typeKey: String(x?.typeKey ?? ''),
+          typeLabel: String(x?.typeLabel ?? ''),
+        }));
+      }
     } catch {
-      return [];
+      applianceList = [];
     }
-  }, [params.applianceList]);
 
+    return { roomName, description, applianceList };
+  }, [params.roomName, params.description, params.applianceList]);
+
+  const [room, setRoom] = useState<RoomDocShape>(initialRoom);
   const [loading, setLoading] = useState(true);
-  const [applianceMap, setApplianceMap] = useState<Record<string, ApplianceDoc>>({});
-  
-  // Modal state    
+
+  // ✅ Subscribe to room doc for live updates
+  useEffect(() => {
+    if (!clinicId || !roomId) return;
+
+    setLoading(true);
+
+    const ref = doc(db, 'clinics', clinicId, 'rooms', roomId);
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const data = snap.data() as any;
+        if (!data) {
+          setRoom(initialRoom);
+          setLoading(false);
+          return;
+        }
+
+        const applianceListRaw = Array.isArray(data.applianceList) ? data.applianceList : [];
+        const applianceList: ApplianceListItem[] = applianceListRaw.map((a: any) => ({
+          id: String(a.id),
+          name: String(a?.name ?? 'Unnamed appliance'),
+          typeKey: String(a?.typeKey ?? ''),
+          typeLabel: String(a?.typeLabel ?? ''),
+        }));
+
+        setRoom({
+          roomName: String(data.roomName ?? initialRoom.roomName),
+          description: String(data.description ?? initialRoom.description),
+          applianceList,
+        });
+        setLoading(false);
+      },
+      (err) => {
+        console.error('room doc snapshot error', err);
+        setRoom(initialRoom);
+        setLoading(false);
+      }
+    );
+
+    return () => unsub();
+  }, [clinicId, roomId, initialRoom]);
+
+  // Modal state
   const [typeModalVisible, setTypeModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
@@ -84,58 +135,16 @@ export default function RoomDetailScreen() {
     setAddModalVisible(false);
     setSelectedModule(null);
   };
-  
-  type RoomOption = { id: string; roomName: string; roomIndex: number };
-
-  const [rooms, setRooms] = useState<RoomOption[]>([]);
-  
-  useEffect(() => {
-    if (!clinicId) return;
-
-    const roomsRef = collection(db, 'clinics', clinicId, 'rooms');
-    const q = query(roomsRef, orderBy('roomIndex', 'asc'));
-
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list = snap.docs.map((d: QueryDocumentSnapshot<DocumentData>) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            roomName: String(data.roomName ?? ''),
-            roomIndex: Number(data.roomIndex ?? 0),
-          };
-        });
-        setRooms(list);
-      },
-      (err) => console.error('rooms list snapshot error', err)
-    );
-
-    return unsub;
-  }, [clinicId]);
-
-  // Merge base list (order + quick display) with Firestore docs (latest values)
-  const orderedAppliances = useMemo(() => {
-    return baseApplianceList.map((base) => {
-      const doc = applianceMap[base.id];
-      return {
-        id: base.id,
-        name: doc?.applianceName ?? base.name,        
-        typeKey: (doc as any)?.typeKey ?? base.typeKey,
-        typeLabel: (doc as any)?.typeLabel ?? base.typeLabel,
-      };
-    });
-  }, [baseApplianceList, applianceMap]);
 
   return (
     <>
       {/* 1) Header title = room name */}
-      <Stack.Screen options={{ title: roomName }} />
+      <Stack.Screen options={{ title: room.roomName }} />
 
       {/* Pattern C: no SafeAreaView here; header/tab will manage safe areas */}
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
         {/* 2) Room description from clinic.tsx room doc field "description" */}
-        <Text style={styles.description}>{description || ' '}</Text>
+        <Text style={styles.description}>{room.description || ' '}</Text>
 
         {/* Appliances & Modules section */}
         <View style={styles.sectionCard}>
@@ -150,19 +159,19 @@ export default function RoomDetailScreen() {
             </Pressable>
           </View>
 
-          {loading && orderedAppliances.length === 0 ? (
+          {loading && room.applianceList.length === 0 ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator />
               <Text style={styles.loadingText}>Loading appliances…</Text>
             </View>
-          ) : orderedAppliances.length === 0 ? (
+          ) : room.applianceList.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>No appliances yet.</Text>
             </View>
           ) : (
             <View style={styles.applianceList}>
               {/** 5) List in the same order as applianceList array */}
-              {orderedAppliances.map((a) => (                
+              {room.applianceList.map((a) => (                
                 <Pressable
                   key={a.id}
                   onPress={() => {
@@ -220,7 +229,7 @@ export default function RoomDetailScreen() {
       {/* Modal */}
       <SelectApplianceTypeModal
         visible={typeModalVisible}
-        roomName={roomName}
+        roomName={room.roomName}
         onClose={() => setTypeModalVisible(false)}
         onSelect={onModulePicked}
       />
@@ -229,7 +238,7 @@ export default function RoomDetailScreen() {
         visible={addModalVisible}
         clinicId={clinicId!}
         roomId={roomId}
-        roomName={roomName}
+        roomName={room.roomName}
         selectedModule={selectedModule}
         onBack={backToModuleSelect}
         onCloseAll={closeAllModals}
