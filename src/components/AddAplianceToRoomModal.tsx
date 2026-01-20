@@ -3,9 +3,7 @@ import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -42,14 +40,22 @@ function formatDateYYYYMMDD(d: Date) {
   return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
 }
 function parseYYYYMMDD(s: string): Date | null {
-  // expects yyyy/mm/dd
   const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(s);
   if (!m) return null;
   const y = Number(m[1]);
   const mm = Number(m[2]) - 1;
   const dd = Number(m[3]);
   const d = new Date(y, mm, dd);
-  return isNaN(d.getTime()) ? null : d;
+
+  // Validate exact match (avoid 2026/02/31 rolling to March)
+  if (
+    d.getFullYear() !== y ||
+    d.getMonth() !== mm ||
+    d.getDate() !== dd
+  ) {
+    return null;
+  }
+  return d;
 }
 
 export default function AddApplianceToRoomModal({
@@ -68,21 +74,11 @@ export default function AddApplianceToRoomModal({
   
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
-  const [scrollY, setScrollY] = useState(0);
-  const [bodyHeight, setBodyHeight] = useState(0);
   
   const inputRefs = useRef<Record<string, TextInput | null>>({});
   const windowHeight = Dimensions.get('window').height;
-
-  // Store y/height of focusable rows relative to ScrollView content
-  const inputLayouts = useRef<Record<string, { y: number; height: number }>>({});
   
-  const registerLayout =
-    (key: string) =>
-    (e: any) => {
-      const { y, height } = e.nativeEvent.layout;
-      inputLayouts.current[key] = { y, height };
-    };
+  const [dateDraft, setDateDraft] = useState<Date>(new Date());
 
   // Store values keyed by field name (assumes fields are unique)
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -165,22 +161,40 @@ export default function AddApplianceToRoomModal({
     setConfigValues((prev) => ({ ...prev, [field]: value }));
   };
 
-  const onPickDate = (field: string) => {
+  const onPickDate = (field: string) => {    
+    Keyboard.dismiss();
+
+    // Initialize draft to existing value if present; otherwise today
+    const existing = configValues[field];
+    const initial = parseYYYYMMDD(existing) ?? new Date();
+    setDateDraft(initial);
+
     setActiveDateField(field);
   };
-
+  
   const onDateChange = (_evt: DateTimePickerEvent, date?: Date) => {
-    // On Android, dismiss is "undefined date"
     if (!activeDateField) return;
-    if (!date) {
-      setActiveDateField(null);
+    if (!date) return;
+
+    // iOS overlay: only update draft; commit on Done
+    if (Platform.OS === 'ios') {
+      setDateDraft(date);
       return;
     }
+
+    // Android: commit immediately (existing behavior)
     onChangeConfig(activeDateField, formatDateYYYYMMDD(date));
-    // Android closes automatically; on iOS we also close to keep UX simple
-    if (Platform.OS !== 'ios') {
-      setActiveDateField(null);
+    setActiveDateField(null);
+  };
+  
+  const closeDatePicker = () => {
+    setActiveDateField(null);
+  };
+  const commitDatePicker = () => {
+    if (activeDateField) {
+      onChangeConfig(activeDateField, formatDateYYYYMMDD(dateDraft));
     }
+    setActiveDateField(null);
   };
 
   const hasSetupConfig = !!setupConfig && setupConfig.length > 0;
@@ -211,6 +225,7 @@ export default function AddApplianceToRoomModal({
   const scrollFieldIntoView = (key: string) => {
     // Only do this when keyboard is visible
     if (!keyboardHeight) return;
+    if (activeDateField) return;
 
     // Small delay lets iOS finish keyboard animation / layout
     setTimeout(() => {
@@ -274,7 +289,6 @@ export default function AddApplianceToRoomModal({
         <KeyboardAvoidingView
           style={styles.body}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          onLayout={(e) => setBodyHeight(e.nativeEvent.layout.height)}
         >
           <ScrollView
             ref={scrollRef}
@@ -331,20 +345,18 @@ export default function AddApplianceToRoomModal({
 
             {/* Appliance name */}
             <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Appliance Name</Text>
-            <View onLayout={registerLayout('applianceName')}>
-              <TextInput              
-                ref={(r) => {
-                  inputRefs.current['applianceName'] = r;
-                }}
-                value={applianceName}
-                onChangeText={setApplianceName}
-                placeholder="Enter appliance name"
-                placeholderTextColor="#999"
-                style={styles.textInput}
-                returnKeyType="done"
-                onFocus={() => scrollFieldIntoView('applianceName')}
-              />
-            </View>
+            <TextInput              
+              ref={(r) => {
+                inputRefs.current['applianceName'] = r;
+              }}
+              value={applianceName}
+              onChangeText={setApplianceName}
+              placeholder="Enter appliance name"
+              placeholderTextColor="#999"
+              style={styles.textInput}
+              returnKeyType="done"
+              onFocus={() => scrollFieldIntoView('applianceName')}
+            />
 
             {/* Setup Configuration (conditional) */}
             {hasSetupConfig && (
@@ -357,22 +369,23 @@ export default function AddApplianceToRoomModal({
                   {loadingConfig ? (
                     <Text style={styles.loadingHint}>Loading setup fields...</Text>
                   ) : (
-                    setupConfig!.map((item) => {
+                    setupConfig!.map((item, idx) => {
+                      const k = `setup:${idx}:${item.field}`;
                       const value = configValues[item.field] ?? '';
 
                       return (
-                        <View key={item.field} style={styles.setupItem} onLayout={registerLayout(`setup:${item.field}`)}>
+                        <View key={`${idx}:${item.field}`} style={styles.setupItem}>
                           <Text style={styles.setupFieldLabel}>{item.field}</Text>
 
                           {item.type === 'date' ? (
                             <View
                               ref={(r: any) => {
-                                inputRefs.current[`setup:${item.field}`] = r as any;
+                                inputRefs.current[k] = r as any;
                               }}
                             >
                               <Pressable
                                 onPress={() => {                                  
-                                  scrollFieldIntoView(`setup:${item.field}`);
+                                  scrollFieldIntoView(k);
                                   onPickDate(item.field);
                                 }}
                                 style={({ pressed }) => [
@@ -394,7 +407,7 @@ export default function AddApplianceToRoomModal({
                           ) : (
                             <TextInput                              
                               ref={(r) => {
-                                inputRefs.current[`setup:${item.field}`] = r;
+                                inputRefs.current[k] = r;
                               }}
                               value={value}
                               onChangeText={(t) => onChangeConfig(item.field, t)}
@@ -403,7 +416,7 @@ export default function AddApplianceToRoomModal({
                               style={styles.textInput}
                               keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
                               returnKeyType="done"
-                              onFocus={() => scrollFieldIntoView(`setup:${item.field}`)}
+                              onFocus={() => scrollFieldIntoView(k)}
                             />
                           )}
                         </View>
@@ -415,44 +428,65 @@ export default function AddApplianceToRoomModal({
             )}
           </ScrollView>
 
-          {/* Footer buttons */}          
-          <View style={styles.footerFixed}>
-            <Pressable
-              onPress={onBack}
-              style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
-            >
-              <MaterialCommunityIcons name="arrow-left" size={20} color="#111" />
-              <Text style={styles.footerBtnText}>Back</Text>
-            </Pressable>
+          {/* Footer buttons */}
+          {!activeDateField && (
+            <View style={styles.footerFixed}>
+              <Pressable
+                onPress={onBack}
+                style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
+              >
+                <MaterialCommunityIcons name="arrow-left" size={20} color="#111" />
+                <Text style={styles.footerBtnText}>Back</Text>
+              </Pressable>
 
-            <Pressable
-              onPress={() => console.log('Add later')}
-              style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}
-            >
-              <Text style={styles.primaryBtnText}>Add to Room</Text>
-            </Pressable>
-          </View>
+              <Pressable
+                onPress={() => console.log('Add later')}
+                style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.9 }]}
+              >
+                <Text style={styles.primaryBtnText}>Add to Room</Text>
+              </Pressable>
+            </View>
+          )}
         </KeyboardAvoidingView>
-
-        {/* Date picker */}
-        {activeDateField && (
+        
+        {/* Android Date picker (native) */}
+        {Platform.OS !== 'ios' && activeDateField && (
           <DateTimePicker
             value={activeDateValue}
             mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            display="default"
             onChange={onDateChange}
           />
         )}
-
-        {/* iOS: provide a done button when date picker is open */}
+        
+        {/* iOS Date Picker Overlay (covers footer like keyboard) */}
         {Platform.OS === 'ios' && activeDateField && (
-          <View style={styles.iosDateDoneRow}>
+          <View style={styles.dateOverlayWrap} pointerEvents="box-none">
+            {/* Backdrop: tap anywhere to dismiss */}
             <Pressable
-              onPress={() => setActiveDateField(null)}
-              style={({ pressed }) => [styles.iosDoneBtn, pressed && { opacity: 0.8 }]}
-            >
-              <Text style={styles.iosDoneText}>Done</Text>
-            </Pressable>
+              style={styles.dateOverlayBackdrop}
+              onPress={() => closeDatePicker()}
+            />
+
+            {/* Panel: sits on bottom, above backdrop */}
+            <View style={styles.dateOverlayPanel}>
+              <View style={styles.dateOverlayHeader}>
+                <Pressable                  
+                  onPress={() => commitDatePicker()}
+                  style={({ pressed }) => [styles.dateDoneBtn, pressed && { opacity: 0.8 }]}
+                >
+                  <Text style={styles.dateDoneText}>Done</Text>
+                </Pressable>
+              </View>
+
+              <DateTimePicker
+                value={dateDraft}
+                mode="date"
+                display="spinner"
+                onChange={onDateChange}
+                style={styles.iosPicker}
+              />
+            </View>
           </View>
         )}
       </View>
@@ -691,6 +725,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
     color: '#fff',
+  },
+  
+  dateOverlayWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 999, // ensure above footerFixed
+  },
+
+  dateOverlayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.15)', // subtle like system overlays
+  },
+
+  dateOverlayPanel: {
+    borderTopWidth: 1,
+    borderTopColor: '#111',
+    backgroundColor: '#fff',
+    paddingBottom: 12,
+  },
+
+  dateOverlayHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+
+  dateDoneBtn: {
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+  },
+
+  dateDoneText: {
+    fontWeight: '900',
+  },
+
+  iosPicker: {
+    // Spinner height is usually ~216; leaving it flexible is fine
   },
 
   iosDateDoneRow: {
