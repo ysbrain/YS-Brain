@@ -1,3 +1,4 @@
+// app/(tabs)/clinic/room/[roomId].tsx
 
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -72,12 +73,11 @@ export default function RoomDetailScreen() {
   const [room, setRoom] = useState<RoomDocShape>(initialRoom);
   const [loading, setLoading] = useState(true);
 
-  // ✅ Subscribe to room doc for live updates
-  useEffect(() => {
+  // Subscribe to room doc for live updates
+  useEffect(() => {    
     if (!clinicId || !roomId) return;
 
     setLoading(true);
-
     const ref = doc(db, 'clinics', clinicId, 'rooms', roomId);
     const unsub = onSnapshot(
       ref,
@@ -103,7 +103,7 @@ export default function RoomDetailScreen() {
           applianceList,
         });
         setLoading(false);
-      },
+      },      
       (err) => {
         console.error('room doc snapshot error', err);
         setRoom(initialRoom);
@@ -230,19 +230,22 @@ export default function RoomDetailScreen() {
       <SelectApplianceTypeModal
         visible={typeModalVisible}
         roomName={room.roomName}
+        closeOnSelect={false}
         onClose={() => setTypeModalVisible(false)}
         onSelect={onModulePicked}
-      />
+      />      
       
-      <AddApplianceToRoomModal
-        visible={addModalVisible}
-        clinicId={clinicId!}
-        roomId={roomId}
-        roomName={room.roomName}
-        selectedModule={selectedModule}
-        onBack={backToModuleSelect}
-        onCloseAll={closeAllModals}
-      />
+      {clinicId && roomId && (
+        <AddApplianceToRoomModal
+          visible={addModalVisible}
+          clinicId={clinicId}
+          roomId={roomId}
+          roomName={room.roomName}
+          selectedModule={selectedModule}
+          onBack={backToModuleSelect}
+          onCloseAll={closeAllModals}
+        />
+      )}
     </>
   );
 }

@@ -1,3 +1,5 @@
+// src/components/SelectApplianceTypeModal.tsx
+
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -30,9 +32,10 @@ export type ModuleItem = {
 
 type Props = {
   visible: boolean;
-  roomName: string;
+  roomName?: string;                // ✅ make optional for reusability
   onClose: () => void;
   onSelect?: (module: ModuleItem) => void;
+  closeOnSelect?: boolean;          // ✅ default true
 };
 
 export default function SelectApplianceTypeModal({
@@ -40,19 +43,18 @@ export default function SelectApplianceTypeModal({
   roomName,
   onClose,
   onSelect,
+  closeOnSelect = true,
 }: Props) {
   const [modules, setModules] = useState<ModuleItem[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // When closing, optionally reset UI state
     if (!visible) {
       setLoading(false);
       return;
     }
 
     setLoading(true);
-
     const ref = collection(db, 'clinics', '_common', 'modules');
     const q = query(ref, orderBy('moduleIndex', 'asc'));
 
@@ -82,13 +84,20 @@ export default function SelectApplianceTypeModal({
     return () => unsub();
   }, [visible]);
 
+  const handlePick = useCallback(
+    (item: ModuleItem) => {
+      onSelect?.(item);
+      if (closeOnSelect) onClose();
+    },
+    [onSelect, closeOnSelect, onClose]
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: ModuleItem }) => {
       const icon = getApplianceIcon(item.id);
-
       return (
         <Pressable
-          onPress={() => onSelect?.(item)}
+          onPress={() => handlePick(item)}
           style={({ pressed }) => [styles.row, pressed && { opacity: 0.85 }]}
           accessibilityRole="button"
           accessibilityLabel={`Select module ${item.moduleName}`}
@@ -128,7 +137,7 @@ export default function SelectApplianceTypeModal({
         </Pressable>
       );
     },
-    [onSelect]
+    [handlePick]
   );
 
   return (
@@ -140,7 +149,6 @@ export default function SelectApplianceTypeModal({
       onRequestClose={onClose}
     >
       <Pressable style={styles.backdrop} onPress={onClose} />
-
       <View style={styles.sheet}>
         <View style={styles.sheetHeader}>
           <Text style={styles.sheetTitle}>Select Appliance Type</Text>
@@ -154,13 +162,16 @@ export default function SelectApplianceTypeModal({
           </Pressable>
         </View>
 
-        <View style={styles.addToRoomRow}>
-          <Text style={styles.addToRoomLabel}>Add to Room:</Text>
-          <MaterialCommunityIcons name="door" size={18} color="#111" />
-          <Text style={styles.roomText} numberOfLines={1}>
-            {roomName}
-          </Text>
-        </View>
+        {/* ✅ Only show this row if roomName is provided */}
+        {!!roomName && (
+          <View style={styles.addToRoomRow}>
+            <Text style={styles.addToRoomLabel}>Add to Room:</Text>
+            <MaterialCommunityIcons name="door" size={18} color="#111" />
+            <Text style={styles.roomText} numberOfLines={1}>
+              {roomName}
+            </Text>
+          </View>
+        )}
 
         <View style={styles.content}>
           <Text style={styles.label}>Choose Module:</Text>
@@ -186,7 +197,6 @@ export default function SelectApplianceTypeModal({
 }
 
 const styles = StyleSheet.create({
-  // ... keep your styles as-is
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   sheet: {
     position: 'absolute',

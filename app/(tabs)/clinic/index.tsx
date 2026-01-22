@@ -1,3 +1,4 @@
+// app/(tabs)/clinic/index.tsx
 
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
@@ -72,7 +73,7 @@ export default function ClinicScreen() {
       
   const [typeModalVisible, setTypeModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
-
+  
   const [activeRoom, setActiveRoom] = useState<{ id: string; roomName: string } | null>(null);
   const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
 
@@ -279,18 +280,16 @@ export default function ClinicScreen() {
         />
       )}
       
-      <SelectApplianceTypeModal
+      <SelectApplianceTypeModal        
         visible={typeModalVisible}
-        roomName={activeRoom?.roomName ?? ''}
-        onClose={() => {
-          setTypeModalVisible(false);
-          setSelectedModule(null);
-        }}
+        roomName={activeRoom?.roomName}
+        closeOnSelect={false}
+        onClose={() => setTypeModalVisible(false)}
         onSelect={onModulePicked}
       />
 
-      {/* only mount AddApplianceToRoomModal when roomId is valid */}
-      {!!activeRoom?.id && (
+      {/* only mount AddApplianceToRoomModal when roomId is valid */}      
+      {activeRoom && (
         <AddApplianceToRoomModal
           visible={addModalVisible}
           clinicId={clinicId!}
