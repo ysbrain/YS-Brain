@@ -8,6 +8,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
@@ -18,7 +19,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
+  View
 } from 'react-native';
 
 import { safeTypeKeyFromLabel } from '@/src/utils/slugify';
@@ -40,6 +41,62 @@ type Props = {
 type MeasurableRef = {
   measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void;
 };
+
+type FieldKey = 'applianceName' | `setup:${string}`;
+
+type FormErrorCode =
+  | 'NO_MODULE'
+  | 'MISSING_NAME'
+  | 'MISSING_FIELD'
+  | 'INVALID_NUMBER'
+  | 'INVALID_DATE'
+  | 'NAME_COLLISION'
+  | 'ROOM_NOT_FOUND'
+  | 'UNKNOWN';
+
+type FormError = {
+  code: FormErrorCode;
+  fieldKey?: FieldKey;
+  meta?: Record<string, any>;
+};
+
+class FormAppError extends Error {
+  code: FormErrorCode;
+  fieldKey?: FieldKey;
+  meta?: Record<string, any>;
+
+  constructor(code: FormErrorCode, opts?: { fieldKey?: FieldKey; meta?: Record<string, any>; message?: string }) {
+    super(opts?.message ?? code);
+    this.code = code;
+    this.fieldKey = opts?.fieldKey;
+    this.meta = opts?.meta;
+  }
+}
+
+function isFormAppError(e: any): e is FormAppError {
+  return !!e && typeof e === 'object' && typeof e.code === 'string';
+}
+
+function getFormErrorMessage(err: FormError): string {
+  switch (err.code) {
+    case 'NO_MODULE':
+      return 'No module selected.';
+    case 'MISSING_NAME':
+      return 'Please enter an appliance name.';
+    case 'MISSING_FIELD':
+      return `Please fill in “${err.meta?.field ?? 'this field'}”.`;
+    case 'INVALID_NUMBER':
+      return `“${err.meta?.field ?? 'This field'}” must be a number.`;
+    case 'INVALID_DATE':
+      return `“${err.meta?.field ?? 'This field'}” must be a valid date (YYYY/MM/DD).`;
+    case 'NAME_COLLISION':
+      return 'This appliance name is already used. Please choose a different name.';
+    case 'ROOM_NOT_FOUND':
+      return 'Room does not exist.';
+    default:
+      return 'Failed to add appliance.';
+  }
+}
 
 function pad2(n: number) {
   return String(n).padStart(2, '0');
@@ -75,7 +132,9 @@ export default function AddApplianceToRoomModal({
   const [setupConfig, setSetupConfig] = useState<SetupConfigItem[] | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [errorText, setErrorText] = useState<string | null>(null);
+  
+  const [formError, setFormError] = useState<FormError | null>(null);
+  const errorText = useMemo(() => (formError ? getFormErrorMessage(formError) : null), [formError]);
 
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
@@ -95,6 +154,37 @@ export default function AddApplianceToRoomModal({
     const s = configValues[activeDateField];
     return parseYYYYMMDD(s) ?? new Date();
   }, [activeDateField, configValues]);
+  
+  const allFieldsFilled = useMemo(() => {
+    if (!selectedModule) return false;
+
+    // Must have a name
+    if (!applianceName.trim()) return false;
+
+    // While loading config, keep disabled
+    if (loadingConfig) return false;
+
+    // If config hasn't been loaded into state yet, keep disabled
+    if (setupConfig === null) return false;
+
+    // Require all setup fields filled
+    for (const item of setupConfig) {
+      const v = (configValues[item.field] ?? '').trim();
+      if (!v) return false;
+    }
+
+    return true;
+  }, [selectedModule, applianceName, loadingConfig, setupConfig, configValues]);
+  
+  const applianceNameInputRef = useRef<TextInput>(null);
+
+  const focusApplianceName = () => {
+    // Small delay helps ensure layout is stable before measuring/scrolling
+    requestAnimationFrame(() => {
+      applianceNameInputRef.current?.focus();
+      scrollFieldIntoView('applianceName');
+    });
+  };
 
   // Reset form when opening/closing or module changes
   useEffect(() => {
@@ -102,7 +192,7 @@ export default function AddApplianceToRoomModal({
     setApplianceName('');
     setConfigValues({});
     setSetupConfig(null);
-    setErrorText(null);
+    setFormError(null);
     setSaving(false);
     setActiveDateField(null);
     setDateDraft(new Date());
@@ -163,9 +253,11 @@ export default function AddApplianceToRoomModal({
   }, [visible, selectedModule?.id]);
 
   const icon = useMemo(() => getApplianceIcon(selectedModule?.id ?? ''), [selectedModule?.id]);
-
+  
   const onChangeConfig = (field: string, value: string) => {
     setConfigValues((prev) => ({ ...prev, [field]: value }));
+    const k = `setup:${field}` as FieldKey;
+    if (formError?.fieldKey === k) setFormError(null);
   };
 
   const onPickDate = (field: string) => {
@@ -250,7 +342,7 @@ export default function AddApplianceToRoomModal({
       });
     }, 50);
   };
-
+  
   const validateAndBuildSetup = () => {
     const cfg = setupConfig ?? [];
     const setup: Record<string, any> = {};
@@ -258,20 +350,44 @@ export default function AddApplianceToRoomModal({
     for (const item of cfg) {
       const raw = (configValues[item.field] ?? '').trim();
 
-      if (!raw) continue; // treat empty as not provided
+      // Require all setup fields filled
+      if (!raw) {
+        return {
+          ok: false as const,
+          error: {
+            code: 'MISSING_FIELD' as const,
+            fieldKey: `setup:${item.field}` as FieldKey,
+            meta: { field: item.field },
+          },
+        };
+      }
 
       if (item.type === 'number') {
         const n = Number(raw);
         if (!Number.isFinite(n)) {
-          return { ok: false as const, message: `“${item.field}” must be a number.` };
+          return {
+            ok: false as const,
+            error: {
+              code: 'INVALID_NUMBER' as const,
+              fieldKey: `setup:${item.field}` as FieldKey,
+              meta: { field: item.field },
+            },
+          };
         }
         setup[item.field] = n;
       } else if (item.type === 'date') {
         const d = parseYYYYMMDD(raw);
         if (!d) {
-          return { ok: false as const, message: `“${item.field}” must be a valid date (YYYY/MM/DD).` };
+          return {
+            ok: false as const,
+            error: {
+              code: 'INVALID_DATE' as const,
+              fieldKey: `setup:${item.field}` as FieldKey,
+              meta: { field: item.field },
+            },
+          };
         }
-        setup[item.field] = raw; // keep as string for now; easy to display
+        setup[item.field] = raw; // keep string
       } else {
         setup[item.field] = raw;
       }
@@ -281,76 +397,118 @@ export default function AddApplianceToRoomModal({
   };  
   
   const onAddToRoom = async () => {
-    setErrorText(null);
+    setFormError(null);
 
     if (!selectedModule?.id) {
-      setErrorText('No module selected.');
+      setFormError({ code: 'NO_MODULE' });
       return;
     }
 
     const name = applianceName.trim();
     if (!name) {
-      setErrorText('Please enter an appliance name.');
+      setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
+      focusApplianceName();
       return;
+    }
+
+    // Safety: even though button is disabled until filled, keep guard
+    if (!allFieldsFilled) {
+      // Find first missing field and target it
+      if (!name) {
+        setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
+        focusApplianceName();
+        return;
+      }
+
+      const cfg = setupConfig ?? [];
+      for (const item of cfg) {
+        const v = (configValues[item.field] ?? '').trim();
+        if (!v) {
+          const fk = `setup:${item.field}` as FieldKey;
+          setFormError({ code: 'MISSING_FIELD', fieldKey: fk, meta: { field: item.field } });
+          scrollFieldIntoView(fk);
+          return;
+        }
+      }
     }
 
     const res = validateAndBuildSetup();
     if (!res.ok) {
-      setErrorText(res.message);
+      setFormError(res.error);
+      if (res.error.fieldKey) {
+        scrollFieldIntoView(res.error.fieldKey);
+        if (res.error.fieldKey === 'applianceName') focusApplianceName();
+      }
       return;
     }
 
     try {
       setSaving(true);
 
-      // Slugified ID (doc name)
       const applianceId = safeTypeKeyFromLabel(name);
-
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
       const applianceRef = doc(appliancesColRef, applianceId);
 
       await runTransaction(db, async (tx) => {
-        // 1) Collision check: if doc exists, abort the whole operation
         const applianceSnap = await tx.get(applianceRef);
         if (applianceSnap.exists()) {
-          throw new Error('This appliance name is already used. Please choose a different name.');
+          throw new FormAppError('NAME_COLLISION', { fieldKey: 'applianceName' });
         }
 
-        // 2) Load room doc
         const roomSnap = await tx.get(roomRef);
         if (!roomSnap.exists()) {
-          throw new Error('Room does not exist.');
+          throw new FormAppError('ROOM_NOT_FOUND');
         }
 
-        // 3) Update room applianceList array (append)
         const data: any = roomSnap.data() ?? {};
         const list = Array.isArray(data.applianceList) ? data.applianceList : [];
 
         const newListItem = {
           id: applianceId,
-          name, // keep "name" since your UI reads "name" from room.applianceList
+          name,
           typeKey: selectedModule.id,
           typeLabel: selectedModule.moduleName,
         };
 
         tx.update(roomRef, { applianceList: [...list, newListItem] });
 
-        // 4) Create appliance doc in subcollection with nested setup object
         tx.set(applianceRef, {
           applianceName: name,
           typeKey: selectedModule.id,
           typeLabel: selectedModule.moduleName,
-          setup: res.setup,              // nested object with all setup values
+          setup: res.setup,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
       });
-
-      onCloseAll();
+      
+      // Success message AFTER all writes are done
+      Alert.alert(
+        '✅ Success',
+        `“${name}” has been added to “${roomName}”.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => onCloseAll(),
+          },
+        ],
+        { cancelable: true }
+      );
     } catch (e: any) {
       console.error('Add appliance error:', e);
-      setErrorText(e?.message ?? 'Failed to add appliance.');
+
+      if (isFormAppError(e)) {
+        setFormError({ code: e.code, fieldKey: e.fieldKey, meta: e.meta });
+        if (e.fieldKey) {
+          scrollFieldIntoView(e.fieldKey);
+          if (e.fieldKey === 'applianceName') focusApplianceName();
+        }
+        return;
+      }
+
+      // fallback
+      setFormError({ code: 'UNKNOWN' });
     } finally {
       setSaving(false);
     }
@@ -461,17 +619,32 @@ export default function AddApplianceToRoomModal({
                   </View>
                 </View>
 
-                {/* Appliance name */}
-                <Text style={[styles.sectionLabel, { marginTop: 14 }]}>Appliance Name</Text>
+                {/* Appliance name */}                
+                <Text
+                  style={[
+                    styles.sectionLabel,
+                    { marginTop: 14 },
+                    formError?.fieldKey === 'applianceName' && styles.errorLabel,
+                  ]}
+                >
+                  Appliance Name
+                </Text>
                 <TextInput
                   ref={(r) => {
+                    applianceNameInputRef.current = r;
                     inputRefs.current['applianceName'] = r as any;
                   }}
-                  value={applianceName}
-                  onChangeText={setApplianceName}
+                  value={applianceName}                  
+                  onChangeText={(t) => {
+                    setApplianceName(t);
+                    if (formError?.fieldKey === 'applianceName') setFormError(null);
+                  }}
                   placeholder="Enter appliance name"
-                  placeholderTextColor="#999"
-                  style={styles.textInput}
+                  placeholderTextColor="#999"                  
+                  style={[
+                    styles.textInput,
+                    formError?.fieldKey === 'applianceName' && styles.errorBorder,
+                  ]}
                   returnKeyType="done"
                   onFocus={() => scrollFieldIntoView('applianceName')}
                 />
@@ -499,8 +672,15 @@ export default function AddApplianceToRoomModal({
                           const value = configValues[item.field] ?? '';
 
                           return (
-                            <View key={k} style={styles.setupItem}>
-                              <Text style={styles.setupFieldLabel}>{item.field}</Text>
+                            <View key={k} style={styles.setupItem}>                              
+                              <Text
+                                style={[
+                                  styles.setupFieldLabel,
+                                  formError?.fieldKey === k && styles.errorLabel,
+                                ]}
+                              >
+                                {item.field}
+                              </Text>
 
                               {item.type === 'date' ? (
                                 <View
@@ -512,10 +692,11 @@ export default function AddApplianceToRoomModal({
                                     onPress={() => {
                                       scrollFieldIntoView(k);
                                       onPickDate(item.field);
-                                    }}
+                                    }}                                    
                                     style={({ pressed }) => [
                                       styles.dateInput,
                                       pressed && { opacity: 0.85 },
+                                      formError?.fieldKey === k && styles.errorBorder,
                                     ]}
                                     accessibilityRole="button"
                                   >
@@ -539,8 +720,11 @@ export default function AddApplianceToRoomModal({
                                   value={value}
                                   onChangeText={(t) => onChangeConfig(item.field, t)}
                                   placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
-                                  placeholderTextColor="#999"
-                                  style={styles.textInput}
+                                  placeholderTextColor="#999"                                  
+                                  style={[
+                                    styles.textInput,
+                                    formError?.fieldKey === k && styles.errorBorder,
+                                  ]}
                                   keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
                                   returnKeyType="done"
                                   onFocus={() => scrollFieldIntoView(k)}
@@ -570,13 +754,14 @@ export default function AddApplianceToRoomModal({
               </Pressable>
 
               <Pressable
-                onPress={onAddToRoom}
+                onPress={onAddToRoom}                
                 style={({ pressed }) => [
                   styles.primaryBtn,
                   pressed && { opacity: 0.9 },
+                  (saving || !allFieldsFilled) && styles.primaryBtnDisabled,
                   saving && { opacity: 0.6 },
                 ]}
-                disabled={saving || !selectedModule}
+                disabled={saving || !selectedModule || !allFieldsFilled}
               >
                 <Text style={styles.primaryBtnText}>
                   {saving ? 'Adding…' : 'Add to Room'}
@@ -776,6 +961,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
+
+  errorLabel: {
+    color: '#B00020',
+  },
+  errorBorder: {
+    borderColor: '#B00020',
+    borderWidth: 2
+  },
+  primaryBtnDisabled: {
+    opacity: 0.5,
+  },
+
   dateOverlayWrap: {
     position: 'absolute',
     left: 0,
