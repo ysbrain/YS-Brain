@@ -131,6 +131,7 @@ export default function AddApplianceToRoomModal({
   const [applianceName, setApplianceName] = useState('');
   const [setupConfig, setSetupConfig] = useState<SetupConfigItem[] | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
+  const [moduleRecordFields, setModuleRecordFields] = useState<any[] | undefined>(undefined);
   const [saving, setSaving] = useState(false);
   
   const [formError, setFormError] = useState<FormError | null>(null);
@@ -192,6 +193,7 @@ export default function AddApplianceToRoomModal({
     setApplianceName('');
     setConfigValues({});
     setSetupConfig(null);
+    setModuleRecordFields(undefined);
     setFormError(null);
     setSaving(false);
     setActiveDateField(null);
@@ -208,8 +210,13 @@ export default function AddApplianceToRoomModal({
 
     const unsub = onSnapshot(
       ref,
-      (snap) => {
+      (snap) => {        
         const data: any = snap.data() ?? {};
+
+        // recordFields (copy exact array if present)
+        const rf = Array.isArray(data.recordFields) ? data.recordFields : undefined;
+        setModuleRecordFields(rf);
+
         const raw = Array.isArray(data.setupConfig) ? data.setupConfig : null;
 
         if (!raw) {
@@ -245,6 +252,7 @@ export default function AddApplianceToRoomModal({
       (err) => {
         console.error('setupConfig snapshot error:', err);
         setSetupConfig([]);
+        setModuleRecordFields(undefined);
         setLoadingConfig(false);
       }
     );
@@ -481,7 +489,9 @@ export default function AddApplianceToRoomModal({
           applianceName: name,
           typeKey: selectedModule.id,
           typeLabel: selectedModule.moduleName,
-          setup: res.setup,
+          setup: res.setup,          
+          // Only include recordFields if the module doc had it (including empty array)
+          ...(moduleRecordFields !== undefined ? { recordFields: moduleRecordFields } : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

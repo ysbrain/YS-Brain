@@ -24,7 +24,6 @@ import {
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
 
 type ApplianceItem = {
@@ -70,34 +69,10 @@ export default function ClinicScreen() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [error, setError] = useState<string | null>(null);
-      
-  const [typeModalVisible, setTypeModalVisible] = useState(false);
-  const [addModalVisible, setAddModalVisible] = useState(false);
-  
-  const [activeRoom, setActiveRoom] = useState<{ id: string; roomName: string } | null>(null);
-  const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
 
   const applianceFlow = useAddApplianceFlow({ clinicId });
   const openSelectModule = (room: Room) => {    
     applianceFlow.open({ id: room.id, roomName: room.roomName });
-  };
-
-  const onModulePicked = (m: ModuleItem) => {
-    setSelectedModule(m);
-    setTypeModalVisible(false);
-    setAddModalVisible(true);
-  };
-
-  const backToModuleSelect = () => {
-    setAddModalVisible(false);
-    setTypeModalVisible(true);
-  };
-
-  const closeAllModals = () => {
-    setTypeModalVisible(false);
-    setAddModalVisible(false);
-    setSelectedModule(null);
-    setActiveRoom(null);
   };
 
   const roomsPathReady = useMemo(() => Boolean(clinicId), [clinicId]);
@@ -204,15 +179,16 @@ export default function ClinicScreen() {
                     )}
                   </Pressable>
                 ))}
-
+                
                 {showMoreChip && (
                   <Pressable
                     onPress={(e) => {
+                      // Prevent double-trigger if parent also receives press (safe)
                       e.stopPropagation?.();
-                      // Later you can navigate/expand
+                      goRoomDetail(item); // same as pressing the room card
                     }}
                     style={[styles.applianceChip, styles.moreChip]}
-                  >                    
+                  >
                     <View style={styles.chipTopRow}>
                       <MaterialCommunityIcons name="dots-horizontal" size={22} color="#111" />
                       <Text style={styles.moreChipText}>+{applianceCount - 7} more</Text>

@@ -11,7 +11,6 @@ import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
 
 type ApplianceListItem = {
@@ -72,11 +71,6 @@ export default function RoomDetailScreen() {
 
   const [room, setRoom] = useState<RoomDocShape>(initialRoom);
   const [loading, setLoading] = useState(true);
-  
-  const applianceFlow = useAddApplianceFlow({
-    clinicId,
-    defaultRoom: { id: roomId, roomName: room.roomName },
-  });
 
   // Subscribe to room doc for live updates
   useEffect(() => {    
@@ -118,28 +112,11 @@ export default function RoomDetailScreen() {
 
     return () => unsub();
   }, [clinicId, roomId, initialRoom]);
-
-  // Modal state
-  const [typeModalVisible, setTypeModalVisible] = useState(false);
-  const [addModalVisible, setAddModalVisible] = useState(false);
-  const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
-
-  const onModulePicked = (m: ModuleItem) => {
-    setSelectedModule(m);
-    setTypeModalVisible(false);
-    setAddModalVisible(true);
-  };
-
-  const backToModuleSelect = () => {
-    setAddModalVisible(false);
-    setTypeModalVisible(true);
-  };
-
-  const closeAllModals = () => {
-    setTypeModalVisible(false);
-    setAddModalVisible(false);
-    setSelectedModule(null);
-  };
+  
+  const applianceFlow = useAddApplianceFlow({
+    clinicId,
+    defaultRoom: { id: roomId, roomName: room.roomName },
+  });
 
   return (
     <>
