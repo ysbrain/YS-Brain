@@ -11,7 +11,7 @@ import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import AddApplianceToRoomModal from '@/src/components/AddAplianceToRoomModal';
+import AddApplianceToRoomModal from '@/src/components/AddApplianceToRoomModal';
 import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 
 type ApplianceListItem = {

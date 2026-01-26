@@ -1,5 +1,6 @@
 // src/components/SelectApplianceTypeModal.tsx
 
+import BottomSheetShell from '@/src/components/BottomSheetShell';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -11,15 +12,14 @@ import {
   query,
   QuerySnapshot,
 } from 'firebase/firestore';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Modal,
   Pressable,
   StyleSheet,
   Text,
-  View,
+  View
 } from 'react-native';
 
 export type ModuleItem = {
@@ -32,10 +32,10 @@ export type ModuleItem = {
 
 type Props = {
   visible: boolean;
-  roomName?: string;                // ✅ make optional for reusability
+  roomName?: string; // optional for reusability
   onClose: () => void;
   onSelect?: (module: ModuleItem) => void;
-  closeOnSelect?: boolean;          // ✅ default true
+  closeOnSelect?: boolean; // default true
 };
 
 export default function SelectApplianceTypeModal({
@@ -47,19 +47,25 @@ export default function SelectApplianceTypeModal({
 }: Props) {
   const [modules, setModules] = useState<ModuleItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const modulesQuery = useMemo(() => {
+    const ref = collection(db, 'clinics', '_common', 'modules');
+    return query(ref, orderBy('moduleIndex', 'asc'));
+  }, []);
 
   useEffect(() => {
     if (!visible) {
       setLoading(false);
+      setLoadError(null);
       return;
     }
 
     setLoading(true);
-    const ref = collection(db, 'clinics', '_common', 'modules');
-    const q = query(ref, orderBy('moduleIndex', 'asc'));
+    setLoadError(null);
 
     const unsub = onSnapshot(
-      q,
+      modulesQuery,
       (snap: QuerySnapshot<DocumentData>) => {
         const list: ModuleItem[] = snap.docs.map((d) => {
           const data = d.data();
@@ -77,12 +83,13 @@ export default function SelectApplianceTypeModal({
       (err) => {
         console.error('Modules snapshot error:', err);
         setModules([]);
+        setLoadError('Failed to load modules.');
         setLoading(false);
       }
     );
 
     return () => unsub();
-  }, [visible]);
+  }, [visible, modulesQuery]);
 
   const handlePick = useCallback(
     (item: ModuleItem) => {
@@ -95,6 +102,7 @@ export default function SelectApplianceTypeModal({
   const renderItem = useCallback(
     ({ item }: { item: ModuleItem }) => {
       const icon = getApplianceIcon(item.id);
+
       return (
         <Pressable
           onPress={() => handlePick(item)}
@@ -140,30 +148,30 @@ export default function SelectApplianceTypeModal({
     [handlePick]
   );
 
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.backdrop} onPress={onClose} />
-      <View style={styles.sheet}>
-        <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Select Appliance Type</Text>
-          <Pressable
-            onPress={onClose}
-            style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <MaterialCommunityIcons name="close" size={22} color="#111" />
-          </Pressable>
+  const ListEmpty = useMemo(() => {
+    if (loading) return null;
+    if (loadError) {
+      return (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyText}>{loadError}</Text>
         </View>
+      );
+    }
+    return (
+      <View style={styles.emptyBox}>
+        <Text style={styles.emptyText}>No modules found.</Text>
+      </View>
+    );
+  }, [loading, loadError]);
 
-        {/* ✅ Only show this row if roomName is provided */}
-        {!!roomName && (
+  return (    
+    <BottomSheetShell
+      visible={visible}
+      title="Select Appliance Type"
+      onClose={onClose}
+      maxHeight="80%"
+      topSlot={
+        !!roomName ? (
           <View style={styles.addToRoomRow}>
             <Text style={styles.addToRoomLabel}>Add to Room:</Text>
             <MaterialCommunityIcons name="door" size={18} color="#111" />
@@ -171,28 +179,28 @@ export default function SelectApplianceTypeModal({
               {roomName}
             </Text>
           </View>
-        )}
-
-        <View style={styles.content}>
-          <Text style={styles.label}>Choose Module:</Text>
-        </View>
-
-        {loading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator />
-            <Text style={styles.loadingText}>Loading modules...</Text>
-          </View>
-        ) : (
-          <FlatList
-            data={modules}
-            keyExtractor={(m) => m.id}
-            renderItem={renderItem}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
+        ) : null
+      }
+    >
+      <View style={styles.content}>
+        <Text style={styles.label}>Choose Module:</Text>
       </View>
-    </Modal>
+
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator />
+          <Text style={styles.loadingText}>Loading modules...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={modules}
+          keyExtractor={(m) => m.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+    </BottomSheetShell>
   );
 }
 
@@ -284,4 +292,6 @@ const styles = StyleSheet.create({
   tagOfficial: { backgroundColor: '#EAF7EA' },
   tagCustom: { backgroundColor: '#F3F3F3' },
   tagText: { fontSize: 12, fontWeight: '900' },
+  emptyBox: { padding: 18 },
+  emptyText: { color: '#666', fontWeight: '700' },
 });

@@ -1,5 +1,6 @@
 // src/components/AddAplianceToRoomModal.tsx
 
+import BottomSheetShell from '@/src/components/BottomSheetShell';
 import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
@@ -12,7 +13,6 @@ import {
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -320,9 +320,8 @@ export default function AddApplianceToRoomModal({
       hideSub.remove();
     };
   }, []);
-
+  
   const scrollFieldIntoView = (key: string) => {
-    if (!keyboardHeight) return;
     if (activeDateField) return;
 
     setTimeout(() => {
@@ -331,10 +330,15 @@ export default function AddApplianceToRoomModal({
 
       input.measureInWindow((_x, y, _w, h) => {
         const inputBottom = y + h;
+
+        // Works with or without keyboard:
+        // if keyboardHeight is 0, safeBottomY accounts for footer only.
         const safeBottomY = windowHeight - keyboardHeight - FOOTER_HEIGHT - SAFE_GAP;
+
         if (inputBottom <= safeBottomY) return;
 
         const overlap = inputBottom - safeBottomY;
+
         scrollRef.current?.scrollTo({
           y: scrollYRef.current + overlap,
           animated: true,
@@ -514,32 +518,13 @@ export default function AddApplianceToRoomModal({
     }
   };
 
-  return (
-    <Modal
+  return (    
+    <BottomSheetShell
       visible={visible}
-      animationType="slide"
-      transparent
-      statusBarTranslucent
-      onRequestClose={onCloseAll}
-    >
-      {/* Backdrop */}
-      <Pressable style={styles.backdrop} onPress={onCloseAll} />
-
-      <View style={styles.sheet}>
-        {/* Header */}
-        <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>Add Appliance</Text>
-          <Pressable
-            onPress={onCloseAll}
-            style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <MaterialCommunityIcons name="close" size={20} color="#111" />
-          </Pressable>
-        </View>
-
-        {/* Add to room row */}
+      title="Add Appliance"
+      onClose={onCloseAll}
+      height="88%"
+      topSlot={
         <View style={styles.addToRoomRow}>
           <Text style={styles.addToRoomLabel}>Add to Room:</Text>
           <MaterialCommunityIcons name="door" size={18} color="#111" />
@@ -547,265 +532,265 @@ export default function AddApplianceToRoomModal({
             {roomName}
           </Text>
         </View>
-
-        <KeyboardAvoidingView
-          style={styles.body}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      }
+    >
+      <KeyboardAvoidingView
+        style={styles.body}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: FOOTER_HEIGHT + 16 + keyboardHeight },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          onScroll={(e) => {
+            scrollYRef.current = e.nativeEvent.contentOffset.y;
+          }}
+          scrollEventThrottle={16}
         >
-          <ScrollView
-            ref={scrollRef}
-            style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: FOOTER_HEIGHT + 16 + keyboardHeight },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            onScroll={(e) => {
-              scrollYRef.current = e.nativeEvent.contentOffset.y;
-            }}
-            scrollEventThrottle={16}
-          >
-            {/* Defensive: selectedModule missing */}
-            {!selectedModule ? (
-              <View style={{ paddingVertical: 8, gap: 10 }}>
-                <Text style={styles.loadingHint}>No module selected.</Text>
-                <Pressable
-                  onPress={onBack}
-                  style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
-                >
-                  <MaterialCommunityIcons name="arrow-left" size={20} color="#111" />
-                  <Text style={styles.footerBtnText}>Back</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                {/* Module section */}
-                <Text style={styles.sectionLabel}>Module</Text>
-                <View style={styles.moduleChip}>
-                  {/* Tag pinned top-right */}
-                  <View
-                    style={[
-                      styles.tagPinned,
-                      selectedModule.official ? styles.tagOfficial : styles.tagCustom,
-                    ]}
-                  >
-                    <Text style={styles.tagText}>
-                      {selectedModule.official ? 'OFFICIAL' : 'CUSTOM'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.chipTopRow}>
-                    <View style={styles.iconWrap}>
-                      <MaterialCommunityIcons
-                        name={icon.name}
-                        size={26}
-                        color={icon.color ?? '#111'}
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, paddingRight: 88 }}>
-                      <Text style={styles.moduleName} numberOfLines={1}>
-                        {selectedModule.moduleName}
-                      </Text>
-
-                      {/* ✅ FIX: show description only when it exists */}
-                      {!!selectedModule.description && (
-                        <Text style={styles.moduleDesc} numberOfLines={2}>
-                          {selectedModule.description}
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                </View>
-
-                {/* Appliance name */}                
-                <Text
-                  style={[
-                    styles.sectionLabel,
-                    { marginTop: 14 },
-                    formError?.fieldKey === 'applianceName' && styles.errorLabel,
-                  ]}
-                >
-                  Appliance Name
-                </Text>
-                <TextInput
-                  ref={(r) => {
-                    applianceNameInputRef.current = r;
-                    inputRefs.current['applianceName'] = r as any;
-                  }}
-                  value={applianceName}                  
-                  onChangeText={(t) => {
-                    setApplianceName(t);
-                    if (formError?.fieldKey === 'applianceName') setFormError(null);
-                  }}
-                  placeholder="Enter appliance name"
-                  placeholderTextColor="#999"                  
-                  style={[
-                    styles.textInput,
-                    formError?.fieldKey === 'applianceName' && styles.errorBorder,
-                  ]}
-                  returnKeyType="done"
-                  onFocus={() => scrollFieldIntoView('applianceName')}
-                />
-
-                {/* Inline error */}
-                {!!errorText && (
-                  <Text style={{ color: '#B00020', fontWeight: '700', marginTop: 10 }}>
-                    {errorText}
-                  </Text>
-                )}
-
-                {/* Setup Configuration */}
-                {showSetupSection && (
-                  <>
-                    <Text style={[styles.sectionLabel, { marginTop: 16 }]}>
-                      Setup Configuration
-                    </Text>
-
-                    <View style={styles.setupBox}>
-                      {loadingConfig ? (
-                        <Text style={styles.loadingHint}>Loading setup fields...</Text>
-                      ) : (
-                        (setupConfig ?? []).map((item) => {
-                          const k = `setup:${item.field}`;
-                          const value = configValues[item.field] ?? '';
-
-                          return (
-                            <View key={k} style={styles.setupItem}>                              
-                              <Text
-                                style={[
-                                  styles.setupFieldLabel,
-                                  formError?.fieldKey === k && styles.errorLabel,
-                                ]}
-                              >
-                                {item.field}
-                              </Text>
-
-                              {item.type === 'date' ? (
-                                <View
-                                  ref={(r: any) => {
-                                    inputRefs.current[k] = r as any;
-                                  }}
-                                >
-                                  <Pressable
-                                    onPress={() => {
-                                      scrollFieldIntoView(k);
-                                      onPickDate(item.field);
-                                    }}                                    
-                                    style={({ pressed }) => [
-                                      styles.dateInput,
-                                      pressed && { opacity: 0.85 },
-                                      formError?.fieldKey === k && styles.errorBorder,
-                                    ]}
-                                    accessibilityRole="button"
-                                  >
-                                    <Text
-                                      style={value ? styles.dateText : styles.datePlaceholder}
-                                    >
-                                      {value || 'Select date'}
-                                    </Text>
-                                    <MaterialCommunityIcons
-                                      name="calendar-month-outline"
-                                      size={20}
-                                      color="#111"
-                                    />
-                                  </Pressable>
-                                </View>
-                              ) : (
-                                <TextInput
-                                  ref={(r) => {
-                                    inputRefs.current[k] = r as any;
-                                  }}
-                                  value={value}
-                                  onChangeText={(t) => onChangeConfig(item.field, t)}
-                                  placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
-                                  placeholderTextColor="#999"                                  
-                                  style={[
-                                    styles.textInput,
-                                    formError?.fieldKey === k && styles.errorBorder,
-                                  ]}
-                                  keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
-                                  returnKeyType="done"
-                                  onFocus={() => scrollFieldIntoView(k)}
-                                />
-                              )}
-                            </View>
-                          );
-                        })
-                      )}
-                    </View>
-                  </>
-                )}
-              </>
-            )}
-          </ScrollView>
-
-          {/* Footer buttons (hide while date overlay is active) */}
-          {!activeDateField && (
-            <View style={styles.footerFixed}>
+          {/* Defensive: selectedModule missing */}
+          {!selectedModule ? (
+            <View style={{ paddingVertical: 8, gap: 10 }}>
+              <Text style={styles.loadingHint}>No module selected.</Text>
               <Pressable
                 onPress={onBack}
                 style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
-                disabled={saving}
               >
                 <MaterialCommunityIcons name="arrow-left" size={20} color="#111" />
                 <Text style={styles.footerBtnText}>Back</Text>
               </Pressable>
-
-              <Pressable
-                onPress={onAddToRoom}                
-                style={({ pressed }) => [
-                  styles.primaryBtn,
-                  pressed && { opacity: 0.9 },
-                  (saving || !allFieldsFilled) && styles.primaryBtnDisabled,
-                  saving && { opacity: 0.6 },
-                ]}
-                disabled={saving || !selectedModule || !allFieldsFilled}
-              >
-                <Text style={styles.primaryBtnText}>
-                  {saving ? 'Adding…' : 'Add to Room'}
-                </Text>
-              </Pressable>
             </View>
-          )}
-        </KeyboardAvoidingView>
-
-        {/* Android Date picker (native) */}
-        {Platform.OS !== 'ios' && activeDateField && (
-          <DateTimePicker
-            value={activeDateValue}
-            mode="date"
-            display="default"
-            onChange={onDateChange}
-          />
-        )}
-
-        {/* iOS Date Picker Overlay */}
-        {Platform.OS === 'ios' && activeDateField && (
-          <View style={styles.dateOverlayWrap} pointerEvents="box-none">
-            <Pressable style={styles.dateOverlayBackdrop} onPress={closeDatePicker} />
-            <View style={styles.dateOverlayPanel}>
-              <View style={styles.dateOverlayHeader}>
-                <Pressable
-                  onPress={commitDatePicker}
-                  style={({ pressed }) => [styles.dateDoneBtn, pressed && { opacity: 0.8 }]}
+          ) : (
+            <>
+              {/* Module section */}
+              <Text style={styles.sectionLabel}>Module</Text>
+              <View style={styles.moduleChip}>
+                {/* Tag pinned top-right */}
+                <View
+                  style={[
+                    styles.tagPinned,
+                    selectedModule.official ? styles.tagOfficial : styles.tagCustom,
+                  ]}
                 >
-                  <Text style={styles.dateDoneText}>Done</Text>
-                </Pressable>
+                  <Text style={styles.tagText}>
+                    {selectedModule.official ? 'OFFICIAL' : 'CUSTOM'}
+                  </Text>
+                </View>
+
+                <View style={styles.chipTopRow}>
+                  <View style={styles.iconWrap}>
+                    <MaterialCommunityIcons
+                      name={icon.name}
+                      size={26}
+                      color={icon.color ?? '#111'}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1, paddingRight: 88 }}>
+                    <Text style={styles.moduleName} numberOfLines={1}>
+                      {selectedModule.moduleName}
+                    </Text>
+
+                    {/* ✅ FIX: show description only when it exists */}
+                    {!!selectedModule.description && (
+                      <Text style={styles.moduleDesc} numberOfLines={2}>
+                        {selectedModule.description}
+                      </Text>
+                    )}
+                  </View>
+                </View>
               </View>
-              <DateTimePicker
-                value={dateDraft}
-                mode="date"
-                display="spinner"
-                onChange={onDateChange}
-                style={styles.iosPicker}
+
+              {/* Appliance name */}                
+              <Text
+                style={[
+                  styles.sectionLabel,
+                  { marginTop: 14 },
+                  formError?.fieldKey === 'applianceName' && styles.errorLabel,
+                ]}
+              >
+                Appliance Name
+              </Text>
+              <TextInput
+                ref={(r) => {
+                  applianceNameInputRef.current = r;
+                  inputRefs.current['applianceName'] = r as any;
+                }}
+                value={applianceName}                  
+                onChangeText={(t) => {
+                  setApplianceName(t);
+                  if (formError?.fieldKey === 'applianceName') setFormError(null);
+                }}
+                placeholder="Enter appliance name"
+                placeholderTextColor="#999"                  
+                style={[
+                  styles.textInput,
+                  formError?.fieldKey === 'applianceName' && styles.errorBorder,
+                ]}
+                returnKeyType="done"
+                onFocus={() => scrollFieldIntoView('applianceName')}
               />
-            </View>
+
+              {/* Inline error */}
+              {!!errorText && (
+                <Text style={{ color: '#B00020', fontWeight: '700', marginTop: 10 }}>
+                  {errorText}
+                </Text>
+              )}
+
+              {/* Setup Configuration */}
+              {showSetupSection && (
+                <>
+                  <Text style={[styles.sectionLabel, { marginTop: 16 }]}>
+                    Setup Configuration
+                  </Text>
+
+                  <View style={styles.setupBox}>
+                    {loadingConfig ? (
+                      <Text style={styles.loadingHint}>Loading setup fields...</Text>
+                    ) : (
+                      (setupConfig ?? []).map((item) => {
+                        const k = `setup:${item.field}` as FieldKey;
+                        const value = configValues[item.field] ?? '';
+
+                        return (
+                          <View key={k} style={styles.setupItem}>                              
+                            <Text
+                              style={[
+                                styles.setupFieldLabel,
+                                formError?.fieldKey === k && styles.errorLabel,
+                              ]}
+                            >
+                              {item.field}
+                            </Text>
+
+                            {item.type === 'date' ? (
+                              <View
+                                ref={(r: any) => {
+                                  inputRefs.current[k] = r as any;
+                                }}
+                              >
+                                <Pressable
+                                  onPress={() => {
+                                    scrollFieldIntoView(k);
+                                    onPickDate(item.field);
+                                  }}                                    
+                                  style={({ pressed }) => [
+                                    styles.dateInput,
+                                    pressed && { opacity: 0.85 },
+                                    formError?.fieldKey === k && styles.errorBorder,
+                                  ]}
+                                  accessibilityRole="button"
+                                >
+                                  <Text
+                                    style={value ? styles.dateText : styles.datePlaceholder}
+                                  >
+                                    {value || 'Select date'}
+                                  </Text>
+                                  <MaterialCommunityIcons
+                                    name="calendar-month-outline"
+                                    size={20}
+                                    color="#111"
+                                  />
+                                </Pressable>
+                              </View>
+                            ) : (
+                              <TextInput
+                                ref={(r) => {
+                                  inputRefs.current[k] = r as any;
+                                }}
+                                value={value}
+                                onChangeText={(t) => onChangeConfig(item.field, t)}
+                                placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
+                                placeholderTextColor="#999"                                  
+                                style={[
+                                  styles.textInput,
+                                  formError?.fieldKey === k && styles.errorBorder,
+                                ]}
+                                keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
+                                returnKeyType="done"
+                                onFocus={() => scrollFieldIntoView(k)}
+                              />
+                            )}
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
+                </>
+              )}
+            </>
+          )}
+        </ScrollView>
+
+        {/* Footer buttons (hide while date overlay is active) */}
+        {!activeDateField && (
+          <View style={styles.footerFixed}>
+            <Pressable
+              onPress={onBack}
+              style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
+              disabled={saving}
+            >
+              <MaterialCommunityIcons name="arrow-left" size={20} color="#111" />
+              <Text style={styles.footerBtnText}>Back</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={onAddToRoom}                
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                pressed && { opacity: 0.9 },
+                (saving || !allFieldsFilled) && styles.primaryBtnDisabled,
+                saving && { opacity: 0.6 },
+              ]}
+              disabled={saving || !selectedModule || !allFieldsFilled}
+            >
+              <Text style={styles.primaryBtnText}>
+                {saving ? 'Adding…' : 'Add to Room'}
+              </Text>
+            </Pressable>
           </View>
         )}
-      </View>
-    </Modal>
+      </KeyboardAvoidingView>
+
+      {/* Android Date picker (native) */}
+      {Platform.OS !== 'ios' && activeDateField && (
+        <DateTimePicker
+          value={activeDateValue}
+          mode="date"
+          display="default"
+          onChange={onDateChange}
+        />
+      )}
+
+      {/* iOS Date Picker Overlay */}
+      {Platform.OS === 'ios' && activeDateField && (
+        <View style={styles.dateOverlayWrap} pointerEvents="box-none">
+          <Pressable style={styles.dateOverlayBackdrop} onPress={closeDatePicker} />
+          <View style={styles.dateOverlayPanel}>
+            <View style={styles.dateOverlayHeader}>
+              <Pressable
+                onPress={commitDatePicker}
+                style={({ pressed }) => [styles.dateDoneBtn, pressed && { opacity: 0.8 }]}
+              >
+                <Text style={styles.dateDoneText}>Done</Text>
+              </Pressable>
+            </View>
+            <DateTimePicker
+              value={dateDraft}
+              mode="date"
+              display="spinner"
+              onChange={onDateChange}
+              style={styles.iosPicker}
+            />
+          </View>
+        </View>
+      )}
+    </BottomSheetShell>
   );
 }
 
