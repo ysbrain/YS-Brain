@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from 'react';
-import type { UserProfile } from '../data/profile/profile.types';
+import type { UserProfile } from '../profile/profile.types';
 
 type ProfileContextValue = {
   profile: UserProfile;

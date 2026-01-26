@@ -24,8 +24,8 @@ import {
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import AddApplianceToRoomModal from '@/src/components/AddApplianceToRoomModal';
-import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
+import { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
+import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
 
 type ApplianceItem = {
   id: string;
@@ -77,10 +77,9 @@ export default function ClinicScreen() {
   const [activeRoom, setActiveRoom] = useState<{ id: string; roomName: string } | null>(null);
   const [selectedModule, setSelectedModule] = useState<ModuleItem | null>(null);
 
+  const applianceFlow = useAddApplianceFlow({ clinicId });
   const openSelectModule = (room: Room) => {    
-    setSelectedModule(null);              // avoid stale selection
-    setActiveRoom({ id: room.id, roomName: room.roomName });
-    setTypeModalVisible(true);
+    applianceFlow.open({ id: room.id, roomName: room.roomName });
   };
 
   const onModulePicked = (m: ModuleItem) => {
@@ -280,26 +279,7 @@ export default function ClinicScreen() {
         />
       )}
       
-      <SelectApplianceTypeModal        
-        visible={typeModalVisible}
-        roomName={activeRoom?.roomName}
-        closeOnSelect={false}
-        onClose={() => setTypeModalVisible(false)}
-        onSelect={onModulePicked}
-      />
-
-      {/* only mount AddApplianceToRoomModal when roomId is valid */}      
-      {activeRoom && (
-        <AddApplianceToRoomModal
-          visible={addModalVisible}
-          clinicId={clinicId!}
-          roomId={activeRoom.id}
-          roomName={activeRoom.roomName}
-          selectedModule={selectedModule}
-          onBack={backToModuleSelect}
-          onCloseAll={closeAllModals}
-        />
-      )}
+      {applianceFlow.Modals}
     </View>
   );
 }

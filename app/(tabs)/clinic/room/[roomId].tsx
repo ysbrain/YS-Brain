@@ -11,8 +11,8 @@ import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import AddApplianceToRoomModal from '@/src/components/AddApplianceToRoomModal';
-import SelectApplianceTypeModal, { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
+import { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
+import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
 
 type ApplianceListItem = {
   id: string;
@@ -72,6 +72,11 @@ export default function RoomDetailScreen() {
 
   const [room, setRoom] = useState<RoomDocShape>(initialRoom);
   const [loading, setLoading] = useState(true);
+  
+  const applianceFlow = useAddApplianceFlow({
+    clinicId,
+    defaultRoom: { id: roomId, roomName: room.roomName },
+  });
 
   // Subscribe to room doc for live updates
   useEffect(() => {    
@@ -152,7 +157,7 @@ export default function RoomDetailScreen() {
             <Text style={styles.sectionTitle}>Appliances & Modules</Text>
 
             <Pressable
-              onPress={() => setTypeModalVisible(true)}
+              onPress={() => applianceFlow.open({ id: roomId, roomName: room.roomName })}
               style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.8 }]}
             >
               <Text style={styles.newButtonText}>+ Appliance</Text>
@@ -226,26 +231,7 @@ export default function RoomDetailScreen() {
         </View>
       </ScrollView>
       
-      {/* Modal */}
-      <SelectApplianceTypeModal
-        visible={typeModalVisible}
-        roomName={room.roomName}
-        closeOnSelect={false}
-        onClose={() => setTypeModalVisible(false)}
-        onSelect={onModulePicked}
-      />      
-      
-      {clinicId && roomId && (
-        <AddApplianceToRoomModal
-          visible={addModalVisible}
-          clinicId={clinicId}
-          roomId={roomId}
-          roomName={room.roomName}
-          selectedModule={selectedModule}
-          onBack={backToModuleSelect}
-          onCloseAll={closeAllModals}
-        />
-      )}
+      {applianceFlow.Modals}
     </>
   );
 }

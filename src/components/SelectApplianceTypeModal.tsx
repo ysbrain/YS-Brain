@@ -205,36 +205,6 @@ export default function SelectApplianceTypeModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    maxHeight: '80%',
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    borderWidth: 1,
-    borderColor: '#111',
-    overflow: 'hidden',
-  },
-  sheetHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#111',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheetTitle: { fontSize: 16, fontWeight: '900' },
-  closeBtn: {
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 12,
-    padding: 8,
-  },
   loadingBox: {
     padding: 18,
     flexDirection: 'row',

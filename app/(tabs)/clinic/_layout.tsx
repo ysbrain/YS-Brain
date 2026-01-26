@@ -1,5 +1,5 @@
 import { ProfileProvider } from '@/src/contexts/ProfileContext';
-import { useUserProfile } from '@/src/data/hooks/useUserProfile';
+import { useUserProfile } from '@/src/hooks/useUserProfile';
 import { commonStackOptions } from '@/src/lib/stackOptions';
 import { Stack, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, Text } from 'react-native';
