@@ -128,10 +128,10 @@ export default function RoomDetailScreen() {
         {/* 2) Room description from clinic.tsx room doc field "description" */}
         <Text style={styles.description}>{room.description || ' '}</Text>
 
-        {/* Appliances & Modules section */}
+        {/* Appliances section */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Appliances & Modules</Text>
+            <Text style={styles.sectionTitle}>Appliances</Text>
 
             <Pressable
               onPress={() => applianceFlow.open({ id: roomId, roomName: room.roomName })}

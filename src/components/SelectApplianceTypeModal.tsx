@@ -1,5 +1,3 @@
-// src/components/SelectApplianceTypeModal.tsx
-
 import BottomSheetShell from '@/src/components/BottomSheetShell';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
@@ -50,7 +48,7 @@ export default function SelectApplianceTypeModal({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const modulesQuery = useMemo(() => {
-    const ref = collection(db, 'clinics', '_common', 'modules');
+    const ref = collection(db, 'applianceModules');
     return query(ref, orderBy('moduleIndex', 'asc'));
   }, []);
 

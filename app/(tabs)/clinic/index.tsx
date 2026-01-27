@@ -1,5 +1,3 @@
-// app/(tabs)/clinic/index.tsx
-
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
 import { useRouter } from 'expo-router';

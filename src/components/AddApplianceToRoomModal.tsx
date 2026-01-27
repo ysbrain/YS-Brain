@@ -206,7 +206,7 @@ export default function AddApplianceToRoomModal({
     if (!selectedModule?.id) return;
 
     setLoadingConfig(true);
-    const ref = doc(db, 'clinics', '_common', 'modules', selectedModule.id);
+    const ref = doc(db, 'applianceModules', selectedModule.id);
 
     const unsub = onSnapshot(
       ref,

@@ -4,7 +4,7 @@ export const commonStackOptions: NativeStackNavigationOptions = {
   // Keep heights consistent by using the same settings everywhere:
   headerLargeTitle: false, // or true everywhere if you prefer large titles on iOS
   headerTitleAlign: 'left',
-  headerTitleStyle: { fontSize: 36, fontWeight: 'bold' },
+  headerTitleStyle: { fontSize: 30, fontWeight: 'bold' },
   headerStyle: { backgroundColor: '#102E5C' },
   headerTintColor: '#fff',
   headerShadowVisible: true,
