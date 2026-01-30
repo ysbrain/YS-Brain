@@ -220,10 +220,7 @@ export default function RoomDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
+  screen: { flex: 1 },
   content: {
     paddingHorizontal: 16,
     paddingTop: 12,

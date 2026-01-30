@@ -19,7 +19,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  useColorScheme
 } from 'react-native';
 
 import { safeTypeKeyFromLabel } from '@/src/utils/slugify';
@@ -149,6 +150,16 @@ export default function AddApplianceToRoomModal({
   // Date picker control
   const [activeDateField, setActiveDateField] = useState<string | null>(null);
   const [dateDraft, setDateDraft] = useState<Date>(new Date());
+
+  const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
+  const pickerTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
+
+  const overlayBg = isDark ? '#333' : '#fff';
+  const overlayBorder = '#111';
+  const overlayText = isDark ? '#fff' : '#111';
+  const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
 
   const activeDateValue = useMemo(() => {
     if (!activeDateField) return new Date();
@@ -312,6 +323,11 @@ export default function AddApplianceToRoomModal({
 
   const FOOTER_HEIGHT = 72;
   const SAFE_GAP = 12;
+  const FOCUS_ANCHOR_RATIO = 0.40; // where the input should land (0.35–0.45 feels good)
+  const EXTRA_GAP = 12;            // breathing space above keyboard-safe bottom
+
+  const focusedKeyRef = useRef<string | null>(null);
+  const keyboardHeightRef = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   useEffect(() => {
@@ -319,9 +335,26 @@ export default function AddApplianceToRoomModal({
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      const h = e.endCoordinates?.height ?? 0;
+
+      // Keep both ref + state updated
+      keyboardHeightRef.current = h;
+      setKeyboardHeight(h);
+
+      // Re-scroll the currently focused field once the keyboard begins animating.
+      // Small delay helps layout/measure settle on iOS.
+      const key = focusedKeyRef.current;
+      if (key) {
+        setTimeout(() => {
+          scrollFieldIntoView(key);
+        }, 30);
+      }
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      keyboardHeightRef.current = 0;
+      setKeyboardHeight(0);
+    });
 
     return () => {
       showSub.remove();
@@ -330,29 +363,57 @@ export default function AddApplianceToRoomModal({
   }, []);
   
   const scrollFieldIntoView = (key: string) => {
+    // If date overlay is open, don't fight with it.
     if (activeDateField) return;
 
     setTimeout(() => {
       const input = inputRefs.current[key];
-      if (!input) return;
+      if (!input?.measureInWindow) return;
 
       input.measureInWindow((_x, y, _w, h) => {
+        const inputTop = y;
         const inputBottom = y + h;
 
-        // Works with or without keyboard:
-        // if keyboardHeight is 0, safeBottomY accounts for footer only.
-        const safeBottomY = windowHeight - keyboardHeight - FOOTER_HEIGHT - SAFE_GAP;
+        const kb = keyboardHeightRef.current;
 
-        if (inputBottom <= safeBottomY) return;
+        // Important:
+        // When keyboard is open, it covers the footer (footer is behind it),
+        // so we should NOT add FOOTER_HEIGHT on top of keyboard height.
+        const bottomObstruction =
+          kb > 0
+            ? kb + SAFE_GAP
+            : FOOTER_HEIGHT + SAFE_GAP;
 
-        const overlap = inputBottom - safeBottomY;
+        const safeBottomY = windowHeight - bottomObstruction;
+
+        // 1) Must not be under the keyboard-safe bottom
+        const maxTopYAllowed = safeBottomY - h - EXTRA_GAP;
+
+        // 2) Prefer the input to land around a comfy anchor (mid-ish screen)
+        const desiredTopY = windowHeight * FOCUS_ANCHOR_RATIO;
+
+        // Final target top Y for the input:
+        // - as close to desiredTopY as possible
+        // - but never so low it would be hidden by keyboard
+        const targetTopY = Math.min(desiredTopY, maxTopYAllowed);
+
+        // If already visible and reasonably positioned, do nothing
+        const alreadySafe = inputBottom <= safeBottomY - EXTRA_GAP;
+        const alreadyHighEnough = inputTop <= targetTopY;
+
+        if (alreadySafe && alreadyHighEnough) return;
+
+        // Compute how much we need to scroll by comparing current top to target top
+        const delta = inputTop - targetTopY;
+
+        const nextY = Math.max(0, scrollYRef.current + delta);
 
         scrollRef.current?.scrollTo({
-          y: scrollYRef.current + overlap,
+          y: nextY,
           animated: true,
         });
       });
-    }, 50);
+    }, 60);
   };
   
   const validateAndBuildSetup = () => {
@@ -642,7 +703,10 @@ export default function AddApplianceToRoomModal({
                   formError?.fieldKey === 'applianceName' && styles.errorBorder,
                 ]}
                 returnKeyType="done"
-                onFocus={() => scrollFieldIntoView('applianceName')}
+                onFocus={() => {
+                  focusedKeyRef.current = 'applianceName';
+                  scrollFieldIntoView('applianceName');
+                }}
               />
 
               {/* Inline error */}
@@ -684,11 +748,12 @@ export default function AddApplianceToRoomModal({
                                   inputRefs.current[k] = r as any;
                                 }}
                               >
-                                <Pressable
+                                <Pressable                                  
                                   onPress={() => {
+                                    focusedKeyRef.current = k;
                                     scrollFieldIntoView(k);
                                     onPickDate(item.field);
-                                  }}                                    
+                                  }}                                   
                                   style={({ pressed }) => [
                                     styles.dateInput,
                                     pressed && { opacity: 0.85 },
@@ -722,8 +787,11 @@ export default function AddApplianceToRoomModal({
                                   formError?.fieldKey === k && styles.errorBorder,
                                 ]}
                                 keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
-                                returnKeyType="done"
-                                onFocus={() => scrollFieldIntoView(k)}
+                                returnKeyType="done"                                
+                                onFocus={() => {
+                                  focusedKeyRef.current = k;
+                                  scrollFieldIntoView(k);
+                                }}
                               />
                             )}
                           </View>
@@ -777,25 +845,41 @@ export default function AddApplianceToRoomModal({
         />
       )}
 
-      {/* iOS Date Picker Overlay */}
+      {/* iOS Date Picker Overlay (theme-aware) */}
       {Platform.OS === 'ios' && activeDateField && (
-        <View style={styles.dateOverlayWrap} pointerEvents="box-none">
-          <Pressable style={styles.dateOverlayBackdrop} onPress={closeDatePicker} />
-          <View style={styles.dateOverlayPanel}>
+        <View style={styles.dateOverlayWrap} pointerEvents="auto">
+          <Pressable
+            style={[styles.dateOverlayBackdrop, { backgroundColor: overlayBackdrop }]}
+            onPress={closeDatePicker}
+          />
+
+          <View
+            style={[
+              styles.dateOverlayPanel,
+              { backgroundColor: overlayBg, borderTopColor: overlayBorder },
+            ]}
+          >
             <View style={styles.dateOverlayHeader}>
               <Pressable
                 onPress={commitDatePicker}
-                style={({ pressed }) => [styles.dateDoneBtn, pressed && { opacity: 0.8 }]}
+                style={({ pressed }) => [
+                  styles.dateDoneBtn,
+                  { borderColor: overlayBorder, backgroundColor: overlayBg },
+                  pressed && { opacity: 0.8 },
+                ]}
               >
-                <Text style={styles.dateDoneText}>Done</Text>
+                <Text style={[styles.dateDoneText, { color: overlayText }]}>Done</Text>
               </Pressable>
             </View>
+
             <DateTimePicker
               value={dateDraft}
               mode="date"
               display="spinner"
               onChange={onDateChange}
-              style={styles.iosPicker}
+              themeVariant={pickerTheme}
+              textColor={overlayText}
+              style={[styles.iosPicker, { backgroundColor: overlayBg }]}
             />
           </View>
         </View>
@@ -951,10 +1035,28 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 999,
   },
-  dateOverlayBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
-  dateOverlayPanel: { borderTopWidth: 1, borderTopColor: '#111', backgroundColor: '#fff', paddingBottom: 12 },
+  dateOverlayBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
+  dateOverlayPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: 1,
+    paddingBottom: 12,
+  },
   dateOverlayHeader: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, flexDirection: 'row', justifyContent: 'flex-end' },
   dateDoneBtn: { borderWidth: 1, borderColor: '#111', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 14, backgroundColor: '#fff' },
   dateDoneText: { fontWeight: '900' },
-  iosPicker: {},
+    
+  iosPicker: {
+    width: '100%',
+    minWidth: 280,
+    height: 216,
+  },
 });

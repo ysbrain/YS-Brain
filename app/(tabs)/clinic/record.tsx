@@ -16,6 +16,7 @@ import {
   Text,
   TextInput,
   View,
+  useColorScheme,
   useWindowDimensions
 } from 'react-native';
 
@@ -26,7 +27,7 @@ import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 
-type RecordFieldType = 'string' | 'number' | 'date';
+type RecordFieldType = 'string' | 'number' | 'date' | 'time' | 'boolean';
 
 type RecordFieldItem = {
   field: string;
@@ -60,6 +61,21 @@ function parseYYYYMMDD(s: string): Date | null {
   return d;
 }
 
+function formatTimeHHMM(d: Date) {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function parseHHMM(s: string): Date | null {
+  const m = /^(\d{2}):(\d{2})$/.exec(s);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  const d = new Date();
+  d.setHours(hh, mm, 0, 0);
+  return d;
+}
+
 export default function ClinicRecordScreen() {
   const router = useRouter();
   const profile = useProfile();
@@ -78,11 +94,22 @@ export default function ClinicRecordScreen() {
   const [recordFields, setRecordFields] = useState<RecordFieldItem[]>([]);
 
   // Store record input values keyed by field name
-  const [recordValues, setRecordValues] = useState<Record<string, string>>({});
+  type RecordValue = string | boolean | null;
+  const [recordValues, setRecordValues] = useState<Record<string, RecordValue>>({});
 
-  // Date picker control
-  const [activeDateField, setActiveDateField] = useState<string | null>(null);
-  const [dateDraft, setDateDraft] = useState<Date>(new Date());
+  // Date/time picker control
+  const [activePicker, setActivePicker] = useState<{ field: string; mode: 'date' | 'time' } | null>(null);
+  const [pickerDraft, setPickerDraft] = useState<Date>(new Date());
+
+  const colorScheme = useColorScheme(); // 'light' | 'dark' | null
+  const isDark = colorScheme === 'dark';
+  // For DateTimePicker iOS prop
+  const pickerTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
+
+  const overlayBg = isDark ? '#333' : '#fff';
+  const overlayBorder = '#111';
+  const overlayText = isDark ? '#fff' : '#111';
+  const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
 
   const { height: windowHeight } = useWindowDimensions();
   const tabBarHeight = useBottomTabBarHeight();
@@ -122,11 +149,19 @@ export default function ClinicRecordScreen() {
     };
   }, []);
 
-  const activeDateValue = useMemo(() => {
-    if (!activeDateField) return new Date();
-    const s = recordValues[activeDateField] ?? '';
-    return parseYYYYMMDD(s) ?? new Date();
-  }, [activeDateField, recordValues]);
+  const activePickerValue = useMemo(() => {
+    if (!activePicker) return new Date();
+    const raw = recordValues[activePicker.field];
+
+    if (activePicker.mode === 'date') {
+      const s = typeof raw === 'string' ? raw : '';
+      return parseYYYYMMDD(s) ?? new Date();
+    }
+
+    // time
+    const s = typeof raw === 'string' ? raw : '';
+    return parseHHMM(s) ?? new Date();
+  }, [activePicker, recordValues]);
 
   const icon = useMemo(() => getApplianceIcon(typeKey), [typeKey]);
 
@@ -162,7 +197,13 @@ export default function ClinicRecordScreen() {
           .map((x: RecordFieldItem) => ({
             field: x.field,
             required: x.required,
-            type: x.type === 'number' || x.type === 'date' ? x.type : 'string',
+            type:
+              x.type === 'number' ||
+              x.type === 'date' ||
+              x.type === 'time' ||
+              x.type === 'boolean'
+                ? x.type
+                : 'string',
           }));
 
         setRecordFields(parsed);
@@ -171,7 +212,9 @@ export default function ClinicRecordScreen() {
         setRecordValues((prev) => {
           const next = { ...prev };
           for (const item of parsed) {
-            if (next[item.field] === undefined) next[item.field] = '';
+            if (next[item.field] === undefined) {
+              next[item.field] = item.type === 'boolean' ? null : '';
+            }
           }
           return next;
         });
@@ -195,7 +238,7 @@ export default function ClinicRecordScreen() {
   const EXTRA_GAP = 12;            // small breathing room
 
   const scrollFieldIntoView = (key: string) => {
-    if (activeDateField) return;
+    if (activePicker) return;
 
     setTimeout(() => {
       const input = inputRefs.current[key];
@@ -237,46 +280,64 @@ export default function ClinicRecordScreen() {
       });
     }, 50);
   };
-
-  const onChangeField = (field: string, value: string) => {
+  
+  const onChangeField = (field: string, value: RecordValue) => {
     setRecordValues((prev) => ({ ...prev, [field]: value }));
   };
 
-  const onPickDate = (field: string) => {
+  const openPicker = (field: string, mode: 'date' | 'time') => {
     Keyboard.dismiss();
-    const existing = recordValues[field] ?? '';
-    const initial = parseYYYYMMDD(existing) ?? new Date();
-    setDateDraft(initial);
-    setActiveDateField(field);
-  };
 
-  const onDateChange = (evt: DateTimePickerEvent, date?: Date) => {
-    if (!activeDateField) return;
+    const raw = recordValues[field];
+    let initial = new Date();
 
-    if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-      setActiveDateField(null);
-      return;
+    if (mode === 'date') {
+      const s = typeof raw === 'string' ? raw : '';
+      initial = parseYYYYMMDD(s) ?? new Date();
+    } else {
+      const s = typeof raw === 'string' ? raw : '';
+      initial = parseHHMM(s) ?? new Date();
     }
 
+    setPickerDraft(initial);
+    setActivePicker({ field, mode });
+  };
+
+  const onPickerChange = (evt: DateTimePickerEvent, date?: Date) => {
+    if (!activePicker) return;
+
+    if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
+      setActivePicker(null);
+      return;
+    }
     if (!date) return;
 
-    // iOS overlay: only update draft; commit on Done
+    // iOS: update draft only
     if (Platform.OS === 'ios') {
-      setDateDraft(date);
+      setPickerDraft(date);
       return;
     }
 
     // Android: commit immediately
-    onChangeField(activeDateField, formatDateYYYYMMDD(date));
-    setActiveDateField(null);
+    if (activePicker.mode === 'date') {
+      onChangeField(activePicker.field, formatDateYYYYMMDD(date));
+    } else {
+      onChangeField(activePicker.field, formatTimeHHMM(date));
+    }
+    setActivePicker(null);
   };
 
-  const closeDatePicker = () => setActiveDateField(null);
-  const commitDatePicker = () => {
-    if (activeDateField) {
-      onChangeField(activeDateField, formatDateYYYYMMDD(dateDraft));
+  const closePicker = () => setActivePicker(null);
+
+  const commitPicker = () => {
+    if (activePicker) {
+      if (activePicker.mode === 'date') {
+        onChangeField(activePicker.field, formatDateYYYYMMDD(pickerDraft));
+      } else {
+        onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
+      }
     }
-    setActiveDateField(null);
+    setActivePicker(null);
   };
 
   const onSaveRecord = () => {
@@ -356,9 +417,13 @@ export default function ClinicRecordScreen() {
             {!loading && recordFields.length === 0 ? (
               <Text style={styles.hintText}>No record fields configured for this appliance.</Text>
             ) : (
-              recordFields.map((item) => {
+              recordFields.map((item) => {                
                 const key = `record:${item.field}`;
-                const value = recordValues[item.field] ?? '';
+                const raw = recordValues[item.field];
+
+                // display helpers
+                const stringValue = typeof raw === 'string' ? raw : '';
+                const boolValue = typeof raw === 'boolean' ? raw : null;
 
                 return (
                   <View key={key} style={styles.fieldBlock}>
@@ -366,49 +431,110 @@ export default function ClinicRecordScreen() {
                       {item.field}
                       {item.required ? <Text style={styles.required}> *</Text> : null}
                     </Text>
-
-                    {item.type === 'date' ? (
-                      <View
-                        ref={(r: any) => {
-                          inputRefs.current[key] = r;
-                        }}
-                      >
-                        <Pressable
-                          onPress={() => {
-                            scrollFieldIntoView(key);
-                            onPickDate(item.field);
+                    
+                      {item.type === 'date' ? (
+                        <View
+                          ref={(r: any) => {
+                            inputRefs.current[key] = r;
                           }}
-                          style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
-                          accessibilityRole="button"
                         >
-                          <Text style={value ? styles.dateText : styles.datePlaceholder}>
-                            {value || 'Select date'}
-                          </Text>
-                          <MaterialCommunityIcons
-                            name="calendar-month-outline"
-                            size={20}
-                            color="#111"
-                          />
-                        </Pressable>
-                      </View>
-                    ) : (
-                      <TextInput
-                        ref={(r) => {
-                          inputRefs.current[key] = r as any;
-                        }}
-                        value={value}
-                        onChangeText={(t) => onChangeField(item.field, t)}
-                        placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
-                        placeholderTextColor="#999"
-                        style={styles.textInput}
-                        keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
-                        returnKeyType="done"                        
-                        onFocus={() => {
-                          focusedKeyRef.current = key;
-                          scrollFieldIntoView(key);
-                        }}
-                      />
-                    )}
+                          <Pressable
+                            onPress={() => {
+                              scrollFieldIntoView(key);
+                              openPicker(item.field, 'date');
+                            }}
+                            style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
+                            accessibilityRole="button"
+                          >
+                            <Text style={stringValue ? styles.dateText : styles.datePlaceholder}>
+                              {stringValue ? stringValue : 'Select date'}
+                            </Text>
+                            <MaterialCommunityIcons name="calendar-month-outline" size={20} color="#111" />
+                          </Pressable>
+                        </View>
+                      ) : item.type === 'time' ? (
+                        <View
+                          ref={(r: any) => {
+                            inputRefs.current[key] = r;
+                          }}
+                        >
+                          <Pressable
+                            onPress={() => {
+                              scrollFieldIntoView(key);
+                              openPicker(item.field, 'time');
+                            }}
+                            style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
+                            accessibilityRole="button"
+                          >
+                            <Text style={stringValue ? styles.dateText : styles.datePlaceholder}>
+                              {stringValue ? stringValue : 'Select time'}
+                            </Text>
+                            <MaterialCommunityIcons name="clock-outline" size={20} color="#111" />
+                          </Pressable>
+                        </View>
+                      ) : item.type === 'boolean' ? (
+                        <View
+                          ref={(r: any) => {
+                            inputRefs.current[key] = r;
+                          }}
+                        >
+                          <View style={styles.booleanRow}>
+                            <Pressable
+                              onPress={() => onChangeField(item.field, true)}
+                              style={({ pressed }) => [
+                                styles.booleanBtn,
+                                boolValue === true && styles.booleanBtnPassActive,
+                                pressed && { opacity: 0.9 },
+                              ]}
+                              accessibilityRole="button"
+                            >
+                              <Text
+                                style={[
+                                  styles.booleanBtnText,
+                                  boolValue === true && styles.booleanBtnTextPassActive,
+                                ]}
+                              >
+                                PASS
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={() => onChangeField(item.field, false)}
+                              style={({ pressed }) => [
+                                styles.booleanBtn,
+                                boolValue === false && styles.booleanBtnFailActive,
+                                pressed && { opacity: 0.9 },
+                              ]}
+                              accessibilityRole="button"
+                            >
+                              <Text
+                                style={[
+                                  styles.booleanBtnText,
+                                  boolValue === false && styles.booleanBtnTextFailActive,
+                                ]}
+                              >
+                                FAIL
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : (
+                        <TextInput
+                          ref={(r) => {
+                            inputRefs.current[key] = r as any;
+                          }}
+                          value={stringValue}
+                          onChangeText={(t) => onChangeField(item.field, t)}
+                          placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
+                          placeholderTextColor="#999"
+                          style={styles.textInput}
+                          keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
+                          returnKeyType="done"
+                          onFocus={() => {
+                            focusedKeyRef.current = key;
+                            scrollFieldIntoView(key);
+                          }}
+                        />
+                      )}
                   </View>
                 );
               })
@@ -417,7 +543,7 @@ export default function ClinicRecordScreen() {
         </ScrollView>
 
         {/* Footer button (display-only for now) */}
-        {!activeDateField && (
+        {!activePicker && (
           <View style={styles.footerFixed}>
             <Pressable
               onPress={onSaveRecord}
@@ -434,34 +560,53 @@ export default function ClinicRecordScreen() {
         )}
 
         {/* Android Date picker */}
-        {Platform.OS !== 'ios' && activeDateField && (
+        {Platform.OS !== 'ios' && activePicker && (
           <DateTimePicker
-            value={activeDateValue}
-            mode="date"
+            value={activePickerValue}
+            mode={activePicker.mode}
             display="default"
-            onChange={onDateChange}
+            onChange={onPickerChange}
           />
         )}
 
         {/* iOS Date Picker Overlay */}
-        {Platform.OS === 'ios' && activeDateField && (
-          <View style={styles.dateOverlayWrap} pointerEvents="box-none">
-            <Pressable style={styles.dateOverlayBackdrop} onPress={closeDatePicker} />
-            <View style={styles.dateOverlayPanel}>
+        {Platform.OS === 'ios' && activePicker && (
+          <View style={styles.dateOverlayWrap} pointerEvents="auto">
+            <Pressable
+              style={[styles.dateOverlayBackdrop, { backgroundColor: overlayBackdrop }]}
+              onPress={closePicker}
+            />
+
+            <View
+              style={[
+                styles.dateOverlayPanel,
+                { backgroundColor: overlayBg, borderTopColor: overlayBorder },
+              ]}
+            >
               <View style={styles.dateOverlayHeader}>
                 <Pressable
-                  onPress={commitDatePicker}
-                  style={({ pressed }) => [styles.dateDoneBtn, pressed && { opacity: 0.8 }]}
+                  onPress={commitPicker}
+                  style={({ pressed }) => [
+                    styles.dateDoneBtn,
+                    { borderColor: overlayBorder, backgroundColor: overlayBg },
+                    pressed && { opacity: 0.8 },
+                  ]}
                 >
-                  <Text style={styles.dateDoneText}>Done</Text>
+                  <Text style={[styles.dateDoneText, { color: overlayText }]}>Done</Text>
                 </Pressable>
               </View>
+
               <DateTimePicker
-                value={dateDraft}
-                mode="date"
+                value={pickerDraft}
+                mode={activePicker.mode}
                 display="spinner"
-                onChange={onDateChange}
-                style={styles.iosPicker}
+                onChange={onPickerChange}
+                themeVariant={pickerTheme}
+                textColor={overlayText}
+                style={[
+                  styles.iosPicker,
+                  { backgroundColor: overlayBg },
+                ]}
               />
             </View>
           </View>
@@ -472,7 +617,7 @@ export default function ClinicRecordScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#fff' },
+  screen: { flex: 1 },
   scroll: { flex: 1 },
   content: {
     paddingHorizontal: 16,
@@ -583,6 +728,44 @@ const styles = StyleSheet.create({
   datePlaceholder: { color: '#999', fontSize: 14, fontWeight: '700' },
   dateText: { color: '#111', fontSize: 14, fontWeight: '700' },
 
+  booleanRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  booleanBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+
+  booleanBtnPassActive: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#22c55e',
+  },
+  booleanBtnFailActive: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#ef4444',
+  },
+
+  booleanBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#111',
+  },
+
+  booleanBtnTextPassActive: {
+    color: '#15803d',
+  },
+  booleanBtnTextFailActive: {
+    color: '#b91c1c',
+  },
+
   footerFixed: {
     position: 'absolute',
     left: 0,
@@ -593,7 +776,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#111',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#fff',
+    backgroundColor: '#f0fff4ff',
   },
   primaryBtn: {
     borderWidth: 1,
@@ -609,7 +792,7 @@ const styles = StyleSheet.create({
 
   // Display-only styling: slightly dim to indicate not yet active
   primaryBtnDisabled: { opacity: 0.6 },
-
+  
   dateOverlayWrap: {
     position: 'absolute',
     left: 0,
@@ -618,12 +801,20 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 999,
   },
-  dateOverlayBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.15)' },
+  dateOverlayBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+  },
   dateOverlayPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
     borderTopWidth: 1,
-    borderTopColor: '#111',
-    backgroundColor: '#fff',
-    paddingBottom: 12,
+    paddingBottom: 12, // you can add insets.bottom here if needed
   },
   dateOverlayHeader: {
     paddingHorizontal: 16,
@@ -640,6 +831,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     backgroundColor: '#fff',
   },
-  dateDoneText: { fontWeight: '900' },
-  iosPicker: {},
+  dateDoneText: { fontWeight: '900' },  
+
+  iosPicker: {
+    width: '100%',
+    minWidth: 280,
+    height: 216,
+  },
 });
