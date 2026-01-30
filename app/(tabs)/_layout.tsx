@@ -1,8 +1,9 @@
+// app/(tabs)/_layout.tsx
+
 import { useAuth } from '@/src/contexts/AuthContext';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-
-import Ionicons from '@expo/vector-icons/Ionicons';
 
 export default function TabsLayout() {
   const { user, initializing } = useAuth();
@@ -22,6 +23,7 @@ export default function TabsLayout() {
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: '#ffd33d',
+        //tabBarHideOnKeyboard: true,
         tabBarStyle: {
           backgroundColor: '#102E5C',
         },

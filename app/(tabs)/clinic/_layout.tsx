@@ -33,8 +33,9 @@ export default function ClinicLayout() {
   return (
     <ProfileProvider profile={profile}>
       <Stack screenOptions={commonStackOptions}>
-        <Stack.Screen name="index" options={{ title: 'Clinic 01' }} />        
-        <Stack.Screen name="room/[roomId]" /> 
+        <Stack.Screen name="index" options={{ title: 'Clinic 01' }} />
+        <Stack.Screen name="room/[roomId]" />
+        <Stack.Screen name="record" options={{ title: 'Record Status' }} />
       </Stack>
     </ProfileProvider>
   );

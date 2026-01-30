@@ -153,8 +153,15 @@ export default function ClinicScreen() {
                 {visibleAppliances.map((a) => (                  
                   <Pressable
                     key={`${item.id}:${a.id}`}
-                    onPress={(e) => {
-                      e.stopPropagation?.(); // keep your "chip press doesn't open room" behavior
+                    onPress={(e) => {                      
+                      e.stopPropagation?.(); // keep “chip press doesn’t open room”
+                      router.push({
+                        pathname: "/clinic/record",
+                        params: {
+                          roomId: String(item.id),
+                          applianceId: String(a.id),
+                        },
+                      });
                     }}
                     style={styles.applianceChip}
                   >

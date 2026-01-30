@@ -1,6 +1,6 @@
 // app/(tabs)/clinic/room/[roomId].tsx
 
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -36,6 +36,7 @@ type ApplianceDoc = {
 export default function RoomDetailScreen() {  
   const profile = useProfile();
   const clinicId = profile?.clinic;
+  const router = useRouter();
 
   const params = useLocalSearchParams<{
     roomId: string;
@@ -156,9 +157,14 @@ export default function RoomDetailScreen() {
               {room.applianceList.map((a) => (                
                 <Pressable
                   key={a.id}
-                  onPress={() => {
-                    // display-only for now; later open config modal/sheet
-                    console.log('Appliance pressed:', a.id);
+                  onPress={() => {                    
+                    router.push({
+                      pathname: "/clinic/record",
+                      params: {
+                        roomId: String(roomId),
+                        applianceId: String(a.id),
+                      },
+                    });
                   }}
                   style={({ pressed }) => [
                     styles.applianceRow,
