@@ -94,20 +94,28 @@ export default function ClinicRecordScreen() {
   const focusedKeyRef = useRef<string | null>(null);
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardHeightRef = useRef(0);  
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
     const showSub = Keyboard.addListener(showEvent, (e) => {
       const h = e.endCoordinates?.height ?? 0;
-      setKeyboardHeight(h);
+      keyboardHeightRef.current = h;      // immediate
+      setKeyboardHeight(h);               // UI state
 
-      // Re-scroll the currently focused field after keyboard height updates
       const key = focusedKeyRef.current;
       if (key) {
-        setTimeout(() => scrollFieldIntoView(key), 50);
+        // No need for long delays anymore, but keep a tiny one for layout settle
+        setTimeout(() => scrollFieldIntoView(key), 30);
       }
     });
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardHeight(0));
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      keyboardHeightRef.current = 0;      // immediate
+      setKeyboardHeight(0);
+    });
+
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -183,6 +191,9 @@ export default function ClinicRecordScreen() {
   const FOOTER_HEIGHT = 84;
   const SAFE_GAP = 12;
 
+  const FOCUS_ANCHOR_RATIO = 0.40; // 0.35–0.45 usually feels good
+  const EXTRA_GAP = 12;            // small breathing room
+
   const scrollFieldIntoView = (key: string) => {
     if (activeDateField) return;
 
@@ -191,29 +202,40 @@ export default function ClinicRecordScreen() {
       if (!input?.measureInWindow) return;
 
       input.measureInWindow((_x: number, y: number, _w: number, h: number) => {
+        const inputTop = y;
         const inputBottom = y + h;
 
-        // When keyboard is visible AND you've set tabBarHideOnKeyboard=true,
-        // the tab bar is not part of the visible UI, so we can ignore it.
-        // If you decide NOT to hide the tab bar, include tabBarHeight always.
-        const tabBarObstruction = keyboardHeight > 0 ? 0 : tabBarHeight;
+        const kb = keyboardHeightRef.current;
 
-        // Your own fixed footer always obstructs when visible.
-        // (If you later choose to hide footer while keyboard is open, make this conditional.)
         const bottomObstruction =
-          keyboardHeight + FOOTER_HEIGHT + tabBarObstruction + insets.bottom + SAFE_GAP;
+          kb > 0
+            ? kb + SAFE_GAP
+            : FOOTER_HEIGHT + tabBarHeight + insets.bottom + SAFE_GAP;
 
         const safeBottomY = windowHeight - bottomObstruction;
 
-        if (inputBottom <= safeBottomY) return;
+        // 1) Must be above keyboard-safe bottom
+        const maxTopYAllowed = safeBottomY - h - EXTRA_GAP;
 
-        const overlap = inputBottom - safeBottomY;
-        scrollRef.current?.scrollTo({
-          y: scrollYRef.current + overlap,
-          animated: true,
-        });
+        // 2) Prefer a nice position around mid screen
+        const desiredTopY = windowHeight * FOCUS_ANCHOR_RATIO;
+
+        // Final target: as close to desiredTopY as possible,
+        // but never so low that it would be hidden by keyboard.
+        const targetTopY = Math.min(desiredTopY, maxTopYAllowed);
+
+        // Only scroll if the input is below the target area or still hidden.
+        const needsLift =
+          inputTop > targetTopY || inputBottom > safeBottomY - EXTRA_GAP;
+
+        if (!needsLift) return;
+
+        const delta = inputTop - targetTopY;
+        const nextY = Math.max(0, scrollYRef.current + delta);
+
+        scrollRef.current?.scrollTo({ y: nextY, animated: true });
       });
-    }, 80); // slightly longer delay tends to be more reliable than 50ms
+    }, 50);
   };
 
   const onChangeField = (field: string, value: string) => {
@@ -272,8 +294,16 @@ export default function ClinicRecordScreen() {
           ref={scrollRef}
           style={styles.scroll}          
           contentContainerStyle={[
-            styles.content,
-            { paddingBottom: 24 + 84 + tabBarHeight + insets.bottom }
+            styles.content,            
+            {
+              paddingBottom:
+                24 +
+                FOOTER_HEIGHT +
+                tabBarHeight +
+                insets.bottom +
+                SAFE_GAP +
+                (keyboardHeight > 0 ? keyboardHeight : 0),
+            },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
