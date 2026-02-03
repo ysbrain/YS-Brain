@@ -23,7 +23,7 @@ import {
   useColorScheme
 } from 'react-native';
 
-import { safeTypeKeyFromLabel } from '@/src/utils/slugify';
+import { slugifyType } from '@/src/utils/slugify';
 
 type SetupFieldType = 'string' | 'number' | 'date';
 type SetupConfigItem = { field: string; type: SetupFieldType };
@@ -83,7 +83,7 @@ function getFormErrorMessage(err: FormError): string {
     case 'NO_MODULE':
       return 'No module selected.';
     case 'MISSING_NAME':
-      return 'Please enter an appliance name.';
+      return 'Please enter a valid appliance name.';
     case 'MISSING_FIELD':
       return `Please fill in “${err.meta?.field ?? 'this field'}”.`;
     case 'INVALID_NUMBER':
@@ -134,6 +134,8 @@ export default function AddApplianceToRoomModal({
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [moduleRecordFields, setModuleRecordFields] = useState<any[] | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+
+  const applianceId = useMemo(() => slugifyType(applianceName.trim()), [applianceName]);
   
   const [formError, setFormError] = useState<FormError | null>(null);
   const errorText = useMemo(() => (formError ? getFormErrorMessage(formError) : null), [formError]);
@@ -170,8 +172,8 @@ export default function AddApplianceToRoomModal({
   const allFieldsFilled = useMemo(() => {
     if (!selectedModule) return false;
 
-    // Must have a name
-    if (!applianceName.trim()) return false;
+    // Must produce a valid slug/id (not just a non-empty name)
+    if (!applianceId) return false;
 
     // While loading config, keep disabled
     if (loadingConfig) return false;
@@ -194,7 +196,7 @@ export default function AddApplianceToRoomModal({
     // Small delay helps ensure layout is stable before measuring/scrolling
     requestAnimationFrame(() => {
       applianceNameInputRef.current?.focus();
-      scrollFieldIntoView('applianceName');
+      requestScroll('applianceName', 'validation');
     });
   };
 
@@ -329,6 +331,14 @@ export default function AddApplianceToRoomModal({
   const focusedKeyRef = useRef<string | null>(null);
   const keyboardHeightRef = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);  
+
+  const SCROLL_DEBOUNCE_MS = 16;      // 0–32ms; lets focus update settle
+  const SCROLL_COOLDOWN_MS = 120;     // 80–180ms typical; prevents jitter bursts
+
+  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollKeyRef = useRef<string | null>(null);
+  const lastScrollAtRef = useRef(0); // timestamp in ms
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -336,18 +346,13 @@ export default function AddApplianceToRoomModal({
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
       const h = e.endCoordinates?.height ?? 0;
-
-      // Keep both ref + state updated
       keyboardHeightRef.current = h;
       setKeyboardHeight(h);
 
-      // Re-scroll the currently focused field once the keyboard begins animating.
-      // Small delay helps layout/measure settle on iOS.
       const key = focusedKeyRef.current;
       if (key) {
-        setTimeout(() => {
-          scrollFieldIntoView(key);
-        }, 30);
+        // delay is still useful on iOS to let layout settle
+        requestScroll(key, 'keyboardShow', 50);
       }
     });
 
@@ -359,61 +364,71 @@ export default function AddApplianceToRoomModal({
     return () => {
       showSub.remove();
       hideSub.remove();
+      if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
     };
   }, []);
   
+  const scrollReqIdRef = useRef(0);
+  
   const scrollFieldIntoView = (key: string) => {
-    // If date overlay is open, don't fight with it.
-    if (activeDateField) return;
+    if (activeDateField) return; // keep if you want to avoid fighting the date overlay
 
-    setTimeout(() => {
+    const reqId = ++scrollReqIdRef.current;
+
+    requestAnimationFrame(() => {
       const input = inputRefs.current[key];
       if (!input?.measureInWindow) return;
 
       input.measureInWindow((_x, y, _w, h) => {
-        const inputTop = y;
-        const inputBottom = y + h;
+        // If another scroll request started after this one, ignore this measurement.
+        if (reqId !== scrollReqIdRef.current) return;
 
-        const kb = keyboardHeightRef.current;
+        const windowH = Dimensions.get('window').height;
+        const targetY = windowH * FOCUS_ANCHOR_RATIO;
 
-        // Important:
-        // When keyboard is open, it covers the footer (footer is behind it),
-        // so we should NOT add FOOTER_HEIGHT on top of keyboard height.
-        const bottomObstruction =
-          kb > 0
-            ? kb + SAFE_GAP
-            : FOOTER_HEIGHT + SAFE_GAP;
+        // Rule: only scroll if the field is in the bottom half
+        if (y <= targetY) return;
 
-        const safeBottomY = windowHeight - bottomObstruction;
-
-        // 1) Must not be under the keyboard-safe bottom
-        const maxTopYAllowed = safeBottomY - h - EXTRA_GAP;
-
-        // 2) Prefer the input to land around a comfy anchor (mid-ish screen)
-        const desiredTopY = windowHeight * FOCUS_ANCHOR_RATIO;
-
-        // Final target top Y for the input:
-        // - as close to desiredTopY as possible
-        // - but never so low it would be hidden by keyboard
-        const targetTopY = Math.min(desiredTopY, maxTopYAllowed);
-
-        // If already visible and reasonably positioned, do nothing
-        const alreadySafe = inputBottom <= safeBottomY - EXTRA_GAP;
-        const alreadyHighEnough = inputTop <= targetTopY;
-
-        if (alreadySafe && alreadyHighEnough) return;
-
-        // Compute how much we need to scroll by comparing current top to target top
-        const delta = inputTop - targetTopY;
-
+        // Target: top of field lands exactly at target position
+        const delta = y - targetY;
         const nextY = Math.max(0, scrollYRef.current + delta);
 
-        scrollRef.current?.scrollTo({
-          y: nextY,
-          animated: true,
-        });
+        scrollRef.current?.scrollTo({ y: nextY, animated: true });
       });
-    }, 60);
+    });
+  };
+
+  const requestScroll = (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
+    pendingScrollKeyRef.current = key;
+
+    if (pendingScrollTimerRef.current) {
+      clearTimeout(pendingScrollTimerRef.current);
+      pendingScrollTimerRef.current = null;
+    }
+
+    pendingScrollTimerRef.current = setTimeout(() => {
+      const latestKey = pendingScrollKeyRef.current;
+      if (!latestKey) return;
+
+      const now = Date.now();
+      const elapsed = now - lastScrollAtRef.current;
+
+      // Cooldown: block very frequent repeats (but allow validation to cut through if you want)
+      const bypassCooldown = reason === 'validation';
+      if (!bypassCooldown && elapsed < SCROLL_COOLDOWN_MS) {
+        // Reschedule for when cooldown expires, keeping "latestKey wins"
+        const remaining = SCROLL_COOLDOWN_MS - elapsed;
+        requestScroll(latestKey, reason, remaining);
+        return;
+      }
+
+      lastScrollAtRef.current = now;
+
+      // Optional debug
+      console.log('[scroll]', { reason, key: latestKey, elapsed });
+
+      scrollFieldIntoView(latestKey);
+    }, delayMs);
   };
   
   const validateAndBuildSetup = () => {
@@ -478,7 +493,10 @@ export default function AddApplianceToRoomModal({
     }
 
     const name = applianceName.trim();
-    if (!name) {
+    const id = slugifyType(name);
+
+    // Validate by slugified id
+    if (!id) {
       setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
       focusApplianceName();
       return;
@@ -487,7 +505,7 @@ export default function AddApplianceToRoomModal({
     // Safety: even though button is disabled until filled, keep guard
     if (!allFieldsFilled) {
       // Find first missing field and target it
-      if (!name) {
+      if (!id) {
         setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
         focusApplianceName();
         return;
@@ -499,7 +517,7 @@ export default function AddApplianceToRoomModal({
         if (!v) {
           const fk = `setup:${item.field}` as FieldKey;
           setFormError({ code: 'MISSING_FIELD', fieldKey: fk, meta: { field: item.field } });
-          scrollFieldIntoView(fk);
+          requestScroll(fk, 'validation');
           return;
         }
       }
@@ -509,7 +527,7 @@ export default function AddApplianceToRoomModal({
     if (!res.ok) {
       setFormError(res.error);
       if (res.error.fieldKey) {
-        scrollFieldIntoView(res.error.fieldKey);
+        requestScroll(res.error.fieldKey, 'validation');
         if (res.error.fieldKey === 'applianceName') focusApplianceName();
       }
       return;
@@ -518,7 +536,9 @@ export default function AddApplianceToRoomModal({
     try {
       setSaving(true);
 
-      const applianceId = safeTypeKeyFromLabel(name);
+      // Use the validated slug
+      const applianceId = id;
+
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
       const applianceRef = doc(appliancesColRef, applianceId);
@@ -536,7 +556,6 @@ export default function AddApplianceToRoomModal({
 
         const data: any = roomSnap.data() ?? {};
         const list = Array.isArray(data.applianceList) ? data.applianceList : [];
-
         const newListItem = {
           id: applianceId,
           name,
@@ -545,44 +564,33 @@ export default function AddApplianceToRoomModal({
         };
 
         tx.update(roomRef, { applianceList: [...list, newListItem] });
-
         tx.set(applianceRef, {
           applianceName: name,
           typeKey: selectedModule.id,
           typeLabel: selectedModule.moduleName,
-          setup: res.setup,          
-          // Only include recordFields if the module doc had it (including empty array)
+          setup: res.setup,
           ...(moduleRecordFields !== undefined ? { recordFields: moduleRecordFields } : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
       });
-      
-      // Success message AFTER all writes are done
+
       Alert.alert(
         '✅ Success',
         `“${name}” has been added to “${roomName}”.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => onCloseAll(),
-          },
-        ],
+        [{ text: 'OK', onPress: () => onCloseAll() }],
         { cancelable: true }
       );
     } catch (e: any) {
       console.error('Add appliance error:', e);
-
       if (isFormAppError(e)) {
         setFormError({ code: e.code, fieldKey: e.fieldKey, meta: e.meta });
         if (e.fieldKey) {
-          scrollFieldIntoView(e.fieldKey);
+          requestScroll(e.fieldKey, 'validation');
           if (e.fieldKey === 'applianceName') focusApplianceName();
         }
         return;
       }
-
-      // fallback
       setFormError({ code: 'UNKNOWN' });
     } finally {
       setSaving(false);
@@ -666,7 +674,7 @@ export default function AddApplianceToRoomModal({
                       {selectedModule.moduleName}
                     </Text>
 
-                    {/* ✅ FIX: show description only when it exists */}
+                    {/* Show description only when it exists */}
                     {!!selectedModule.description && (
                       <Text style={styles.moduleDesc} numberOfLines={2}>
                         {selectedModule.description}
@@ -705,7 +713,7 @@ export default function AddApplianceToRoomModal({
                 returnKeyType="done"
                 onFocus={() => {
                   focusedKeyRef.current = 'applianceName';
-                  scrollFieldIntoView('applianceName');
+                  requestScroll('applianceName', 'focus')
                 }}
               />
 
@@ -743,36 +751,32 @@ export default function AddApplianceToRoomModal({
                             </Text>
 
                             {item.type === 'date' ? (
-                              <View
+                              <Pressable
                                 ref={(r: any) => {
                                   inputRefs.current[k] = r as any;
                                 }}
+                                collapsable={false}
+                                onPress={() => {
+                                  focusedKeyRef.current = k;
+                                  requestScroll(k, 'focus');
+                                  onPickDate(item.field);
+                                }}
+                                style={({ pressed }) => [
+                                  styles.dateInput,
+                                  pressed && { opacity: 0.85 },
+                                  formError?.fieldKey === k && styles.errorBorder,
+                                ]}
+                                accessibilityRole="button"
                               >
-                                <Pressable                                  
-                                  onPress={() => {
-                                    focusedKeyRef.current = k;
-                                    scrollFieldIntoView(k);
-                                    onPickDate(item.field);
-                                  }}                                   
-                                  style={({ pressed }) => [
-                                    styles.dateInput,
-                                    pressed && { opacity: 0.85 },
-                                    formError?.fieldKey === k && styles.errorBorder,
-                                  ]}
-                                  accessibilityRole="button"
-                                >
-                                  <Text
-                                    style={value ? styles.dateText : styles.datePlaceholder}
-                                  >
-                                    {value || 'Select date'}
-                                  </Text>
-                                  <MaterialCommunityIcons
-                                    name="calendar-month-outline"
-                                    size={20}
-                                    color="#111"
-                                  />
-                                </Pressable>
-                              </View>
+                                <Text style={value ? styles.dateText : styles.datePlaceholder}>
+                                  {value || 'Select date'}
+                                </Text>
+                                <MaterialCommunityIcons
+                                  name="calendar-month-outline"
+                                  size={20}
+                                  color="#111"
+                                />
+                              </Pressable>
                             ) : (
                               <TextInput
                                 ref={(r) => {
@@ -790,7 +794,7 @@ export default function AddApplianceToRoomModal({
                                 returnKeyType="done"                                
                                 onFocus={() => {
                                   focusedKeyRef.current = k;
-                                  scrollFieldIntoView(k);
+                                  requestScroll(k, 'focus');
                                 }}
                               />
                             )}
