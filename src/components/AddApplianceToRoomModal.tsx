@@ -196,7 +196,7 @@ export default function AddApplianceToRoomModal({
     // Small delay helps ensure layout is stable before measuring/scrolling
     requestAnimationFrame(() => {
       applianceNameInputRef.current?.focus();
-      requestScroll('applianceName', 'validation');
+      requestScroll('applianceName', 'validation', 0);
     });
   };
 
@@ -340,6 +340,15 @@ export default function AddApplianceToRoomModal({
   const pendingScrollKeyRef = useRef<string | null>(null);
   const lastScrollAtRef = useRef(0); // timestamp in ms
 
+  const IOS_PICKER_HEIGHT = 216;
+  const IOS_PICKER_HEADER_HEIGHT = 44; // your Done row + padding; adjust if needed
+  const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12; // +panel padding
+
+  const dateOverlayHeight =
+  Platform.OS === 'ios' && activeDateField ? IOS_PICKER_TOTAL : 0;
+
+  const bottomObstruction = Math.max(keyboardHeight, dateOverlayHeight);
+
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -367,11 +376,21 @@ export default function AddApplianceToRoomModal({
       if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!activeDateField) return;
+    const key = `setup:${activeDateField}` as FieldKey;
+
+    // Let layout/padding update before measuring & scrolling
+    requestAnimationFrame(() => {
+      requestScroll(key, 'dateOpen', 0);
+    });
+  }, [activeDateField]);
   
   const scrollReqIdRef = useRef(0);
   
   const scrollFieldIntoView = (key: string) => {
-    if (activeDateField) return; // keep if you want to avoid fighting the date overlay
+    // Allow scrolling even when the date overlay is active.
 
     const reqId = ++scrollReqIdRef.current;
 
@@ -517,7 +536,7 @@ export default function AddApplianceToRoomModal({
         if (!v) {
           const fk = `setup:${item.field}` as FieldKey;
           setFormError({ code: 'MISSING_FIELD', fieldKey: fk, meta: { field: item.field } });
-          requestScroll(fk, 'validation');
+          requestScroll(fk, 'validation', 0);
           return;
         }
       }
@@ -527,7 +546,7 @@ export default function AddApplianceToRoomModal({
     if (!res.ok) {
       setFormError(res.error);
       if (res.error.fieldKey) {
-        requestScroll(res.error.fieldKey, 'validation');
+        requestScroll(res.error.fieldKey, 'validation', 0);
         if (res.error.fieldKey === 'applianceName') focusApplianceName();
       }
       return;
@@ -586,7 +605,7 @@ export default function AddApplianceToRoomModal({
       if (isFormAppError(e)) {
         setFormError({ code: e.code, fieldKey: e.fieldKey, meta: e.meta });
         if (e.fieldKey) {
-          requestScroll(e.fieldKey, 'validation');
+          requestScroll(e.fieldKey, 'validation', 0);
           if (e.fieldKey === 'applianceName') focusApplianceName();
         }
         return;
@@ -622,7 +641,7 @@ export default function AddApplianceToRoomModal({
           style={styles.scroll}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: FOOTER_HEIGHT + 16 + keyboardHeight },
+            { paddingBottom: FOOTER_HEIGHT + 16 + bottomObstruction },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -758,7 +777,7 @@ export default function AddApplianceToRoomModal({
                                 collapsable={false}
                                 onPress={() => {
                                   focusedKeyRef.current = k;
-                                  requestScroll(k, 'focus');
+                                  //requestScroll(k, 'focus');
                                   onPickDate(item.field);
                                 }}
                                 style={({ pressed }) => [
