@@ -1,12 +1,16 @@
 // app/(tabs)/clinic/record.tsx
 
+import { useProfile } from '@/src/contexts/ProfileContext';
+import { db } from '@/src/lib/firebase';
+import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -17,15 +21,8 @@ import {
   TextInput,
   View,
   useColorScheme,
-  useWindowDimensions
 } from 'react-native';
-
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { useProfile } from '@/src/contexts/ProfileContext';
-import { db } from '@/src/lib/firebase';
-import { getApplianceIcon } from '@/src/utils/applianceIcons';
 
 type RecordFieldType = 'string' | 'number' | 'date' | 'time' | 'boolean';
 
@@ -40,6 +37,13 @@ type ApplianceDocShape = {
   typeKey?: string;
   typeLabel?: string;
   recordFields?: any[];
+};
+
+type RecordValue = string | boolean | null;
+
+// Something "measurable" (TextInput and View/Pressable support measureInWindow)
+type MeasurableRef = {
+  measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void;
 };
 
 function pad2(n: number) {
@@ -57,6 +61,7 @@ function parseYYYYMMDD(s: string): Date | null {
   const mm = Number(m[2]) - 1;
   const dd = Number(m[3]);
   const d = new Date(y, mm, dd);
+  // Validate exact match (avoid 2026/02/31 rolling to March)
   if (d.getFullYear() !== y || d.getMonth() !== mm || d.getDate() !== dd) return null;
   return d;
 }
@@ -91,81 +96,238 @@ export default function ClinicRecordScreen() {
   const [applianceName, setApplianceName] = useState('');
   const [typeKey, setTypeKey] = useState('');
   const [typeLabel, setTypeLabel] = useState('');
-  const [recordFields, setRecordFields] = useState<RecordFieldItem[]>([]);
 
-  // Store record input values keyed by field name
-  type RecordValue = string | boolean | null;
+  const [recordFields, setRecordFields] = useState<RecordFieldItem[]>([]);
   const [recordValues, setRecordValues] = useState<Record<string, RecordValue>>({});
 
-  // Date/time picker control
-  const [activePicker, setActivePicker] = useState<{ field: string; mode: 'date' | 'time' } | null>(null);
+  // Picker control (date/time)
+  const [activePicker, setActivePicker] = useState<{ field: string; mode: 'date' | 'time' } | null>(
+    null,
+  );
   const [pickerDraft, setPickerDraft] = useState<Date>(new Date());
 
-  const colorScheme = useColorScheme(); // 'light' | 'dark' | null
+  // Theme for iOS picker overlay
+  const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-  // For DateTimePicker iOS prop
   const pickerTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
-
   const overlayBg = isDark ? '#333' : '#fff';
   const overlayBorder = '#111';
   const overlayText = isDark ? '#fff' : '#111';
   const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
 
-  const { height: windowHeight } = useWindowDimensions();
-  const tabBarHeight = useBottomTabBarHeight();
   const insets = useSafeAreaInsets();
 
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
-  const inputRefs = useRef<Record<string, any>>({});
+  const inputRefs = useRef<Record<string, MeasurableRef | null>>({});
+
   const focusedKeyRef = useRef<string | null>(null);
 
+  const keyboardHeightRef = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const keyboardHeightRef = useRef(0);  
+
+  // ----- Scroll behavior (ported from improved modal) -----
+  const FOOTER_BASE_HEIGHT = 84;
+  const SAFE_GAP = 12;
+  const FOCUS_ANCHOR_RATIO = 0.4;
+  
+  // Only use safe-area inset for the footer itself,
+  // not for ScrollView bottom padding. This avoids double-counting with tab layout.
+  const footerInset = Platform.OS === 'ios' ? insets.bottom : 0;
+  const footerHeight = FOOTER_BASE_HEIGHT + footerInset;
+
+  const SCROLL_DEBOUNCE_MS = 16;
+  const SCROLL_COOLDOWN_MS = 120;
+  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollKeyRef = useRef<string | null>(null);
+  const lastScrollAtRef = useRef(0);
+  const scrollReqIdRef = useRef(0);
+  
+  // iOS picker overlay height should NOT include tab bar or insets.bottom
+  // because the tab bar is outside this screen's layout.
+  const IOS_PICKER_HEIGHT = 216;
+  const IOS_PICKER_HEADER_HEIGHT = 44;
+  const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12;
+
+  const pickerOverlayHeight =
+    Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
+
+  const bottomObstruction = Math.max(keyboardHeight, pickerOverlayHeight);
+
+  const contentBottomPadding = 24 + footerHeight + SAFE_GAP + bottomObstruction;
+
+  const requestScroll = useCallback(
+    (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
+      pendingScrollKeyRef.current = key;
+
+      if (pendingScrollTimerRef.current) {
+        clearTimeout(pendingScrollTimerRef.current);
+        pendingScrollTimerRef.current = null;
+      }
+
+      pendingScrollTimerRef.current = setTimeout(() => {
+        const latestKey = pendingScrollKeyRef.current;
+        if (!latestKey) return;
+
+        const now = Date.now();
+        const elapsed = now - lastScrollAtRef.current;
+        const bypassCooldown = reason === 'validation';
+
+        if (!bypassCooldown && elapsed < SCROLL_COOLDOWN_MS) {
+          const remaining = SCROLL_COOLDOWN_MS - elapsed;
+          requestScroll(latestKey, reason, remaining);
+          return;
+        }
+
+        lastScrollAtRef.current = now;
+
+        const reqId = ++scrollReqIdRef.current;
+
+        requestAnimationFrame(() => {
+          const input = inputRefs.current[latestKey];
+          if (!input?.measureInWindow) return;
+
+          input.measureInWindow((_x, y, _w, h) => {
+            if (reqId !== scrollReqIdRef.current) return;
+
+            const windowH = Dimensions.get('window').height;
+
+            // Aim to place the field around mid-screen-ish
+            const targetY = windowH * FOCUS_ANCHOR_RATIO;
+
+            // If field is already above target, don't move
+            if (y <= targetY) return;
+
+            // Extra bottom padding already accounts for:
+            // footer + tab bar + safe area + keyboard/picker overlay
+            // So we only need to shift up to target.
+            const delta = y - targetY;
+            const nextY = Math.max(0, scrollYRef.current + delta);
+
+            if (__DEV__) {
+              // eslint-disable-next-line no-console
+              console.log('[record scroll]', { reason, key: latestKey, y, h, nextY });
+            }
+
+            scrollRef.current?.scrollTo({ y: nextY, animated: true });
+          });
+        });
+      }, delayMs);
+    },
+    [],
+  );
+
+  // Keyboard listeners: match modal behavior
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
     const showSub = Keyboard.addListener(showEvent, (e) => {
       const h = e.endCoordinates?.height ?? 0;
-      keyboardHeightRef.current = h;      // immediate
-      setKeyboardHeight(h);               // UI state
+      keyboardHeightRef.current = h;
+      setKeyboardHeight(h);
 
       const key = focusedKeyRef.current;
-      if (key) {
-        // No need for long delays anymore, but keep a tiny one for layout settle
-        setTimeout(() => scrollFieldIntoView(key), 30);
-      }
+      if (key) requestScroll(key, 'keyboardShow', 50);
     });
 
     const hideSub = Keyboard.addListener(hideEvent, () => {
-      keyboardHeightRef.current = 0;      // immediate
+      keyboardHeightRef.current = 0;
       setKeyboardHeight(0);
     });
 
     return () => {
       showSub.remove();
       hideSub.remove();
+      if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
     };
-  }, []);
+  }, [requestScroll]);
 
+  // When picker opens, auto-scroll to its field after layout updates
+  useEffect(() => {
+    if (!activePicker) return;
+    const key = `record:${activePicker.field}`;
+    requestAnimationFrame(() => requestScroll(key, 'pickerOpen', 0));
+  }, [activePicker, requestScroll]);
+
+  // ----- Picker helpers -----
   const activePickerValue = useMemo(() => {
     if (!activePicker) return new Date();
     const raw = recordValues[activePicker.field];
-
-    if (activePicker.mode === 'date') {
-      const s = typeof raw === 'string' ? raw : '';
-      return parseYYYYMMDD(s) ?? new Date();
-    }
-
-    // time
     const s = typeof raw === 'string' ? raw : '';
+
+    if (activePicker.mode === 'date') return parseYYYYMMDD(s) ?? new Date();
     return parseHHMM(s) ?? new Date();
   }, [activePicker, recordValues]);
 
   const icon = useMemo(() => getApplianceIcon(typeKey), [typeKey]);
 
-  // Subscribe to appliance document
+  const onChangeField = useCallback((field: string, value: RecordValue) => {
+    setRecordValues((prev) => ({ ...prev, [field]: value }));
+  }, []);
+
+  const openPicker = useCallback(
+    (field: string, mode: 'date' | 'time') => {
+      Keyboard.dismiss();
+
+      const raw = recordValues[field];
+      const s = typeof raw === 'string' ? raw : '';
+
+      const initial =
+        mode === 'date'
+          ? parseYYYYMMDD(s) ?? new Date()
+          : parseHHMM(s) ?? new Date();
+
+      setPickerDraft(initial);
+      setActivePicker({ field, mode });
+    },
+    [recordValues],
+  );
+
+  const onPickerChange = useCallback(
+    (evt: DateTimePickerEvent, date?: Date) => {
+      if (!activePicker) return;
+
+      // Android: user can dismiss picker
+      if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
+        setActivePicker(null);
+        return;
+      }
+
+      if (!date) return;
+
+      // iOS overlay: update draft only; commit on Done
+      if (Platform.OS === 'ios') {
+        setPickerDraft(date);
+        return;
+      }
+
+      // Android: commit immediately
+      if (activePicker.mode === 'date') {
+        onChangeField(activePicker.field, formatDateYYYYMMDD(date));
+      } else {
+        onChangeField(activePicker.field, formatTimeHHMM(date));
+      }
+
+      setActivePicker(null);
+    },
+    [activePicker, onChangeField],
+  );
+
+  const closePicker = useCallback(() => setActivePicker(null), []);
+
+  const commitPicker = useCallback(() => {
+    if (activePicker) {
+      if (activePicker.mode === 'date') {
+        onChangeField(activePicker.field, formatDateYYYYMMDD(pickerDraft));
+      } else {
+        onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
+      }
+    }
+    setActivePicker(null);
+  }, [activePicker, pickerDraft, onChangeField]);
+
+  // Subscribe to appliance doc
   useEffect(() => {
     if (!clinicId || !roomId || !applianceId) return;
 
@@ -222,128 +384,19 @@ export default function ClinicRecordScreen() {
         setLoading(false);
       },
       (err) => {
+        // eslint-disable-next-line no-console
         console.error('appliance doc snapshot error', err);
         setLoadError('Failed to load appliance.');
         setLoading(false);
-      }
+      },
     );
 
     return () => unsub();
   }, [clinicId, roomId, applianceId]);
 
-  const FOOTER_HEIGHT = 84;
-  const SAFE_GAP = 12;
-
-  const FOCUS_ANCHOR_RATIO = 0.40; // 0.35–0.45 usually feels good
-  const EXTRA_GAP = 12;            // small breathing room
-
-  const scrollFieldIntoView = (key: string) => {
-    if (activePicker) return;
-
-    setTimeout(() => {
-      const input = inputRefs.current[key];
-      if (!input?.measureInWindow) return;
-
-      input.measureInWindow((_x: number, y: number, _w: number, h: number) => {
-        const inputTop = y;
-        const inputBottom = y + h;
-
-        const kb = keyboardHeightRef.current;
-
-        const bottomObstruction =
-          kb > 0
-            ? kb + SAFE_GAP
-            : FOOTER_HEIGHT + tabBarHeight + insets.bottom + SAFE_GAP;
-
-        const safeBottomY = windowHeight - bottomObstruction;
-
-        // 1) Must be above keyboard-safe bottom
-        const maxTopYAllowed = safeBottomY - h - EXTRA_GAP;
-
-        // 2) Prefer a nice position around mid screen
-        const desiredTopY = windowHeight * FOCUS_ANCHOR_RATIO;
-
-        // Final target: as close to desiredTopY as possible,
-        // but never so low that it would be hidden by keyboard.
-        const targetTopY = Math.min(desiredTopY, maxTopYAllowed);
-
-        // Only scroll if the input is below the target area or still hidden.
-        const needsLift =
-          inputTop > targetTopY || inputBottom > safeBottomY - EXTRA_GAP;
-
-        if (!needsLift) return;
-
-        const delta = inputTop - targetTopY;
-        const nextY = Math.max(0, scrollYRef.current + delta);
-
-        scrollRef.current?.scrollTo({ y: nextY, animated: true });
-      });
-    }, 50);
-  };
-  
-  const onChangeField = (field: string, value: RecordValue) => {
-    setRecordValues((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const openPicker = (field: string, mode: 'date' | 'time') => {
-    Keyboard.dismiss();
-
-    const raw = recordValues[field];
-    let initial = new Date();
-
-    if (mode === 'date') {
-      const s = typeof raw === 'string' ? raw : '';
-      initial = parseYYYYMMDD(s) ?? new Date();
-    } else {
-      const s = typeof raw === 'string' ? raw : '';
-      initial = parseHHMM(s) ?? new Date();
-    }
-
-    setPickerDraft(initial);
-    setActivePicker({ field, mode });
-  };
-
-  const onPickerChange = (evt: DateTimePickerEvent, date?: Date) => {
-    if (!activePicker) return;
-
-    if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-      setActivePicker(null);
-      return;
-    }
-    if (!date) return;
-
-    // iOS: update draft only
-    if (Platform.OS === 'ios') {
-      setPickerDraft(date);
-      return;
-    }
-
-    // Android: commit immediately
-    if (activePicker.mode === 'date') {
-      onChangeField(activePicker.field, formatDateYYYYMMDD(date));
-    } else {
-      onChangeField(activePicker.field, formatTimeHHMM(date));
-    }
-    setActivePicker(null);
-  };
-
-  const closePicker = () => setActivePicker(null);
-
-  const commitPicker = () => {
-    if (activePicker) {
-      if (activePicker.mode === 'date') {
-        onChangeField(activePicker.field, formatDateYYYYMMDD(pickerDraft));
-      } else {
-        onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
-      }
-    }
-    setActivePicker(null);
-  };
-
-  const onSaveRecord = () => {
-    // Display-only for now
+  const onSaveRecord = useCallback(() => {
     Alert.alert('Coming soon', 'Save Record will be implemented in a later step.');
-  };
+  }, []);
 
   return (
     <>
@@ -353,19 +406,8 @@ export default function ClinicRecordScreen() {
       >
         <ScrollView
           ref={scrollRef}
-          style={styles.scroll}          
-          contentContainerStyle={[
-            styles.content,            
-            {
-              paddingBottom:
-                24 +
-                FOOTER_HEIGHT +
-                tabBarHeight +
-                insets.bottom +
-                SAFE_GAP +
-                (keyboardHeight > 0 ? keyboardHeight : 0),
-            },
-          ]}
+          style={styles.scroll}
+          contentContainerStyle={[styles.content, { paddingBottom: contentBottomPadding }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
           onScroll={(e) => {
@@ -379,17 +421,14 @@ export default function ClinicRecordScreen() {
 
             <View style={styles.detailsRow}>
               <View style={styles.iconWrap}>
-                <MaterialCommunityIcons
-                  name={icon.name}
-                  size={26}
-                  color={icon.color ?? '#111'}
-                />
+                <MaterialCommunityIcons name={icon.name} size={26} color={icon.color ?? '#111'} />
               </View>
 
               <View style={{ flex: 1 }}>
                 <Text style={styles.applianceName} numberOfLines={1}>
                   {applianceName || (loading ? 'Loading…' : 'Unnamed appliance')}
                 </Text>
+
                 {!!typeLabel && (
                   <Text style={styles.applianceType} numberOfLines={1}>
                     {typeLabel}
@@ -417,11 +456,10 @@ export default function ClinicRecordScreen() {
             {!loading && recordFields.length === 0 ? (
               <Text style={styles.hintText}>No record fields configured for this appliance.</Text>
             ) : (
-              recordFields.map((item) => {                
+              recordFields.map((item) => {
                 const key = `record:${item.field}`;
                 const raw = recordValues[item.field];
 
-                // display helpers
                 const stringValue = typeof raw === 'string' ? raw : '';
                 const boolValue = typeof raw === 'boolean' ? raw : null;
 
@@ -431,110 +469,113 @@ export default function ClinicRecordScreen() {
                       {item.field}
                       {item.required ? <Text style={styles.required}> *</Text> : null}
                     </Text>
-                    
-                      {item.type === 'date' ? (
-                        <View
-                          ref={(r: any) => {
-                            inputRefs.current[key] = r;
-                          }}
-                        >
-                          <Pressable
-                            onPress={() => {
-                              scrollFieldIntoView(key);
-                              openPicker(item.field, 'date');
-                            }}
-                            style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
-                            accessibilityRole="button"
-                          >
-                            <Text style={stringValue ? styles.dateText : styles.datePlaceholder}>
-                              {stringValue ? stringValue : 'Select date'}
-                            </Text>
-                            <MaterialCommunityIcons name="calendar-month-outline" size={20} color="#111" />
-                          </Pressable>
-                        </View>
-                      ) : item.type === 'time' ? (
-                        <View
-                          ref={(r: any) => {
-                            inputRefs.current[key] = r;
-                          }}
-                        >
-                          <Pressable
-                            onPress={() => {
-                              scrollFieldIntoView(key);
-                              openPicker(item.field, 'time');
-                            }}
-                            style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
-                            accessibilityRole="button"
-                          >
-                            <Text style={stringValue ? styles.dateText : styles.datePlaceholder}>
-                              {stringValue ? stringValue : 'Select time'}
-                            </Text>
-                            <MaterialCommunityIcons name="clock-outline" size={20} color="#111" />
-                          </Pressable>
-                        </View>
-                      ) : item.type === 'boolean' ? (
-                        <View
-                          ref={(r: any) => {
-                            inputRefs.current[key] = r;
-                          }}
-                        >
-                          <View style={styles.booleanRow}>
-                            <Pressable
-                              onPress={() => onChangeField(item.field, true)}
-                              style={({ pressed }) => [
-                                styles.booleanBtn,
-                                boolValue === true && styles.booleanBtnPassActive,
-                                pressed && { opacity: 0.9 },
-                              ]}
-                              accessibilityRole="button"
-                            >
-                              <Text
-                                style={[
-                                  styles.booleanBtnText,
-                                  boolValue === true && styles.booleanBtnTextPassActive,
-                                ]}
-                              >
-                                PASS
-                              </Text>
-                            </Pressable>
-                            <Pressable
-                              onPress={() => onChangeField(item.field, false)}
-                              style={({ pressed }) => [
-                                styles.booleanBtn,
-                                boolValue === false && styles.booleanBtnFailActive,
-                                pressed && { opacity: 0.9 },
-                              ]}
-                              accessibilityRole="button"
-                            >
-                              <Text
-                                style={[
-                                  styles.booleanBtnText,
-                                  boolValue === false && styles.booleanBtnTextFailActive,
-                                ]}
-                              >
-                                FAIL
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      ) : (
-                        <TextInput
-                          ref={(r) => {
-                            inputRefs.current[key] = r as any;
-                          }}
-                          value={stringValue}
-                          onChangeText={(t) => onChangeField(item.field, t)}
-                          placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
-                          placeholderTextColor="#999"
-                          style={styles.textInput}
-                          keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
-                          returnKeyType="done"
-                          onFocus={() => {
-                            focusedKeyRef.current = key;
-                            scrollFieldIntoView(key);
-                          }}
+
+                    {item.type === 'date' ? (
+                      <Pressable
+                        ref={(r: any) => {
+                          inputRefs.current[key] = r as any;
+                        }}
+                        collapsable={false}
+                        onPress={() => {
+                          focusedKeyRef.current = key;
+                          openPicker(item.field, 'date');
+                        }}
+                        style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
+                        accessibilityRole="button"
+                      >
+                        <Text style={stringValue ? styles.dateText : styles.datePlaceholder}>
+                          {stringValue || 'Select date'}
+                        </Text>
+                        <MaterialCommunityIcons
+                          name="calendar-month-outline"
+                          size={20}
+                          color="#111"
                         />
-                      )}
+                      </Pressable>
+                    ) : item.type === 'time' ? (
+                      <Pressable
+                        ref={(r: any) => {
+                          inputRefs.current[key] = r as any;
+                        }}
+                        collapsable={false}
+                        onPress={() => {
+                          focusedKeyRef.current = key;
+                          openPicker(item.field, 'time');
+                        }}
+                        style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
+                        accessibilityRole="button"
+                      >
+                        <Text style={stringValue ? styles.dateText : styles.datePlaceholder}>
+                          {stringValue || 'Select time'}
+                        </Text>
+                        <MaterialCommunityIcons name="clock-outline" size={20} color="#111" />
+                      </Pressable>
+                    ) : item.type === 'boolean' ? (
+                      // Boolean does NOT require auto-scroll
+                      <View
+                        ref={(r: any) => {
+                          inputRefs.current[key] = r as any;
+                        }}
+                        collapsable={false}
+                      >
+                        <View style={styles.booleanRow}>
+                          <Pressable
+                            onPress={() => onChangeField(item.field, true)}
+                            style={({ pressed }) => [
+                              styles.booleanBtn,
+                              boolValue === true && styles.booleanBtnPassActive,
+                              pressed && { opacity: 0.9 },
+                            ]}
+                            accessibilityRole="button"
+                          >
+                            <Text
+                              style={[
+                                styles.booleanBtnText,
+                                boolValue === true && styles.booleanBtnTextPassActive,
+                              ]}
+                            >
+                              PASS
+                            </Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => onChangeField(item.field, false)}
+                            style={({ pressed }) => [
+                              styles.booleanBtn,
+                              boolValue === false && styles.booleanBtnFailActive,
+                              pressed && { opacity: 0.9 },
+                            ]}
+                            accessibilityRole="button"
+                          >
+                            <Text
+                              style={[
+                                styles.booleanBtnText,
+                                boolValue === false && styles.booleanBtnTextFailActive,
+                              ]}
+                            >
+                              FAIL
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    ) : (
+                      <TextInput
+                        ref={(r) => {
+                          inputRefs.current[key] = r as any;
+                        }}
+                        value={stringValue}
+                        onChangeText={(t) => onChangeField(item.field, t)}
+                        placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
+                        placeholderTextColor="#999"
+                        style={styles.textInput}
+                        keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
+                        returnKeyType="done"
+                        onFocus={() => {
+                          focusedKeyRef.current = key;
+                          requestScroll(key, 'focus');
+                        }}
+                      />
+                    )}
                   </View>
                 );
               })
@@ -542,7 +583,7 @@ export default function ClinicRecordScreen() {
           </View>
         </ScrollView>
 
-        {/* Footer button (display-only for now) */}
+        {/* Footer button (hide while picker overlay is active) */}
         {!activePicker && (
           <View style={styles.footerFixed}>
             <Pressable
@@ -559,7 +600,7 @@ export default function ClinicRecordScreen() {
           </View>
         )}
 
-        {/* Android Date picker */}
+        {/* Android native picker */}
         {Platform.OS !== 'ios' && activePicker && (
           <DateTimePicker
             value={activePickerValue}
@@ -569,14 +610,13 @@ export default function ClinicRecordScreen() {
           />
         )}
 
-        {/* iOS Date Picker Overlay */}
+        {/* iOS picker overlay */}
         {Platform.OS === 'ios' && activePicker && (
           <View style={styles.dateOverlayWrap} pointerEvents="auto">
             <Pressable
               style={[styles.dateOverlayBackdrop, { backgroundColor: overlayBackdrop }]}
               onPress={closePicker}
             />
-
             <View
               style={[
                 styles.dateOverlayPanel,
@@ -602,11 +642,8 @@ export default function ClinicRecordScreen() {
                 display="spinner"
                 onChange={onPickerChange}
                 themeVariant={pickerTheme}
-                textColor={overlayText}
-                style={[
-                  styles.iosPicker,
-                  { backgroundColor: overlayBg },
-                ]}
+                textColor={overlayText as any}
+                style={[styles.iosPicker, { backgroundColor: overlayBg }]}
               />
             </View>
           </View>
@@ -625,7 +662,6 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 12,
   },
-
   detailsCard: {
     borderWidth: 1,
     borderColor: '#111',
@@ -684,7 +720,6 @@ const styles = StyleSheet.create({
     color: '#B00020',
     fontWeight: '800',
   },
-
   formCard: {
     borderWidth: 1,
     borderColor: '#111',
@@ -698,11 +733,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   hintText: { color: '#666', fontWeight: '700' },
-
   fieldBlock: { gap: 8, marginBottom: 12 },
   fieldLabel: { fontSize: 13, fontWeight: '900' },
   required: { color: '#B00020' },
-
   textInput: {
     borderWidth: 1,
     borderColor: '#111',
@@ -727,12 +760,10 @@ const styles = StyleSheet.create({
   },
   datePlaceholder: { color: '#999', fontSize: 14, fontWeight: '700' },
   dateText: { color: '#111', fontSize: 14, fontWeight: '700' },
-
   booleanRow: {
     flexDirection: 'row',
     gap: 10,
   },
-
   booleanBtn: {
     flex: 1,
     borderWidth: 1,
@@ -743,7 +774,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-
   booleanBtnPassActive: {
     backgroundColor: '#dcfce7',
     borderColor: '#22c55e',
@@ -752,20 +782,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     borderColor: '#ef4444',
   },
-
   booleanBtnText: {
     fontSize: 14,
     fontWeight: '900',
     color: '#111',
   },
-
   booleanBtnTextPassActive: {
     color: '#15803d',
   },
   booleanBtnTextFailActive: {
     color: '#b91c1c',
   },
-
   footerFixed: {
     position: 'absolute',
     left: 0,
@@ -777,6 +804,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#f0fff4ff',
+    justifyContent: 'center',
   },
   primaryBtn: {
     borderWidth: 1,
@@ -789,10 +817,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   primaryBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
-
-  // Display-only styling: slightly dim to indicate not yet active
   primaryBtnDisabled: { opacity: 0.6 },
-  
+
   dateOverlayWrap: {
     position: 'absolute',
     left: 0,
@@ -814,7 +840,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     borderTopWidth: 1,
-    paddingBottom: 12, // you can add insets.bottom here if needed
+    paddingBottom: 12,
   },
   dateOverlayHeader: {
     paddingHorizontal: 16,
@@ -831,8 +857,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     backgroundColor: '#fff',
   },
-  dateDoneText: { fontWeight: '900' },  
-
+  dateDoneText: { fontWeight: '900' },
   iosPicker: {
     width: '100%',
     minWidth: 280,

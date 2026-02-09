@@ -1,13 +1,14 @@
-// src/components/AddAplianceToRoomModal.tsx
+// src/components/AddApplianceToRoomModal.tsx
 
 import BottomSheetShell from '@/src/components/BottomSheetShell';
 import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
+import { slugifyType } from '@/src/utils/slugify';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -20,10 +21,8 @@ import {
   Text,
   TextInput,
   View,
-  useColorScheme
+  useColorScheme,
 } from 'react-native';
-
-import { slugifyType } from '@/src/utils/slugify';
 
 type SetupFieldType = 'string' | 'number' | 'date';
 type SetupConfigItem = { field: string; type: SetupFieldType };
@@ -65,8 +64,10 @@ class FormAppError extends Error {
   code: FormErrorCode;
   fieldKey?: FieldKey;
   meta?: Record<string, any>;
-
-  constructor(code: FormErrorCode, opts?: { fieldKey?: FieldKey; meta?: Record<string, any>; message?: string }) {
+  constructor(
+    code: FormErrorCode,
+    opts?: { fieldKey?: FieldKey; meta?: Record<string, any>; message?: string },
+  ) {
     super(opts?.message ?? code);
     this.code = code;
     this.fieldKey = opts?.fieldKey;
@@ -114,7 +115,6 @@ function parseYYYYMMDD(s: string): Date | null {
   const mm = Number(m[2]) - 1;
   const dd = Number(m[3]);
   const d = new Date(y, mm, dd);
-
   // Validate exact match (avoid 2026/02/31 rolling to March)
   if (d.getFullYear() !== y || d.getMonth() !== mm || d.getDate() !== dd) return null;
   return d;
@@ -136,15 +136,16 @@ export default function AddApplianceToRoomModal({
   const [saving, setSaving] = useState(false);
 
   const applianceId = useMemo(() => slugifyType(applianceName.trim()), [applianceName]);
-  
+
   const [formError, setFormError] = useState<FormError | null>(null);
-  const errorText = useMemo(() => (formError ? getFormErrorMessage(formError) : null), [formError]);
+  const errorText = useMemo(
+    () => (formError ? getFormErrorMessage(formError) : null),
+    [formError],
+  );
 
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
   const inputRefs = useRef<Record<string, MeasurableRef | null>>({});
-
-  const windowHeight = Dimensions.get('window').height;
 
   // Store values keyed by field name (assumes fields are unique)
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -155,7 +156,6 @@ export default function AddApplianceToRoomModal({
 
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
-
   const pickerTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
 
   const overlayBg = isDark ? '#333' : '#fff';
@@ -168,37 +168,159 @@ export default function AddApplianceToRoomModal({
     const s = configValues[activeDateField];
     return parseYYYYMMDD(s) ?? new Date();
   }, [activeDateField, configValues]);
-  
+
   const allFieldsFilled = useMemo(() => {
     if (!selectedModule) return false;
-
-    // Must produce a valid slug/id (not just a non-empty name)
-    if (!applianceId) return false;
-
-    // While loading config, keep disabled
+    if (!applianceId) return false; // must produce a valid slug/id
     if (loadingConfig) return false;
-
-    // If config hasn't been loaded into state yet, keep disabled
     if (setupConfig === null) return false;
 
-    // Require all setup fields filled
     for (const item of setupConfig) {
       const v = (configValues[item.field] ?? '').trim();
       if (!v) return false;
     }
-
     return true;
-  }, [selectedModule, applianceName, loadingConfig, setupConfig, configValues]);
-  
+  }, [selectedModule, applianceId, loadingConfig, setupConfig, configValues]);
+
   const applianceNameInputRef = useRef<TextInput>(null);
 
-  const focusApplianceName = () => {
-    // Small delay helps ensure layout is stable before measuring/scrolling
+  const FOOTER_HEIGHT = 72;
+  const FOCUS_ANCHOR_RATIO = 0.4;
+
+  const focusedKeyRef = useRef<string | null>(null);
+  const keyboardHeightRef = useRef(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const SCROLL_DEBOUNCE_MS = 16;
+  const SCROLL_COOLDOWN_MS = 120;
+  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollKeyRef = useRef<string | null>(null);
+  const lastScrollAtRef = useRef(0);
+  const scrollReqIdRef = useRef(0);
+
+  const IOS_PICKER_HEIGHT = 216;
+  const IOS_PICKER_HEADER_HEIGHT = 44;
+  const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12;
+
+  const dateOverlayHeight =
+    Platform.OS === 'ios' && activeDateField ? IOS_PICKER_TOTAL : 0;
+
+  const bottomObstruction = Math.max(keyboardHeight, dateOverlayHeight);
+
+  const icon = useMemo(
+    () => getApplianceIcon(selectedModule?.id ?? ''),
+    [selectedModule?.id],
+  );
+
+  const requestScroll = useCallback(
+    (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
+      pendingScrollKeyRef.current = key;
+
+      if (pendingScrollTimerRef.current) {
+        clearTimeout(pendingScrollTimerRef.current);
+        pendingScrollTimerRef.current = null;
+      }
+
+      pendingScrollTimerRef.current = setTimeout(() => {
+        const latestKey = pendingScrollKeyRef.current;
+        if (!latestKey) return;
+
+        const now = Date.now();
+        const elapsed = now - lastScrollAtRef.current;
+        const bypassCooldown = reason === 'validation';
+
+        if (!bypassCooldown && elapsed < SCROLL_COOLDOWN_MS) {
+          const remaining = SCROLL_COOLDOWN_MS - elapsed;
+          requestScroll(latestKey, reason, remaining);
+          return;
+        }
+
+        lastScrollAtRef.current = now;
+
+        if (__DEV__) {
+          // eslint-disable-next-line no-console
+          console.log('[scroll]', { reason, key: latestKey, elapsed });
+        }
+
+        const reqId = ++scrollReqIdRef.current;
+        requestAnimationFrame(() => {
+          const input = inputRefs.current[latestKey];
+          if (!input?.measureInWindow) return;
+
+          input.measureInWindow((_x, y, _w, h) => {
+            if (reqId !== scrollReqIdRef.current) return;
+
+            const windowH = Dimensions.get('window').height;
+            const targetY = windowH * FOCUS_ANCHOR_RATIO;
+
+            if (y <= targetY) return;
+
+            const delta = y - targetY;
+            const nextY = Math.max(0, scrollYRef.current + delta);
+            scrollRef.current?.scrollTo({ y: nextY, animated: true });
+          });
+        });
+      }, delayMs);
+    },
+    [],
+  );
+
+  const focusApplianceName = useCallback(() => {
     requestAnimationFrame(() => {
       applianceNameInputRef.current?.focus();
       requestScroll('applianceName', 'validation', 0);
     });
-  };
+  }, [requestScroll]);
+
+  const onChangeConfig = useCallback(
+    (field: string, value: string) => {
+      setConfigValues((prev) => ({ ...prev, [field]: value }));
+      const k = `setup:${field}` as FieldKey;
+      if (formError?.fieldKey === k) setFormError(null);
+    },
+    [formError?.fieldKey],
+  );
+
+  const onPickDate = useCallback(
+    (field: string) => {
+      Keyboard.dismiss();
+      const existing = configValues[field];
+      const initial = parseYYYYMMDD(existing) ?? new Date();
+      setDateDraft(initial);
+      setActiveDateField(field);
+    },
+    [configValues],
+  );
+
+  const onDateChange = useCallback(
+    (evt: DateTimePickerEvent, date?: Date) => {
+      if (!activeDateField) return;
+
+      if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
+        setActiveDateField(null);
+        return;
+      }
+
+      if (!date) return;
+
+      if (Platform.OS === 'ios') {
+        setDateDraft(date);
+        return;
+      }
+
+      onChangeConfig(activeDateField, formatDateYYYYMMDD(date));
+      setActiveDateField(null);
+    },
+    [activeDateField, onChangeConfig],
+  );
+
+  const closeDatePicker = useCallback(() => setActiveDateField(null), []);
+  const commitDatePicker = useCallback(() => {
+    if (activeDateField) {
+      onChangeConfig(activeDateField, formatDateYYYYMMDD(dateDraft));
+    }
+    setActiveDateField(null);
+  }, [activeDateField, dateDraft, onChangeConfig]);
 
   // Reset form when opening/closing or module changes
   useEffect(() => {
@@ -219,19 +341,17 @@ export default function AddApplianceToRoomModal({
     if (!selectedModule?.id) return;
 
     setLoadingConfig(true);
-    const ref = doc(db, 'applianceModules', selectedModule.id);
 
+    const ref = doc(db, 'applianceModules', selectedModule.id);
     const unsub = onSnapshot(
       ref,
-      (snap) => {        
+      (snap) => {
         const data: any = snap.data() ?? {};
 
-        // recordFields (copy exact array if present)
         const rf = Array.isArray(data.recordFields) ? data.recordFields : undefined;
         setModuleRecordFields(rf);
 
         const raw = Array.isArray(data.setupConfig) ? data.setupConfig : null;
-
         if (!raw) {
           setSetupConfig([]);
           setLoadingConfig(false);
@@ -251,7 +371,6 @@ export default function AddApplianceToRoomModal({
 
         setSetupConfig(parsed);
 
-        // Initialize missing values (do not wipe existing)
         setConfigValues((prev) => {
           const next = { ...prev };
           for (const item of parsed) {
@@ -263,91 +382,16 @@ export default function AddApplianceToRoomModal({
         setLoadingConfig(false);
       },
       (err) => {
+        // eslint-disable-next-line no-console
         console.error('setupConfig snapshot error:', err);
         setSetupConfig([]);
         setModuleRecordFields(undefined);
         setLoadingConfig(false);
-      }
+      },
     );
 
     return () => unsub();
   }, [visible, selectedModule?.id]);
-
-  const icon = useMemo(() => getApplianceIcon(selectedModule?.id ?? ''), [selectedModule?.id]);
-  
-  const onChangeConfig = (field: string, value: string) => {
-    setConfigValues((prev) => ({ ...prev, [field]: value }));
-    const k = `setup:${field}` as FieldKey;
-    if (formError?.fieldKey === k) setFormError(null);
-  };
-
-  const onPickDate = (field: string) => {
-    Keyboard.dismiss();
-    const existing = configValues[field];
-    const initial = parseYYYYMMDD(existing) ?? new Date();
-    setDateDraft(initial);
-    setActiveDateField(field);
-  };
-
-  const onDateChange = (evt: DateTimePickerEvent, date?: Date) => {
-    if (!activeDateField) return;
-
-    // Android: user can dismiss picker
-    // (iOS uses overlay + Done button; we ignore cancel there via closeDatePicker)
-    if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-      setActiveDateField(null);
-      return;
-    }
-
-    if (!date) return;
-
-    // iOS overlay: only update draft; commit on Done
-    if (Platform.OS === 'ios') {
-      setDateDraft(date);
-      return;
-    }
-
-    // Android: commit immediately
-    onChangeConfig(activeDateField, formatDateYYYYMMDD(date));
-    setActiveDateField(null);
-  };
-
-  const closeDatePicker = () => setActiveDateField(null);
-
-  const commitDatePicker = () => {
-    if (activeDateField) {
-      onChangeConfig(activeDateField, formatDateYYYYMMDD(dateDraft));
-    }
-    setActiveDateField(null);
-  };
-
-  const showSetupSection = loadingConfig || ((setupConfig?.length ?? 0) > 0);
-
-  const FOOTER_HEIGHT = 72;
-  const SAFE_GAP = 12;
-  const FOCUS_ANCHOR_RATIO = 0.40; // where the input should land (0.35–0.45 feels good)
-  const EXTRA_GAP = 12;            // breathing space above keyboard-safe bottom
-
-  const focusedKeyRef = useRef<string | null>(null);
-  const keyboardHeightRef = useRef(0);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const keyboardScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);  
-
-  const SCROLL_DEBOUNCE_MS = 16;      // 0–32ms; lets focus update settle
-  const SCROLL_COOLDOWN_MS = 120;     // 80–180ms typical; prevents jitter bursts
-
-  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingScrollKeyRef = useRef<string | null>(null);
-  const lastScrollAtRef = useRef(0); // timestamp in ms
-
-  const IOS_PICKER_HEIGHT = 216;
-  const IOS_PICKER_HEADER_HEIGHT = 44; // your Done row + padding; adjust if needed
-  const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12; // +panel padding
-
-  const dateOverlayHeight =
-  Platform.OS === 'ios' && activeDateField ? IOS_PICKER_TOTAL : 0;
-
-  const bottomObstruction = Math.max(keyboardHeight, dateOverlayHeight);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -359,10 +403,7 @@ export default function AddApplianceToRoomModal({
       setKeyboardHeight(h);
 
       const key = focusedKeyRef.current;
-      if (key) {
-        // delay is still useful on iOS to let layout settle
-        requestScroll(key, 'keyboardShow', 50);
-      }
+      if (key) requestScroll(key, 'keyboardShow', 50);
     });
 
     const hideSub = Keyboard.addListener(hideEvent, () => {
@@ -375,89 +416,20 @@ export default function AddApplianceToRoomModal({
       hideSub.remove();
       if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
     };
-  }, []);
+  }, [requestScroll]);
 
   useEffect(() => {
     if (!activeDateField) return;
     const key = `setup:${activeDateField}` as FieldKey;
+    requestAnimationFrame(() => requestScroll(key, 'dateOpen', 0));
+  }, [activeDateField, requestScroll]);
 
-    // Let layout/padding update before measuring & scrolling
-    requestAnimationFrame(() => {
-      requestScroll(key, 'dateOpen', 0);
-    });
-  }, [activeDateField]);
-  
-  const scrollReqIdRef = useRef(0);
-  
-  const scrollFieldIntoView = (key: string) => {
-    // Allow scrolling even when the date overlay is active.
-
-    const reqId = ++scrollReqIdRef.current;
-
-    requestAnimationFrame(() => {
-      const input = inputRefs.current[key];
-      if (!input?.measureInWindow) return;
-
-      input.measureInWindow((_x, y, _w, h) => {
-        // If another scroll request started after this one, ignore this measurement.
-        if (reqId !== scrollReqIdRef.current) return;
-
-        const windowH = Dimensions.get('window').height;
-        const targetY = windowH * FOCUS_ANCHOR_RATIO;
-
-        // Rule: only scroll if the field is in the bottom half
-        if (y <= targetY) return;
-
-        // Target: top of field lands exactly at target position
-        const delta = y - targetY;
-        const nextY = Math.max(0, scrollYRef.current + delta);
-
-        scrollRef.current?.scrollTo({ y: nextY, animated: true });
-      });
-    });
-  };
-
-  const requestScroll = (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
-    pendingScrollKeyRef.current = key;
-
-    if (pendingScrollTimerRef.current) {
-      clearTimeout(pendingScrollTimerRef.current);
-      pendingScrollTimerRef.current = null;
-    }
-
-    pendingScrollTimerRef.current = setTimeout(() => {
-      const latestKey = pendingScrollKeyRef.current;
-      if (!latestKey) return;
-
-      const now = Date.now();
-      const elapsed = now - lastScrollAtRef.current;
-
-      // Cooldown: block very frequent repeats (but allow validation to cut through if you want)
-      const bypassCooldown = reason === 'validation';
-      if (!bypassCooldown && elapsed < SCROLL_COOLDOWN_MS) {
-        // Reschedule for when cooldown expires, keeping "latestKey wins"
-        const remaining = SCROLL_COOLDOWN_MS - elapsed;
-        requestScroll(latestKey, reason, remaining);
-        return;
-      }
-
-      lastScrollAtRef.current = now;
-
-      // Optional debug
-      console.log('[scroll]', { reason, key: latestKey, elapsed });
-
-      scrollFieldIntoView(latestKey);
-    }, delayMs);
-  };
-  
-  const validateAndBuildSetup = () => {
+  const validateAndBuildSetup = useCallback(() => {
     const cfg = setupConfig ?? [];
     const setup: Record<string, any> = {};
 
     for (const item of cfg) {
       const raw = (configValues[item.field] ?? '').trim();
-
-      // Require all setup fields filled
       if (!raw) {
         return {
           ok: false as const,
@@ -501,9 +473,9 @@ export default function AddApplianceToRoomModal({
     }
 
     return { ok: true as const, setup };
-  };  
-  
-  const onAddToRoom = async () => {
+  }, [setupConfig, configValues]);
+
+  const onAddToRoom = useCallback(async () => {
     setFormError(null);
 
     if (!selectedModule?.id) {
@@ -514,22 +486,14 @@ export default function AddApplianceToRoomModal({
     const name = applianceName.trim();
     const id = slugifyType(name);
 
-    // Validate by slugified id
     if (!id) {
       setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
       focusApplianceName();
       return;
     }
 
-    // Safety: even though button is disabled until filled, keep guard
     if (!allFieldsFilled) {
       // Find first missing field and target it
-      if (!id) {
-        setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
-        focusApplianceName();
-        return;
-      }
-
       const cfg = setupConfig ?? [];
       for (const item of cfg) {
         const v = (configValues[item.field] ?? '').trim();
@@ -555,12 +519,9 @@ export default function AddApplianceToRoomModal({
     try {
       setSaving(true);
 
-      // Use the validated slug
-      const applianceId = id;
-
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
-      const applianceRef = doc(appliancesColRef, applianceId);
+      const applianceRef = doc(appliancesColRef, id);
 
       await runTransaction(db, async (tx) => {
         const applianceSnap = await tx.get(applianceRef);
@@ -575,14 +536,23 @@ export default function AddApplianceToRoomModal({
 
         const data: any = roomSnap.data() ?? {};
         const list = Array.isArray(data.applianceList) ? data.applianceList : [];
-        const newListItem = {
-          id: applianceId,
-          name,
-          typeKey: selectedModule.id,
-          typeLabel: selectedModule.moduleName,
-        };
 
-        tx.update(roomRef, { applianceList: [...list, newListItem] });
+        // Optional: prevent duplicates in list as well
+        const existsInList = list.some((x: any) => x?.id === id);
+        const newList = existsInList
+          ? list
+          : [
+              ...list,
+              {
+                id,
+                name,
+                typeKey: selectedModule.id,
+                typeLabel: selectedModule.moduleName,
+              },
+            ];
+
+        tx.update(roomRef, { applianceList: newList });
+
         tx.set(applianceRef, {
           applianceName: name,
           typeKey: selectedModule.id,
@@ -598,10 +568,12 @@ export default function AddApplianceToRoomModal({
         '✅ Success',
         `“${name}” has been added to “${roomName}”.`,
         [{ text: 'OK', onPress: () => onCloseAll() }],
-        { cancelable: true }
+        { cancelable: true },
       );
     } catch (e: any) {
+      // eslint-disable-next-line no-console
       console.error('Add appliance error:', e);
+
       if (isFormAppError(e)) {
         setFormError({ code: e.code, fieldKey: e.fieldKey, meta: e.meta });
         if (e.fieldKey) {
@@ -610,13 +582,30 @@ export default function AddApplianceToRoomModal({
         }
         return;
       }
+
       setFormError({ code: 'UNKNOWN' });
     } finally {
       setSaving(false);
     }
-  };
+  }, [
+    selectedModule,
+    applianceName,
+    allFieldsFilled,
+    setupConfig,
+    configValues,
+    validateAndBuildSetup,
+    clinicId,
+    roomId,
+    moduleRecordFields,
+    roomName,
+    onCloseAll,
+    requestScroll,
+    focusApplianceName,
+  ]);
 
-  return (    
+  const showSetupSection = loadingConfig || (setupConfig?.length ?? 0) > 0;
+
+  return (
     <BottomSheetShell
       visible={visible}
       title="Add Appliance"
@@ -650,7 +639,6 @@ export default function AddApplianceToRoomModal({
           }}
           scrollEventThrottle={16}
         >
-          {/* Defensive: selectedModule missing */}
           {!selectedModule ? (
             <View style={{ paddingVertical: 8, gap: 10 }}>
               <Text style={styles.loadingHint}>No module selected.</Text>
@@ -664,10 +652,8 @@ export default function AddApplianceToRoomModal({
             </View>
           ) : (
             <>
-              {/* Module section */}
               <Text style={styles.sectionLabel}>Module</Text>
               <View style={styles.moduleChip}>
-                {/* Tag pinned top-right */}
                 <View
                   style={[
                     styles.tagPinned,
@@ -692,8 +678,6 @@ export default function AddApplianceToRoomModal({
                     <Text style={styles.moduleName} numberOfLines={1}>
                       {selectedModule.moduleName}
                     </Text>
-
-                    {/* Show description only when it exists */}
                     {!!selectedModule.description && (
                       <Text style={styles.moduleDesc} numberOfLines={2}>
                         {selectedModule.description}
@@ -703,7 +687,6 @@ export default function AddApplianceToRoomModal({
                 </View>
               </View>
 
-              {/* Appliance name */}                
               <Text
                 style={[
                   styles.sectionLabel,
@@ -713,18 +696,19 @@ export default function AddApplianceToRoomModal({
               >
                 Appliance Name
               </Text>
+
               <TextInput
                 ref={(r) => {
                   applianceNameInputRef.current = r;
                   inputRefs.current['applianceName'] = r as any;
                 }}
-                value={applianceName}                  
+                value={applianceName}
                 onChangeText={(t) => {
                   setApplianceName(t);
                   if (formError?.fieldKey === 'applianceName') setFormError(null);
                 }}
                 placeholder="Enter appliance name"
-                placeholderTextColor="#999"                  
+                placeholderTextColor="#999"
                 style={[
                   styles.textInput,
                   formError?.fieldKey === 'applianceName' && styles.errorBorder,
@@ -732,18 +716,16 @@ export default function AddApplianceToRoomModal({
                 returnKeyType="done"
                 onFocus={() => {
                   focusedKeyRef.current = 'applianceName';
-                  requestScroll('applianceName', 'focus')
+                  requestScroll('applianceName', 'focus');
                 }}
               />
 
-              {/* Inline error */}
-              {!!errorText && (
+              {errorText && (
                 <Text style={{ color: '#B00020', fontWeight: '700', marginTop: 10 }}>
                   {errorText}
                 </Text>
               )}
 
-              {/* Setup Configuration */}
               {showSetupSection && (
                 <>
                   <Text style={[styles.sectionLabel, { marginTop: 16 }]}>
@@ -759,7 +741,7 @@ export default function AddApplianceToRoomModal({
                         const value = configValues[item.field] ?? '';
 
                         return (
-                          <View key={k} style={styles.setupItem}>                              
+                          <View key={k} style={styles.setupItem}>
                             <Text
                               style={[
                                 styles.setupFieldLabel,
@@ -777,7 +759,6 @@ export default function AddApplianceToRoomModal({
                                 collapsable={false}
                                 onPress={() => {
                                   focusedKeyRef.current = k;
-                                  //requestScroll(k, 'focus');
                                   onPickDate(item.field);
                                 }}
                                 style={({ pressed }) => [
@@ -804,13 +785,13 @@ export default function AddApplianceToRoomModal({
                                 value={value}
                                 onChangeText={(t) => onChangeConfig(item.field, t)}
                                 placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
-                                placeholderTextColor="#999"                                  
+                                placeholderTextColor="#999"
                                 style={[
                                   styles.textInput,
                                   formError?.fieldKey === k && styles.errorBorder,
                                 ]}
                                 keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
-                                returnKeyType="done"                                
+                                returnKeyType="done"
                                 onFocus={() => {
                                   focusedKeyRef.current = k;
                                   requestScroll(k, 'focus');
@@ -841,7 +822,7 @@ export default function AddApplianceToRoomModal({
             </Pressable>
 
             <Pressable
-              onPress={onAddToRoom}                
+              onPress={onAddToRoom}
               style={({ pressed }) => [
                 styles.primaryBtn,
                 pressed && { opacity: 0.9 },
@@ -850,9 +831,7 @@ export default function AddApplianceToRoomModal({
               ]}
               disabled={saving || !selectedModule || !allFieldsFilled}
             >
-              <Text style={styles.primaryBtnText}>
-                {saving ? 'Adding…' : 'Add to Room'}
-              </Text>
+              <Text style={styles.primaryBtnText}>{saving ? 'Adding…' : 'Add to Room'}</Text>
             </Pressable>
           </View>
         )}
@@ -1038,33 +1017,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primaryBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
-
-  errorLabel: {
-    color: '#B00020',
-  },
-  errorBorder: {
-    borderColor: '#B00020',
-    borderWidth: 2
-  },
-  primaryBtnDisabled: {
-    opacity: 0.5,
-  },
-
-  dateOverlayWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    zIndex: 999,
-  },
-  dateOverlayBackdrop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
+  errorLabel: { color: '#B00020' },
+  errorBorder: { borderColor: '#B00020', borderWidth: 2 },
+  primaryBtnDisabled: { opacity: 0.5 },
+  dateOverlayWrap: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 999 },
+  dateOverlayBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
   dateOverlayPanel: {
     position: 'absolute',
     left: 0,
@@ -1073,13 +1030,21 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     paddingBottom: 12,
   },
-  dateOverlayHeader: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 6, flexDirection: 'row', justifyContent: 'flex-end' },
-  dateDoneBtn: { borderWidth: 1, borderColor: '#111', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 14, backgroundColor: '#fff' },
-  dateDoneText: { fontWeight: '900' },
-    
-  iosPicker: {
-    width: '100%',
-    minWidth: 280,
-    height: 216,
+  dateOverlayHeader: {
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 6,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
   },
+  dateDoneBtn: {
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: '#fff',
+  },
+  dateDoneText: { fontWeight: '900' },
+  iosPicker: { width: '100%', minWidth: 280, height: 216 },
 });
