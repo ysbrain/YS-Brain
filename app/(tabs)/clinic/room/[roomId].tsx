@@ -15,6 +15,7 @@ import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
 
 type ApplianceListItem = {
   id: string;
+  key: string;
   name: string;
   typeKey: string;
   typeLabel: string;
@@ -58,6 +59,7 @@ export default function RoomDetailScreen() {
       if (Array.isArray(raw)) {
         applianceList = raw.map((x: any) => ({
           id: String(x.id),
+          key: String(x?.key ?? ''),
           name: String(x?.name ?? ''),
           typeKey: String(x?.typeKey ?? ''),
           typeLabel: String(x?.typeLabel ?? ''),
@@ -92,6 +94,7 @@ export default function RoomDetailScreen() {
         const applianceListRaw = Array.isArray(data.applianceList) ? data.applianceList : [];
         const applianceList: ApplianceListItem[] = applianceListRaw.map((a: any) => ({
           id: String(a.id),
+          key: String(a?.key ?? ''),
           name: String(a?.name ?? 'Unnamed appliance'),
           typeKey: String(a?.typeKey ?? ''),
           typeLabel: String(a?.typeLabel ?? ''),

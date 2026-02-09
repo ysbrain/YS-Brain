@@ -135,7 +135,7 @@ export default function AddApplianceToRoomModal({
   const [moduleRecordFields, setModuleRecordFields] = useState<any[] | undefined>(undefined);
   const [saving, setSaving] = useState(false);
 
-  const applianceId = useMemo(() => slugifyType(applianceName.trim()), [applianceName]);
+  const applianceKey = useMemo(() => slugifyType(applianceName.trim()), [applianceName]);
 
   const [formError, setFormError] = useState<FormError | null>(null);
   const errorText = useMemo(
@@ -171,7 +171,7 @@ export default function AddApplianceToRoomModal({
 
   const allFieldsFilled = useMemo(() => {
     if (!selectedModule) return false;
-    if (!applianceId) return false; // must produce a valid slug/id
+    if (!applianceKey) return false; // must produce a valid slug/key
     if (loadingConfig) return false;
     if (setupConfig === null) return false;
 
@@ -180,7 +180,7 @@ export default function AddApplianceToRoomModal({
       if (!v) return false;
     }
     return true;
-  }, [selectedModule, applianceId, loadingConfig, setupConfig, configValues]);
+  }, [selectedModule, applianceKey, loadingConfig, setupConfig, configValues]);
 
   const applianceNameInputRef = useRef<TextInput>(null);
 
@@ -484,9 +484,9 @@ export default function AddApplianceToRoomModal({
     }
 
     const name = applianceName.trim();
-    const id = slugifyType(name);
+    const applianceKey = slugifyType(name);
 
-    if (!id) {
+    if (!applianceKey) {
       setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
       focusApplianceName();
       return;
@@ -515,20 +515,21 @@ export default function AddApplianceToRoomModal({
       }
       return;
     }
-
+    
     try {
       setSaving(true);
 
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
-      const applianceRef = doc(appliancesColRef, id);
+
+      const name = applianceName.trim();
+      const applianceKey = slugifyType(name);
+
+      // Create an auto-ID doc ref *outside* the transaction so it stays stable even if the tx retries
+      const newApplianceRef = doc(appliancesColRef);
+      const newApplianceId = newApplianceRef.id;
 
       await runTransaction(db, async (tx) => {
-        const applianceSnap = await tx.get(applianceRef);
-        if (applianceSnap.exists()) {
-          throw new FormAppError('NAME_COLLISION', { fieldKey: 'applianceName' });
-        }
-
         const roomSnap = await tx.get(roomRef);
         if (!roomSnap.exists()) {
           throw new FormAppError('ROOM_NOT_FOUND');
@@ -537,23 +538,29 @@ export default function AddApplianceToRoomModal({
         const data: any = roomSnap.data() ?? {};
         const list = Array.isArray(data.applianceList) ? data.applianceList : [];
 
-        // Optional: prevent duplicates in list as well
-        const existsInList = list.some((x: any) => x?.id === id);
-        const newList = existsInList
-          ? list
-          : [
-              ...list,
-              {
-                id,
-                name,
-                typeKey: selectedModule.id,
-                typeLabel: selectedModule.moduleName,
-              },
-            ];
+        // Collision check using applianceKey vs item.key
+        const collision = list.some((x: any) => String(x?.key ?? '') === applianceKey);
+        if (collision) {
+          throw new FormAppError('NAME_COLLISION', { fieldKey: 'applianceName' });
+        }
+
+        // Append to applianceList using auto-ID as id, and applianceKey as key
+        const newList = [
+          ...list,
+          {
+            id: newApplianceId,
+            key: applianceKey,
+            name,
+            typeKey: selectedModule.id,
+            typeLabel: selectedModule.moduleName,
+          },
+        ];
 
         tx.update(roomRef, { applianceList: newList });
 
-        tx.set(applianceRef, {
+        // Create appliance doc using auto-ID doc name, store applianceKey as field
+        tx.set(newApplianceRef, {
+          applianceKey,
           applianceName: name,
           typeKey: selectedModule.id,
           typeLabel: selectedModule.moduleName,

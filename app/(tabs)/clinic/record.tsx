@@ -1,12 +1,13 @@
 // app/(tabs)/clinic/record.tsx
 
+import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { addDoc, collection, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -33,6 +34,7 @@ type RecordFieldItem = {
 };
 
 type ApplianceDocShape = {
+  key?: string;
   applianceName?: string;
   typeKey?: string;
   typeLabel?: string;
@@ -84,6 +86,7 @@ function parseHHMM(s: string): Date | null {
 export default function ClinicRecordScreen() {
   const router = useRouter();
   const profile = useProfile();
+  const user = useAuth().user;
   const clinicId = profile?.clinic;
 
   const params = useLocalSearchParams<{ roomId: string; applianceId: string }>();
@@ -94,11 +97,14 @@ export default function ClinicRecordScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [applianceName, setApplianceName] = useState('');
+  const [applianceKey, setApplianceKey] = useState('');
   const [typeKey, setTypeKey] = useState('');
   const [typeLabel, setTypeLabel] = useState('');
 
   const [recordFields, setRecordFields] = useState<RecordFieldItem[]>([]);
   const [recordValues, setRecordValues] = useState<Record<string, RecordValue>>({});
+
+  const [saving, setSaving] = useState(false);
 
   // Picker control (date/time)
   const [activePicker, setActivePicker] = useState<{ field: string; mode: 'date' | 'time' } | null>(
@@ -340,13 +346,10 @@ export default function ClinicRecordScreen() {
       (snap) => {
         const data = (snap.data() as ApplianceDocShape) ?? {};
 
-        const nextName = String(data.applianceName ?? '');
-        const nextTypeKey = String(data.typeKey ?? '');
-        const nextTypeLabel = String(data.typeLabel ?? '');
-
-        setApplianceName(nextName);
-        setTypeKey(nextTypeKey);
-        setTypeLabel(nextTypeLabel);
+        setApplianceName(String(data.applianceName ?? ''));
+        setApplianceKey(String(data.key ?? ''));
+        setTypeKey(String(data.typeKey ?? ''));
+        setTypeLabel(String(data.typeLabel ?? ''));
 
         const raw = Array.isArray(data.recordFields) ? data.recordFields : [];
         const parsed: RecordFieldItem[] = raw
@@ -394,9 +397,111 @@ export default function ClinicRecordScreen() {
     return () => unsub();
   }, [clinicId, roomId, applianceId]);
 
-  const onSaveRecord = useCallback(() => {
-    Alert.alert('Coming soon', 'Save Record will be implemented in a later step.');
-  }, []);
+  const onSaveRecord = useCallback(async () => {
+    if (!clinicId || !roomId || !applianceId) {
+      Alert.alert('Missing context', 'Clinic/Room/Appliance not available.');
+      return;
+    }
+    if (loading) {
+      Alert.alert('Please wait', 'Still loading appliance configuration.');
+      return;
+    }
+    if (saving) return;
+
+    // ---- Validate + normalize ----
+    const errors: string[] = [];
+    const normalized: Record<string, any> = {};
+
+    for (const item of recordFields) {
+      const raw = recordValues[item.field];
+
+      // Required check
+      const isEmptyString = typeof raw === 'string' && raw.trim().length === 0;
+      const isNullish = raw === null || raw === undefined;
+      if (item.required && (isNullish || isEmptyString)) {
+        errors.push(`${item.field} is required`);
+        continue;
+      }
+
+      // Normalize by type
+      if (item.type === 'number') {
+        const s = typeof raw === 'string' ? raw.trim() : '';
+        if (!s) {
+          normalized[item.field] = null;
+        } else {
+          const n = Number(s);
+          if (Number.isNaN(n)) {
+            errors.push(`${item.field} must be a valid number`);
+          } else {
+            normalized[item.field] = n;
+          }
+        }
+      } else if (item.type === 'boolean') {
+        normalized[item.field] = typeof raw === 'boolean' ? raw : null;
+      } else {
+        // string/date/time stored as string (as your UI already formats)
+        normalized[item.field] = typeof raw === 'string' ? raw.trim() : '';
+      }
+    }
+
+    if (errors.length) {
+      Alert.alert('Fix these issues', errors.join('\n'));
+      // Optional: auto-scroll to first invalid field
+      const first = errors[0]?.split(' is required')[0];
+      if (first) requestScroll(`record:${first}`, 'validation', 0);
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      const recordsRef = collection(
+        db,
+        'clinics', clinicId,
+        'rooms', roomId,
+        'appliances', applianceId,
+        'records'
+      );
+
+      const payload = {
+        clinicId,
+        roomId,
+        applianceId,
+        applianceKeySnapshot: applianceKey || null,
+        applianceNameSnapshot: applianceName || null,
+        values: normalized,
+        createdAt: serverTimestamp(),
+        createdBy: user?.uid ?? null, // enable if you have auth uid
+      };
+
+      await addDoc(recordsRef, payload);
+
+      Alert.alert('Saved', 'Record saved successfully.');
+      // Option: go back after save
+      router.back();
+
+      // Or: reset the form (choose one)
+      // setRecordValues({});
+    } catch (e: any) {
+      console.error('save record error', e);
+      Alert.alert('Save failed', e?.message ?? 'Unknown error');
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    clinicId,
+    roomId,
+    applianceId,
+    applianceName,
+    typeKey,
+    typeLabel,
+    recordFields,
+    recordValues,
+    loading,
+    saving,
+    router,
+    requestScroll,
+  ]);
 
   return (
     <>
@@ -585,17 +690,20 @@ export default function ClinicRecordScreen() {
 
         {/* Footer button (hide while picker overlay is active) */}
         {!activePicker && (
-          <View style={styles.footerFixed}>
+          <View style={styles.footerFixed}>            
             <Pressable
               onPress={onSaveRecord}
+              disabled={loading || saving}
               style={({ pressed }) => [
                 styles.primaryBtn,
-                styles.primaryBtnDisabled,
-                pressed && { opacity: 0.9 },
+                (loading || saving) && styles.primaryBtnDisabled,
+                pressed && !(loading || saving) && { opacity: 0.9 },
               ]}
               accessibilityRole="button"
             >
-              <Text style={styles.primaryBtnText}>Save Record</Text>
+              <Text style={styles.primaryBtnText}>
+                {saving ? 'Saving…' : 'Save Record'}
+              </Text>
             </Pressable>
           </View>
         )}

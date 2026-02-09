@@ -26,6 +26,7 @@ import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
 
 type ApplianceItem = {
   id: string;
+  key: string;
   name: string;
   typeKey: string;
   typeLabel: string;
@@ -45,6 +46,7 @@ function roomFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Room {
 
   const applianceList: ApplianceItem[] = applianceListRaw.map((a: any) => ({
     id: String(a.id),
+    key: String(a?.key ?? ''),
     name: String(a?.name ?? 'Unnamed appliance'),
     typeKey: String(a?.typeKey ?? ''),
     typeLabel: String(a?.typeLabel ?? ''),
