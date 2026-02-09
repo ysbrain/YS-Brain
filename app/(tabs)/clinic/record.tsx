@@ -470,8 +470,11 @@ export default function ClinicRecordScreen() {
         applianceKeySnapshot: applianceKey || null,
         applianceNameSnapshot: applianceName || null,
         values: normalized,
-        createdAt: serverTimestamp(),
-        createdBy: user?.uid ?? null, // enable if you have auth uid
+        createdAt: serverTimestamp(),        
+        createdBy: {
+          userId: user?.uid ?? null,
+          userName: profile?.name ?? null,
+        }
       };
 
       await addDoc(recordsRef, payload);
