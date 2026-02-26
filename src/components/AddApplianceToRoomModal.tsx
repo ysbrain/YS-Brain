@@ -552,7 +552,7 @@ export default function AddApplianceToRoomModal({
             key: applianceKey,
             name,
             typeKey: selectedModule.id,
-            typeLabel: selectedModule.moduleName,
+            typeName: selectedModule.moduleName,
           },
         ];
 
@@ -563,7 +563,7 @@ export default function AddApplianceToRoomModal({
           applianceKey,
           applianceName: name,
           typeKey: selectedModule.id,
-          typeLabel: selectedModule.moduleName,
+          typeName: selectedModule.moduleName,
           setup: res.setup,
           ...(moduleRecordFields !== undefined ? { recordFields: moduleRecordFields } : {}),
           createdAt: serverTimestamp(),

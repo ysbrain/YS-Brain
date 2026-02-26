@@ -18,7 +18,7 @@ type ApplianceListItem = {
   key: string;
   name: string;
   typeKey: string;
-  typeLabel: string;
+  typeName: string;
 };
 
 type RoomDocShape = {
@@ -62,7 +62,7 @@ export default function RoomDetailScreen() {
           key: String(x?.key ?? ''),
           name: String(x?.name ?? ''),
           typeKey: String(x?.typeKey ?? ''),
-          typeLabel: String(x?.typeLabel ?? ''),
+          typeName: String(x?.typeName ?? ''),
         }));
       }
     } catch {
@@ -97,7 +97,7 @@ export default function RoomDetailScreen() {
           key: String(a?.key ?? ''),
           name: String(a?.name ?? 'Unnamed appliance'),
           typeKey: String(a?.typeKey ?? ''),
-          typeLabel: String(a?.typeLabel ?? ''),
+          typeName: String(a?.typeName ?? ''),
         }));
 
         setRoom({
@@ -188,9 +188,9 @@ export default function RoomDetailScreen() {
                       <Text style={styles.applianceName} numberOfLines={1}>
                         {a.name}
                       </Text>
-                      {!!a.typeLabel && (
+                      {!!a.typeName && (
                         <Text style={styles.applianceType} numberOfLines={1}>
-                          {a.typeLabel}
+                          {a.typeName}
                         </Text>
                       )}
                     </View>

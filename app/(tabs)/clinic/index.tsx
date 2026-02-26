@@ -29,7 +29,7 @@ type ApplianceItem = {
   key: string;
   name: string;
   typeKey: string;
-  typeLabel: string;
+  typeName: string;
 };
 
 type Room = {
@@ -49,7 +49,7 @@ function roomFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Room {
     key: String(a?.key ?? ''),
     name: String(a?.name ?? 'Unnamed appliance'),
     typeKey: String(a?.typeKey ?? ''),
-    typeLabel: String(a?.typeLabel ?? ''),
+    typeName: String(a?.typeName ?? ''),
   }));
 
   return {
@@ -179,9 +179,9 @@ export default function ClinicScreen() {
                       </Text>
                     </View>
 
-                    {!!a.typeLabel && (
+                    {!!a.typeName && (
                       <Text style={styles.applianceType} numberOfLines={1}>
-                        {a.typeLabel}
+                        {a.typeName}
                       </Text>
                     )}
                   </Pressable>

@@ -34,10 +34,10 @@ type RecordFieldItem = {
 };
 
 type ApplianceDocShape = {
-  key?: string;
+  applianceKey?: string;
   applianceName?: string;
   typeKey?: string;
-  typeLabel?: string;
+  typeName?: string;
   recordFields?: any[];
 };
 
@@ -99,7 +99,7 @@ export default function ClinicRecordScreen() {
   const [applianceName, setApplianceName] = useState('');
   const [applianceKey, setApplianceKey] = useState('');
   const [typeKey, setTypeKey] = useState('');
-  const [typeLabel, setTypeLabel] = useState('');
+  const [typeName, settypeName] = useState('');
 
   const [recordFields, setRecordFields] = useState<RecordFieldItem[]>([]);
   const [recordValues, setRecordValues] = useState<Record<string, RecordValue>>({});
@@ -347,9 +347,9 @@ export default function ClinicRecordScreen() {
         const data = (snap.data() as ApplianceDocShape) ?? {};
 
         setApplianceName(String(data.applianceName ?? ''));
-        setApplianceKey(String(data.key ?? ''));
+        setApplianceKey(String(data.applianceKey ?? ''));
         setTypeKey(String(data.typeKey ?? ''));
-        setTypeLabel(String(data.typeLabel ?? ''));
+        settypeName(String(data.typeName ?? ''));
 
         const raw = Array.isArray(data.recordFields) ? data.recordFields : [];
         const parsed: RecordFieldItem[] = raw
@@ -400,6 +400,10 @@ export default function ClinicRecordScreen() {
   const onSaveRecord = useCallback(async () => {
     if (!clinicId || !roomId || !applianceId) {
       Alert.alert('Missing context', 'Clinic/Room/Appliance not available.');
+      return;
+    }
+    if (!user?.uid) {
+      Alert.alert('Not signed in', 'Please sign in before saving a record.');
       return;
     }
     if (loading) {
@@ -467,8 +471,12 @@ export default function ClinicRecordScreen() {
         clinicId,
         roomId,
         applianceId,
-        applianceKeySnapshot: applianceKey || null,
-        applianceNameSnapshot: applianceName || null,
+        appliance: {
+          key: applianceKey,
+          name: applianceName,
+          typeKey,
+          typeName,
+        },
         values: normalized,
         createdAt: serverTimestamp(),        
         createdBy: {
@@ -497,7 +505,7 @@ export default function ClinicRecordScreen() {
     applianceId,
     applianceName,
     typeKey,
-    typeLabel,
+    typeName,
     recordFields,
     recordValues,
     loading,
@@ -537,9 +545,9 @@ export default function ClinicRecordScreen() {
                   {applianceName || (loading ? 'Loading…' : 'Unnamed appliance')}
                 </Text>
 
-                {!!typeLabel && (
+                {!!typeName && (
                   <Text style={styles.applianceType} numberOfLines={1}>
-                    {typeLabel}
+                    {typeName}
                   </Text>
                 )}
               </View>
