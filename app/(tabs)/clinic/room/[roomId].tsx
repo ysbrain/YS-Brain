@@ -27,50 +27,16 @@ type RoomDocShape = {
   applianceList: ApplianceListItem[];
 };
 
-type ApplianceDoc = {
-  id: string;
-  applianceName?: string;
-  applianceType?: string;
-  // add more fields later if you need
-};
-
 export default function RoomDetailScreen() {  
   const profile = useProfile();
   const clinicId = profile?.clinic;
   const router = useRouter();
 
-  const params = useLocalSearchParams<{
-    roomId: string;
-    roomName?: string;
-    description?: string;
-    applianceList?: string;
-  }>();
-
-  const roomId = params.roomId;
-
-  // Initial fallback from route params (fast render)
-  const initialRoom: RoomDocShape = useMemo(() => {
-    const roomName = params.roomName ?? 'Room';
-    const description = params.description ?? '';
-
-    let applianceList: ApplianceListItem[] = [];
-    try {
-      const raw = params.applianceList ? JSON.parse(params.applianceList) : [];
-      if (Array.isArray(raw)) {
-        applianceList = raw.map((x: any) => ({
-          id: String(x.id),
-          key: String(x?.key ?? ''),
-          name: String(x?.name ?? ''),
-          typeKey: String(x?.typeKey ?? ''),
-          typeName: String(x?.typeName ?? ''),
-        }));
-      }
-    } catch {
-      applianceList = [];
-    }
-
-    return { roomName, description, applianceList };
-  }, [params.roomName, params.description, params.applianceList]);
+  const roomId = useLocalSearchParams<{ roomId: string }>().roomId;
+  const initialRoom: RoomDocShape = useMemo(
+    () => ({ roomName: 'Room', description: '', applianceList: [] }),
+    []
+  );
 
   const [room, setRoom] = useState<RoomDocShape>(initialRoom);
   const [loading, setLoading] = useState(true);

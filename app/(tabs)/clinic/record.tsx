@@ -1,5 +1,4 @@
 // app/(tabs)/clinic/record.tsx
-
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { db } from '@/src/lib/firebase';
@@ -7,7 +6,14 @@ import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { addDoc, collection, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { FirebaseError } from 'firebase/app';
+import {
+  addDoc,
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp
+} from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -20,8 +26,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
   useColorScheme,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -63,7 +69,6 @@ function parseYYYYMMDD(s: string): Date | null {
   const mm = Number(m[2]) - 1;
   const dd = Number(m[3]);
   const d = new Date(y, mm, dd);
-  // Validate exact match (avoid 2026/02/31 rolling to March)
   if (d.getFullYear() !== y || d.getMonth() !== mm || d.getDate() !== dd) return null;
   return d;
 }
@@ -73,7 +78,7 @@ function formatTimeHHMM(d: Date) {
 }
 
 function parseHHMM(s: string): Date | null {
-  const m = /^(\d{2}):(\d{2})$/.exec(s);
+  const m = /^(\\d{2}):(\\d{2})$/.exec(s);
   if (!m) return null;
   const hh = Number(m[1]);
   const mm = Number(m[2]);
@@ -83,10 +88,95 @@ function parseHHMM(s: string): Date | null {
   return d;
 }
 
+/**
+ * Validate + normalize values before upload.
+ * Returns normalized object + first invalid field (for auto-scroll).
+ */
+function normalizeAndValidate(
+  recordFields: RecordFieldItem[],
+  recordValues: Record<string, RecordValue>,
+) {
+  const errors: string[] = [];
+  const normalized: Record<string, any> = {};
+  let firstInvalidField: string | null = null;
+
+  for (const item of recordFields) {
+    const raw = recordValues[item.field];
+
+    const isEmptyString = typeof raw === 'string' && raw.trim().length === 0;
+    const isNullish = raw === null || raw === undefined;
+
+    // required check
+    if (item.required && (isNullish || isEmptyString)) {
+      errors.push(`${item.field} is required`);
+      if (!firstInvalidField) firstInvalidField = item.field;
+      continue;
+    }
+
+    // normalize
+    if (item.type === 'number') {
+      const s = typeof raw === 'string' ? raw.trim() : '';
+      if (!s) {
+        normalized[item.field] = null;
+      } else {
+        const n = Number(s);
+        if (Number.isNaN(n)) {
+          errors.push(`${item.field} must be a valid number`);
+          if (!firstInvalidField) firstInvalidField = item.field;
+        } else {
+          normalized[item.field] = n;
+        }
+      }
+      continue;
+    }
+
+    if (item.type === 'boolean') {
+      normalized[item.field] = typeof raw === 'boolean' ? raw : null;
+      if (item.required && normalized[item.field] === null) {
+        errors.push(`${item.field} is required`);
+        if (!firstInvalidField) firstInvalidField = item.field;
+      }
+      continue;
+    }
+
+    if (item.type === 'date') {
+      const s = typeof raw === 'string' ? raw.trim() : '';
+      if (!s) {
+        normalized[item.field] = '';
+      } else if (!parseYYYYMMDD(s)) {
+        errors.push(`${item.field} must be a valid date (YYYY/MM/DD)`);
+        if (!firstInvalidField) firstInvalidField = item.field;
+      } else {
+        normalized[item.field] = s;
+      }
+      continue;
+    }
+
+    if (item.type === 'time') {
+      const s = typeof raw === 'string' ? raw.trim() : '';
+      if (!s) {
+        normalized[item.field] = '';
+      } else if (!parseHHMM(s)) {
+        errors.push(`${item.field} must be a valid time (HH:MM)`);
+        if (!firstInvalidField) firstInvalidField = item.field;
+      } else {
+        normalized[item.field] = s;
+      }
+      continue;
+    }
+
+    // string
+    normalized[item.field] = typeof raw === 'string' ? raw.trim() : '';
+  }
+
+  return { errors, normalized, firstInvalidField };
+}
+
 export default function ClinicRecordScreen() {
   const router = useRouter();
   const profile = useProfile();
   const user = useAuth().user;
+
   const clinicId = profile?.clinic;
 
   const params = useLocalSearchParams<{ roomId: string; applianceId: string }>();
@@ -99,11 +189,10 @@ export default function ClinicRecordScreen() {
   const [applianceName, setApplianceName] = useState('');
   const [applianceKey, setApplianceKey] = useState('');
   const [typeKey, setTypeKey] = useState('');
-  const [typeName, settypeName] = useState('');
+  const [typeName, setTypeName] = useState('');
 
   const [recordFields, setRecordFields] = useState<RecordFieldItem[]>([]);
   const [recordValues, setRecordValues] = useState<Record<string, RecordValue>>({});
-
   const [saving, setSaving] = useState(false);
 
   // Picker control (date/time)
@@ -112,7 +201,6 @@ export default function ClinicRecordScreen() {
   );
   const [pickerDraft, setPickerDraft] = useState<Date>(new Date());
 
-  // Theme for iOS picker overlay
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const pickerTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
@@ -122,44 +210,36 @@ export default function ClinicRecordScreen() {
   const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
 
   const insets = useSafeAreaInsets();
-
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
+
   const inputRefs = useRef<Record<string, MeasurableRef | null>>({});
-
   const focusedKeyRef = useRef<string | null>(null);
-
   const keyboardHeightRef = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // ----- Scroll behavior (ported from improved modal) -----
+  // ----- Scroll behavior -----
   const FOOTER_BASE_HEIGHT = 84;
   const SAFE_GAP = 12;
   const FOCUS_ANCHOR_RATIO = 0.4;
-  
-  // Only use safe-area inset for the footer itself,
-  // not for ScrollView bottom padding. This avoids double-counting with tab layout.
+
   const footerInset = Platform.OS === 'ios' ? insets.bottom : 0;
   const footerHeight = FOOTER_BASE_HEIGHT + footerInset;
 
   const SCROLL_DEBOUNCE_MS = 16;
   const SCROLL_COOLDOWN_MS = 120;
+
   const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingScrollKeyRef = useRef<string | null>(null);
   const lastScrollAtRef = useRef(0);
   const scrollReqIdRef = useRef(0);
-  
-  // iOS picker overlay height should NOT include tab bar or insets.bottom
-  // because the tab bar is outside this screen's layout.
+
   const IOS_PICKER_HEIGHT = 216;
   const IOS_PICKER_HEADER_HEIGHT = 44;
   const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12;
 
-  const pickerOverlayHeight =
-    Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
-
+  const pickerOverlayHeight = Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
   const bottomObstruction = Math.max(keyboardHeight, pickerOverlayHeight);
-
   const contentBottomPadding = 24 + footerHeight + SAFE_GAP + bottomObstruction;
 
   const requestScroll = useCallback(
@@ -186,35 +266,21 @@ export default function ClinicRecordScreen() {
         }
 
         lastScrollAtRef.current = now;
-
         const reqId = ++scrollReqIdRef.current;
 
         requestAnimationFrame(() => {
           const input = inputRefs.current[latestKey];
           if (!input?.measureInWindow) return;
 
-          input.measureInWindow((_x, y, _w, h) => {
+          input.measureInWindow((_x, y, _w, _h) => {
             if (reqId !== scrollReqIdRef.current) return;
 
             const windowH = Dimensions.get('window').height;
-
-            // Aim to place the field around mid-screen-ish
             const targetY = windowH * FOCUS_ANCHOR_RATIO;
-
-            // If field is already above target, don't move
             if (y <= targetY) return;
 
-            // Extra bottom padding already accounts for:
-            // footer + tab bar + safe area + keyboard/picker overlay
-            // So we only need to shift up to target.
             const delta = y - targetY;
             const nextY = Math.max(0, scrollYRef.current + delta);
-
-            if (__DEV__) {
-              // eslint-disable-next-line no-console
-              console.log('[record scroll]', { reason, key: latestKey, y, h, nextY });
-            }
-
             scrollRef.current?.scrollTo({ y: nextY, animated: true });
           });
         });
@@ -223,7 +289,6 @@ export default function ClinicRecordScreen() {
     [],
   );
 
-  // Keyboard listeners: match modal behavior
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -249,19 +314,16 @@ export default function ClinicRecordScreen() {
     };
   }, [requestScroll]);
 
-  // When picker opens, auto-scroll to its field after layout updates
   useEffect(() => {
     if (!activePicker) return;
     const key = `record:${activePicker.field}`;
     requestAnimationFrame(() => requestScroll(key, 'pickerOpen', 0));
   }, [activePicker, requestScroll]);
 
-  // ----- Picker helpers -----
   const activePickerValue = useMemo(() => {
     if (!activePicker) return new Date();
     const raw = recordValues[activePicker.field];
     const s = typeof raw === 'string' ? raw : '';
-
     if (activePicker.mode === 'date') return parseYYYYMMDD(s) ?? new Date();
     return parseHHMM(s) ?? new Date();
   }, [activePicker, recordValues]);
@@ -275,15 +337,9 @@ export default function ClinicRecordScreen() {
   const openPicker = useCallback(
     (field: string, mode: 'date' | 'time') => {
       Keyboard.dismiss();
-
       const raw = recordValues[field];
       const s = typeof raw === 'string' ? raw : '';
-
-      const initial =
-        mode === 'date'
-          ? parseYYYYMMDD(s) ?? new Date()
-          : parseHHMM(s) ?? new Date();
-
+      const initial = mode === 'date' ? parseYYYYMMDD(s) ?? new Date() : parseHHMM(s) ?? new Date();
       setPickerDraft(initial);
       setActivePicker({ field, mode });
     },
@@ -294,26 +350,19 @@ export default function ClinicRecordScreen() {
     (evt: DateTimePickerEvent, date?: Date) => {
       if (!activePicker) return;
 
-      // Android: user can dismiss picker
       if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
         setActivePicker(null);
         return;
       }
-
       if (!date) return;
 
-      // iOS overlay: update draft only; commit on Done
       if (Platform.OS === 'ios') {
         setPickerDraft(date);
         return;
       }
 
-      // Android: commit immediately
-      if (activePicker.mode === 'date') {
-        onChangeField(activePicker.field, formatDateYYYYMMDD(date));
-      } else {
-        onChangeField(activePicker.field, formatTimeHHMM(date));
-      }
+      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDD(date));
+      else onChangeField(activePicker.field, formatTimeHHMM(date));
 
       setActivePicker(null);
     },
@@ -321,14 +370,10 @@ export default function ClinicRecordScreen() {
   );
 
   const closePicker = useCallback(() => setActivePicker(null), []);
-
   const commitPicker = useCallback(() => {
     if (activePicker) {
-      if (activePicker.mode === 'date') {
-        onChangeField(activePicker.field, formatDateYYYYMMDD(pickerDraft));
-      } else {
-        onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
-      }
+      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDD(pickerDraft));
+      else onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
     }
     setActivePicker(null);
   }, [activePicker, pickerDraft, onChangeField]);
@@ -349,7 +394,7 @@ export default function ClinicRecordScreen() {
         setApplianceName(String(data.applianceName ?? ''));
         setApplianceKey(String(data.applianceKey ?? ''));
         setTypeKey(String(data.typeKey ?? ''));
-        settypeName(String(data.typeName ?? ''));
+        setTypeName(String(data.typeName ?? ''));
 
         const raw = Array.isArray(data.recordFields) ? data.recordFields : [];
         const parsed: RecordFieldItem[] = raw
@@ -363,17 +408,14 @@ export default function ClinicRecordScreen() {
             field: x.field,
             required: x.required,
             type:
-              x.type === 'number' ||
-              x.type === 'date' ||
-              x.type === 'time' ||
-              x.type === 'boolean'
+              x.type === 'number' || x.type === 'date' || x.type === 'time' || x.type === 'boolean'
                 ? x.type
                 : 'string',
           }));
 
         setRecordFields(parsed);
 
-        // Initialize missing values (do not wipe existing)
+        // Initialize missing values without wiping existing
         setRecordValues((prev) => {
           const next = { ...prev };
           for (const item of parsed) {
@@ -387,7 +429,6 @@ export default function ClinicRecordScreen() {
         setLoading(false);
       },
       (err) => {
-        // eslint-disable-next-line no-console
         console.error('appliance doc snapshot error', err);
         setLoadError('Failed to load appliance.');
         setLoading(false);
@@ -412,47 +453,11 @@ export default function ClinicRecordScreen() {
     }
     if (saving) return;
 
-    // ---- Validate + normalize ----
-    const errors: string[] = [];
-    const normalized: Record<string, any> = {};
-
-    for (const item of recordFields) {
-      const raw = recordValues[item.field];
-
-      // Required check
-      const isEmptyString = typeof raw === 'string' && raw.trim().length === 0;
-      const isNullish = raw === null || raw === undefined;
-      if (item.required && (isNullish || isEmptyString)) {
-        errors.push(`${item.field} is required`);
-        continue;
-      }
-
-      // Normalize by type
-      if (item.type === 'number') {
-        const s = typeof raw === 'string' ? raw.trim() : '';
-        if (!s) {
-          normalized[item.field] = null;
-        } else {
-          const n = Number(s);
-          if (Number.isNaN(n)) {
-            errors.push(`${item.field} must be a valid number`);
-          } else {
-            normalized[item.field] = n;
-          }
-        }
-      } else if (item.type === 'boolean') {
-        normalized[item.field] = typeof raw === 'boolean' ? raw : null;
-      } else {
-        // string/date/time stored as string (as your UI already formats)
-        normalized[item.field] = typeof raw === 'string' ? raw.trim() : '';
-      }
-    }
+    const { errors, normalized, firstInvalidField } = normalizeAndValidate(recordFields, recordValues);
 
     if (errors.length) {
       Alert.alert('Fix these issues', errors.join('\n'));
-      // Optional: auto-scroll to first invalid field
-      const first = errors[0]?.split(' is required')[0];
-      if (first) requestScroll(`record:${first}`, 'validation', 0);
+      if (firstInvalidField) requestScroll(`record:${firstInvalidField}`, 'validation', 0);
       return;
     }
 
@@ -461,41 +466,50 @@ export default function ClinicRecordScreen() {
 
       const recordsRef = collection(
         db,
-        'clinics', clinicId,
-        'rooms', roomId,
-        'appliances', applianceId,
-        'records'
+        'clinics',
+        clinicId,
+        'rooms',
+        roomId,
+        'appliances',
+        applianceId,
+        'records',
       );
 
       const payload = {
         clinicId,
         roomId,
         applianceId,
+
         appliance: {
-          key: applianceKey,
-          name: applianceName,
-          typeKey,
-          typeName,
+          key: applianceKey || null,
+          name: applianceName || null,
+          typeKey: typeKey || null,
+          typeName: typeName || null,
         },
+
         values: normalized,
-        createdAt: serverTimestamp(),        
+
+        createdAt: serverTimestamp(),
+
         createdBy: {
-          userId: user?.uid ?? null,
+          userId: user.uid,
           userName: profile?.name ?? null,
-        }
+        },
       };
 
       await addDoc(recordsRef, payload);
 
       Alert.alert('Saved', 'Record saved successfully.');
-      // Option: go back after save
       router.back();
-
-      // Or: reset the form (choose one)
-      // setRecordValues({});
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error('save record error', e);
-      Alert.alert('Save failed', e?.message ?? 'Unknown error');
+      const msg =
+        e instanceof FirebaseError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : 'Unknown error';
+      Alert.alert('Save failed', msg);
     } finally {
       setSaving(false);
     }
@@ -503,6 +517,7 @@ export default function ClinicRecordScreen() {
     clinicId,
     roomId,
     applianceId,
+    applianceKey,
     applianceName,
     typeKey,
     typeName,
@@ -510,16 +525,16 @@ export default function ClinicRecordScreen() {
     recordValues,
     loading,
     saving,
+    user?.uid,
+    user?.email,
+    profile?.name,
     router,
     requestScroll,
   ]);
 
   return (
     <>
-      <KeyboardAvoidingView
-        style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           ref={scrollRef}
           style={styles.scroll}
@@ -544,7 +559,6 @@ export default function ClinicRecordScreen() {
                 <Text style={styles.applianceName} numberOfLines={1}>
                   {applianceName || (loading ? 'Loading…' : 'Unnamed appliance')}
                 </Text>
-
                 {!!typeName && (
                   <Text style={styles.applianceType} numberOfLines={1}>
                     {typeName}
@@ -575,7 +589,6 @@ export default function ClinicRecordScreen() {
               recordFields.map((item) => {
                 const key = `record:${item.field}`;
                 const raw = recordValues[item.field];
-
                 const stringValue = typeof raw === 'string' ? raw : '';
                 const boolValue = typeof raw === 'boolean' ? raw : null;
 
@@ -602,11 +615,7 @@ export default function ClinicRecordScreen() {
                         <Text style={stringValue ? styles.dateText : styles.datePlaceholder}>
                           {stringValue || 'Select date'}
                         </Text>
-                        <MaterialCommunityIcons
-                          name="calendar-month-outline"
-                          size={20}
-                          color="#111"
-                        />
+                        <MaterialCommunityIcons name="calendar-month-outline" size={20} color="#111" />
                       </Pressable>
                     ) : item.type === 'time' ? (
                       <Pressable
@@ -627,7 +636,6 @@ export default function ClinicRecordScreen() {
                         <MaterialCommunityIcons name="clock-outline" size={20} color="#111" />
                       </Pressable>
                     ) : item.type === 'boolean' ? (
-                      // Boolean does NOT require auto-scroll
                       <View
                         ref={(r: any) => {
                           inputRefs.current[key] = r as any;
@@ -684,7 +692,7 @@ export default function ClinicRecordScreen() {
                         placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
                         placeholderTextColor="#999"
                         style={styles.textInput}
-                        keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
+                        keyboardType={item.type === 'number' ? 'decimal-pad' : 'default'}
                         returnKeyType="done"
                         onFocus={() => {
                           focusedKeyRef.current = key;
@@ -701,7 +709,7 @@ export default function ClinicRecordScreen() {
 
         {/* Footer button (hide while picker overlay is active) */}
         {!activePicker && (
-          <View style={styles.footerFixed}>            
+          <View style={styles.footerFixed}>
             <Pressable
               onPress={onSaveRecord}
               disabled={loading || saving}
@@ -712,21 +720,14 @@ export default function ClinicRecordScreen() {
               ]}
               accessibilityRole="button"
             >
-              <Text style={styles.primaryBtnText}>
-                {saving ? 'Saving…' : 'Save Record'}
-              </Text>
+              <Text style={styles.primaryBtnText}>{saving ? 'Saving…' : 'Save Record'}</Text>
             </Pressable>
           </View>
         )}
 
         {/* Android native picker */}
         {Platform.OS !== 'ios' && activePicker && (
-          <DateTimePicker
-            value={activePickerValue}
-            mode={activePicker.mode}
-            display="default"
-            onChange={onPickerChange}
-          />
+          <DateTimePicker value={activePickerValue} mode={activePicker.mode} display="default" onChange={onPickerChange} />
         )}
 
         {/* iOS picker overlay */}
@@ -879,10 +880,7 @@ const styles = StyleSheet.create({
   },
   datePlaceholder: { color: '#999', fontSize: 14, fontWeight: '700' },
   dateText: { color: '#111', fontSize: 14, fontWeight: '700' },
-  booleanRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  booleanRow: { flexDirection: 'row', gap: 10 },
   booleanBtn: {
     flex: 1,
     borderWidth: 1,
@@ -893,25 +891,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-  booleanBtnPassActive: {
-    backgroundColor: '#dcfce7',
-    borderColor: '#22c55e',
-  },
-  booleanBtnFailActive: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-  },
-  booleanBtnText: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#111',
-  },
-  booleanBtnTextPassActive: {
-    color: '#15803d',
-  },
-  booleanBtnTextFailActive: {
-    color: '#b91c1c',
-  },
+  booleanBtnPassActive: { backgroundColor: '#dcfce7', borderColor: '#22c55e' },
+  booleanBtnFailActive: { backgroundColor: '#fee2e2', borderColor: '#ef4444' },
+  booleanBtnText: { fontSize: 14, fontWeight: '900', color: '#111' },
+  booleanBtnTextPassActive: { color: '#15803d' },
+  booleanBtnTextFailActive: { color: '#b91c1c' },
   footerFixed: {
     position: 'absolute',
     left: 0,
@@ -937,7 +921,6 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
   primaryBtnDisabled: { opacity: 0.6 },
-
   dateOverlayWrap: {
     position: 'absolute',
     left: 0,
@@ -946,13 +929,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 999,
   },
-  dateOverlayBackdrop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-  },
+  dateOverlayBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
   dateOverlayPanel: {
     position: 'absolute',
     left: 0,
@@ -977,9 +954,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   dateDoneText: { fontWeight: '900' },
-  iosPicker: {
-    width: '100%',
-    minWidth: 280,
-    height: 216,
-  },
+  iosPicker: { width: '100%', minWidth: 280, height: 216 },
 });

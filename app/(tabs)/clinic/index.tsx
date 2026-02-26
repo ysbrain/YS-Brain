@@ -111,12 +111,7 @@ export default function ClinicScreen() {
   const goRoomDetail = (room: Room) => {
     router.push({
       pathname: "/clinic/room/[roomId]",
-      params: {
-        roomId: String(room.id),
-        roomName: room.roomName,
-        description: room.description,
-        applianceList: JSON.stringify(room.applianceList), // preserve order & quick render
-      },
+      params: { roomId: String(room.id) }
     });
   };
   
