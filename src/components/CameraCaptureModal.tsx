@@ -64,10 +64,10 @@ export function CameraCaptureModal({ visible, onClose, onCaptured }: Props) {
               facing="back"
               onCameraReady={() => setCameraReady(true)}
               // Android supports ratio prop; it's documented as Android-only.
-              ratio="16:9"
+              ratio="4:3"
             />
 
-            {/* 16:9 bracket overlay */}
+            {/* 4:3 bracket overlay */}
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
               <View style={styles.maskTop} />
               <View style={styles.maskRow}>
@@ -94,7 +94,7 @@ export function CameraCaptureModal({ visible, onClose, onCaptured }: Props) {
               >
                 <View style={styles.shutterInner} />
               </Pressable>
-              <Text style={styles.hint}>Align subject inside the 16:9 frame</Text>
+              <Text style={styles.hint}>Align subject inside the 4:3 frame</Text>
             </View>
           </View>
         )}
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
   maskSide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
   bracket: {
     width: `${BRACKET_WIDTH * 100}%`,
-    aspectRatio: 16 / 9,
+    aspectRatio: 4 / 3,
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: 'rgba(255,255,255,0.9)',

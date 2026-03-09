@@ -1,4 +1,5 @@
 // app/(tabs)/clinic/record.tsx
+
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
@@ -42,6 +43,11 @@ type RecordFieldItem = {
   required: boolean;
 };
 
+type RecordValueItem = {
+  field: string;
+  value: string | number | boolean | null;
+};
+
 type ApplianceDocShape = {
   applianceKey?: string;
   applianceName?: string;
@@ -81,7 +87,7 @@ function formatTimeHHMM(d: Date) {
 }
 
 function parseHHMM(s: string): Date | null {
-  const m = /^(\\d{2}):(\\d{2})$/.exec(s);
+  const m = /^(\d{2}):(\d{2})$/.exec(s);
   if (!m) return null;
   const hh = Number(m[1]);
   const mm = Number(m[2]);
@@ -91,7 +97,8 @@ function parseHHMM(s: string): Date | null {
   return d;
 }
 
-const PHOTO_ASPECT = 16 / 9;
+const PHOTO_ASPECT = 4 / 3;
+const PHOTO_ASPECT_EMPTY = 16 / 9;
 
 function makeSafeKey(input: string) {
   // prevent slashes and weird chars in storage paths
@@ -131,101 +138,6 @@ async function cropToAspect(uri: string, width: number, height: number): Promise
   });
 
   return result.uri;
-}
-
-/**
- * Validate + normalize values before upload.
- * Returns normalized object + first invalid field (for auto-scroll).
- */
-function normalizeAndValidate(
-  recordFields: RecordFieldItem[],
-  recordValues: Record<string, RecordValue>,
-) {
-  const errors: string[] = [];
-  const normalized: Record<string, any> = {};
-  let firstInvalidField: string | null = null;
-
-  for (const item of recordFields) {
-    const raw = recordValues[item.field];
-
-    const isEmptyString = typeof raw === 'string' && raw.trim().length === 0;
-    const isNullish = raw === null || raw === undefined;
-
-    // required check
-    if (item.required && (isNullish || isEmptyString)) {
-      errors.push(`${item.field} is required`);
-      if (!firstInvalidField) firstInvalidField = item.field;
-      continue;
-    }
-
-    // normalize
-    if (item.type === 'number') {
-      const s = typeof raw === 'string' ? raw.trim() : '';
-      if (!s) {
-        normalized[item.field] = null;
-      } else {
-        const n = Number(s);
-        if (Number.isNaN(n)) {
-          errors.push(`${item.field} must be a valid number`);
-          if (!firstInvalidField) firstInvalidField = item.field;
-        } else {
-          normalized[item.field] = n;
-        }
-      }
-      continue;
-    }
-
-    if (item.type === 'boolean') {
-      normalized[item.field] = typeof raw === 'boolean' ? raw : null;
-      if (item.required && normalized[item.field] === null) {
-        errors.push(`${item.field} is required`);
-        if (!firstInvalidField) firstInvalidField = item.field;
-      }
-      continue;
-    }
-
-    if (item.type === 'date') {
-      const s = typeof raw === 'string' ? raw.trim() : '';
-      if (!s) {
-        normalized[item.field] = '';
-      } else if (!parseYYYYMMDD(s)) {
-        errors.push(`${item.field} must be a valid date (YYYY/MM/DD)`);
-        if (!firstInvalidField) firstInvalidField = item.field;
-      } else {
-        normalized[item.field] = s;
-      }
-      continue;
-    }
-
-    if (item.type === 'time') {
-      const s = typeof raw === 'string' ? raw.trim() : '';
-      if (!s) {
-        normalized[item.field] = '';
-      } else if (!parseHHMM(s)) {
-        errors.push(`${item.field} must be a valid time (HH:MM)`);
-        if (!firstInvalidField) firstInvalidField = item.field;
-      } else {
-        normalized[item.field] = s;
-      }
-      continue;
-    }
-
-    if (item.type === 'photo') {
-      const s = typeof raw === 'string' ? raw.trim() : '';
-      if (item.required && !s) {
-        errors.push(`${item.field} is required`);
-        if (!firstInvalidField) firstInvalidField = item.field;
-      }
-      // keep local URI for now; it will be replaced with download URL before addDoc
-      normalized[item.field] = s || null;
-      continue;
-    }
-
-    // string
-    normalized[item.field] = typeof raw === 'string' ? raw.trim() : '';
-  }
-
-  return { errors, normalized, firstInvalidField };
 }
 
 export default function ClinicRecordScreen() {
@@ -519,90 +431,79 @@ export default function ClinicRecordScreen() {
 
     if (saving) return;
 
-    // ---- Validate + normalize ----
+    // ---- Validate + normalize (values as ARRAY in same order as recordFields) ----
+    type RecordValueItem = {
+      field: string;
+      value: string | number | boolean | null;
+    };
+
     const errors: string[] = [];
-    const normalized: Record<string, any> = {};
     let firstInvalidField: string | null = null;
+
+    const recordsArr: RecordValueItem[] = [];
 
     for (const item of recordFields) {
       const raw = recordValues[item.field];
 
-      const isEmptyString = typeof raw === 'string' && raw.trim().length === 0;
-      const isNullish = raw === null || raw === undefined;
-
-      // Required check
-      if (item.required && (isNullish || isEmptyString)) {
-        errors.push(`${item.field} is required`);
+      const markInvalid = (msg: string) => {
+        errors.push(msg);
         if (!firstInvalidField) firstInvalidField = item.field;
-        continue;
-      }
+      };
 
-      // Normalize by type
+      let value: string | number | boolean | null = null;
+
       if (item.type === 'number') {
         const s = typeof raw === 'string' ? raw.trim() : '';
-        if (!s) {
-          normalized[item.field] = null;
+        if (s.length === 0) {
+          value = null;
         } else {
           const n = Number(s);
           if (Number.isNaN(n)) {
-            errors.push(`${item.field} must be a valid number`);
-            if (!firstInvalidField) firstInvalidField = item.field;
+            markInvalid(`${item.field} must be a valid number`);
+            value = null;
           } else {
-            normalized[item.field] = n;
+            value = n;
           }
         }
-        continue;
-      }
-
-      if (item.type === 'boolean') {
-        const v = typeof raw === 'boolean' ? raw : null;
-        if (item.required && v === null) {
-          errors.push(`${item.field} is required`);
-          if (!firstInvalidField) firstInvalidField = item.field;
-        }
-        normalized[item.field] = v;
-        continue;
-      }
-
-      if (item.type === 'date') {
+      } else if (item.type === 'boolean') {
+        value = typeof raw === 'boolean' ? raw : null;
+      } else if (item.type === 'date') {
         const s = typeof raw === 'string' ? raw.trim() : '';
-        if (item.required && !s) {
-          errors.push(`${item.field} is required`);
-          if (!firstInvalidField) firstInvalidField = item.field;
-        } else if (s && !parseYYYYMMDD(s)) {
-          errors.push(`${item.field} must be a valid date (YYYY/MM/DD)`);
-          if (!firstInvalidField) firstInvalidField = item.field;
+        if (s.length === 0) {
+          value = null;
+        } else if (!parseYYYYMMDD(s)) {
+          markInvalid(`${item.field} must be a valid date (YYYY/MM/DD)`);
+          value = null;
+        } else {
+          value = s;
         }
-        normalized[item.field] = s;
-        continue;
-      }
-
-      if (item.type === 'time') {
+      } else if (item.type === 'time') {
         const s = typeof raw === 'string' ? raw.trim() : '';
-        if (item.required && !s) {
-          errors.push(`${item.field} is required`);
-          if (!firstInvalidField) firstInvalidField = item.field;
-        } else if (s && !parseHHMM(s)) {
-          errors.push(`${item.field} must be a valid time (HH:MM)`);
-          if (!firstInvalidField) firstInvalidField = item.field;
+        if (s.length === 0) {
+          value = null;
+        } else if (!parseHHMM(s)) {
+          markInvalid(`${item.field} must be a valid time (HH:MM)`);
+          value = null;
+        } else {
+          value = s;
         }
-        normalized[item.field] = s;
-        continue;
-      }
-
-      if (item.type === 'photo') {
+      } else if (item.type === 'photo') {
+        // Store local URI for now; will replace with download URL after upload.
         const s = typeof raw === 'string' ? raw.trim() : '';
-        if (item.required && !s) {
-          errors.push(`${item.field} is required`);
-          if (!firstInvalidField) firstInvalidField = item.field;
-        }
-        // Store local URI for now; we will replace with download URL after upload
-        normalized[item.field] = s || null;
-        continue;
+        value = s.length > 0 ? s : null;
+      } else {
+        // string (default)
+        const s = typeof raw === 'string' ? raw.trim() : '';
+        value = s.length > 0 ? s : null;
       }
 
-      // string (default)
-      normalized[item.field] = typeof raw === 'string' ? raw.trim() : '';
+      // Required check: required fields must not be null
+      if (item.required && value === null) {
+        markInvalid(`${item.field} is required`);
+      }
+
+      // Push item in the SAME ORDER as recordFields
+      recordsArr.push({ field: item.field, value });
     }
 
     if (errors.length) {
@@ -616,39 +517,38 @@ export default function ClinicRecordScreen() {
     try {
       setSaving(true);
 
-      // ---- Upload ONE photo (first 'photo' field) if present ----
-      let photoUrl: string | null = null;
+      // ---- Upload photo field(s) if present ----
+      // Replace local file URI with cloud URL in the corresponding valuesArr item.
+      const storage = getStorage();
+      const ts = Date.now();
 
-      const photoField = recordFields.find((f) => f.type === 'photo');
-      if (photoField) {
-        const maybeLocal = normalized[photoField.field] as string | null;
+      for (let i = 0; i < recordFields.length; i++) {
+        const rf = recordFields[i];
+        if (rf.type !== 'photo') continue;
 
-        // Only upload if it's a local URI (camera result). If it's already https, skip.
-        const shouldUpload =
-          typeof maybeLocal === 'string' &&
-          maybeLocal.length > 0 &&
-          !maybeLocal.startsWith('http://') &&
-          !maybeLocal.startsWith('https://');
+        const current = recordsArr[i]?.value;
 
-        if (shouldUpload) {
-          const storage = getStorage();
-          const ts = Date.now();
-          const safeField = makeSafeKey(photoField.field);
+        // If no photo taken: keep null (as requested)
+        if (current === null) continue;
 
-          // REQUIRED PATH: clinicId/roomId/applianceId/...
+        // Upload only if it's a local URI (camera result). If already https/http, skip.
+        if (
+          typeof current === 'string' &&
+          current.length > 0 &&
+          !current.startsWith('http://') &&
+          !current.startsWith('https://')
+        ) {
+          const safeField = makeSafeKey(rf.field);
           const path = `${clinicId}/${roomId}/${applianceId}/${ts}_${safeField}.jpg`;
 
-          const blob = await uriToBlob(maybeLocal);
+          const blob = await uriToBlob(current);
           const fileRef = storageRef(storage, path);
 
           await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
           const url = await getDownloadURL(fileRef);
 
-          normalized[photoField.field] = url; // replace local URI with cloud URL
-          photoUrl = url;
-        } else if (typeof maybeLocal === 'string' && maybeLocal.startsWith('https://')) {
-          // In case you ever prefill with an existing URL
-          photoUrl = maybeLocal;
+          // Replace with uploaded URL in the values array (same field name)
+          recordsArr[i] = { field: rf.field, value: url };
         }
       }
 
@@ -669,17 +569,15 @@ export default function ClinicRecordScreen() {
         roomId,
         applianceId,
 
-        // Convenience: one-photo-per-record for now
-        photoUrl: photoUrl ?? null,
-
         appliance: {
-          key: applianceKey || null,
-          name: applianceName || null,
-          typeKey: typeKey || null,
-          typeName: typeName || null,
+          key: applianceKey ?? null,
+          name: applianceName ?? null,
+          typeKey: typeKey ?? null,
+          typeName: typeName ?? null,
         },
 
-        values: normalized,
+        // records is an array, aligned with recordFields order
+        records: recordsArr,
 
         createdAt: serverTimestamp(),
         createdBy: {
@@ -866,29 +764,39 @@ export default function ClinicRecordScreen() {
                           </Pressable>
                         </View>
                       </View>                    
-                    ) : item.type === 'photo' ? (                      
-                      <Pressable
-                        ref={(r: any) => {
-                          inputRefs.current[key] = r as any;
-                        }}
-                        collapsable={false}
-                        onPress={() => {
-                          focusedKeyRef.current = key;
-                          setActivePhotoField(item.field);
-                          setCameraOpen(true);
-                        }}
-                        style={({ pressed }) => [styles.photoBox, pressed && { opacity: 0.9 }]}
-                        accessibilityRole="button"
-                      >
-                        {typeof raw === 'string' && raw.trim().length > 0 ? (
-                          <Image source={{ uri: raw }} style={styles.photoPreview} resizeMode="cover" />
-                        ) : (
-                          <View style={styles.photoPlaceholder}>
-                            <MaterialCommunityIcons name="camera-outline" size={26} color="#94a3b8" />
-                            <Text style={styles.photoPlaceholderText}>Tap to capture photo</Text>
-                          </View>
-                        )}
-                      </Pressable>
+                    ) : item.type === 'photo' ? (
+                      (() => {
+                        const hasPhoto = typeof raw === 'string' && raw.trim().length > 0;
+
+                        return (
+                          <Pressable
+                            ref={(r: any) => {
+                              inputRefs.current[key] = r as any;
+                            }}
+                            collapsable={false}
+                            onPress={() => {
+                              focusedKeyRef.current = key;
+                              setActivePhotoField(item.field);
+                              setCameraOpen(true);
+                            }}
+                            style={({ pressed }) => [
+                              styles.photoBox,
+                              { aspectRatio: hasPhoto ? PHOTO_ASPECT : PHOTO_ASPECT_EMPTY, maxHeight: 280 },
+                              pressed && { opacity: 0.9 },
+                            ]}
+                            accessibilityRole="button"
+                          >
+                            {hasPhoto ? (
+                              <Image source={{ uri: raw as string }} style={styles.photoPreview} resizeMode="cover" />
+                            ) : (
+                              <View style={styles.photoPlaceholder}>
+                                <MaterialCommunityIcons name="camera-outline" size={26} color="#94a3b8" />
+                                <Text style={styles.photoPlaceholderText}>Tap to capture photo</Text>
+                              </View>
+                            )}
+                          </Pressable>
+                        );
+                      })()
                     ) : (
                       <TextInput
                         ref={(r) => {
@@ -983,7 +891,7 @@ export default function ClinicRecordScreen() {
         onCaptured={async (photo) => {
           if (!activePhotoField) return;
 
-          // center-crop to 16:9
+          // center-crop
           const croppedUri = await cropToAspect(photo.uri, photo.width, photo.height);
 
           onChangeField(activePhotoField, croppedUri);
@@ -1125,7 +1033,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc', // slate-50
     overflow: 'hidden',
     width: '100%',
-    aspectRatio: 16 / 9,
     justifyContent: 'center',
     alignItems: 'center',
   },
