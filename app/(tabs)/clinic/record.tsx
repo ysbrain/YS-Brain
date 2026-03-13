@@ -531,6 +531,7 @@ export default function ClinicRecordScreen() {
 
     try {
       setSaving(true);
+      setUiLocked(true);
 
       const storage = getStorage();
       const ts = formatReadableTimestamp();
@@ -600,6 +601,7 @@ export default function ClinicRecordScreen() {
             text: 'OK',
             onPress: () => {
               setSaving(false);
+              setUiLocked(false);
               router.back();
             },
           },
@@ -617,6 +619,7 @@ export default function ClinicRecordScreen() {
             text: 'OK',
             onPress: () => {
               setSaving(false);
+              setUiLocked(false);
             },
           },
         ],
