@@ -3,6 +3,7 @@
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
+import { useUiLock } from '@/src/contexts/UiLockContext';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -19,7 +20,9 @@ import {
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  BackHandler,
   Dimensions,
   Image,
   Keyboard,
@@ -41,11 +44,6 @@ type RecordFieldItem = {
   field: string;
   type: RecordFieldType;
   required: boolean;
-};
-
-type RecordValueItem = {
-  field: string;
-  value: string | number | boolean | null;
 };
 
 type ApplianceDocShape = {
@@ -99,6 +97,18 @@ function parseHHMM(s: string): Date | null {
 
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
+
+function formatReadableTimestamp(d = new Date()) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  const ms = String(d.getMilliseconds()).padStart(3, '0');
+
+  return `${yyyy}-${mm}-${dd}_${hh}-${min}-${ss}-${ms}`;
+}
 
 function makeSafeKey(input: string) {
   // prevent slashes and weird chars in storage paths
@@ -165,6 +175,8 @@ export default function ClinicRecordScreen() {
   const [recordFields, setRecordFields] = useState<RecordFieldItem[]>([]);
   const [recordValues, setRecordValues] = useState<Record<string, RecordValue>>({});
   const [saving, setSaving] = useState(false);
+
+  const { setUiLocked } = useUiLock();
 
   // Picker control (date/time)
   const [activePicker, setActivePicker] = useState<{ field: string; mode: 'date' | 'time' } | null>(
@@ -284,6 +296,13 @@ export default function ClinicRecordScreen() {
       if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
     };
   }, [requestScroll]);
+  
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !saving) return;
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, [saving]);
 
   useEffect(() => {
     if (!activePicker) return;
@@ -418,18 +437,19 @@ export default function ClinicRecordScreen() {
       Alert.alert('Missing context', 'Clinic/Room/Appliance not available.');
       return;
     }
-
     if (!user?.uid) {
       Alert.alert('Not signed in', 'Please sign in before saving a record.');
       return;
     }
-
     if (loading) {
       Alert.alert('Please wait', 'Still loading appliance configuration.');
       return;
     }
-
     if (saving) return;
+
+    // Close/dismiss anything interactive before locking
+    Keyboard.dismiss();
+    setActivePicker(null);
 
     // ---- Validate + normalize (values as ARRAY in same order as recordFields) ----
     type RecordValueItem = {
@@ -439,7 +459,6 @@ export default function ClinicRecordScreen() {
 
     const errors: string[] = [];
     let firstInvalidField: string | null = null;
-
     const recordsArr: RecordValueItem[] = [];
 
     for (const item of recordFields) {
@@ -488,21 +507,17 @@ export default function ClinicRecordScreen() {
           value = s;
         }
       } else if (item.type === 'photo') {
-        // Store local URI for now; will replace with download URL after upload.
         const s = typeof raw === 'string' ? raw.trim() : '';
         value = s.length > 0 ? s : null;
       } else {
-        // string (default)
         const s = typeof raw === 'string' ? raw.trim() : '';
         value = s.length > 0 ? s : null;
       }
 
-      // Required check: required fields must not be null
       if (item.required && value === null) {
         markInvalid(`${item.field} is required`);
       }
 
-      // Push item in the SAME ORDER as recordFields
       recordsArr.push({ field: item.field, value });
     }
 
@@ -517,21 +532,16 @@ export default function ClinicRecordScreen() {
     try {
       setSaving(true);
 
-      // ---- Upload photo field(s) if present ----
-      // Replace local file URI with cloud URL in the corresponding valuesArr item.
       const storage = getStorage();
-      const ts = Date.now();
+      const ts = formatReadableTimestamp();
 
       for (let i = 0; i < recordFields.length; i++) {
         const rf = recordFields[i];
         if (rf.type !== 'photo') continue;
 
         const current = recordsArr[i]?.value;
-
-        // If no photo taken: keep null (as requested)
         if (current === null) continue;
 
-        // Upload only if it's a local URI (camera result). If already https/http, skip.
         if (
           typeof current === 'string' &&
           current.length > 0 &&
@@ -539,7 +549,7 @@ export default function ClinicRecordScreen() {
           !current.startsWith('https://')
         ) {
           const safeField = makeSafeKey(rf.field);
-          const path = `${clinicId}/${roomId}/${applianceId}/${ts}_${safeField}.jpg`;
+          const path = `clinics/${clinicId}/${roomId}/${applianceKey}/${ts}_${safeField}.jpg`;
 
           const blob = await uriToBlob(current);
           const fileRef = storageRef(storage, path);
@@ -547,12 +557,10 @@ export default function ClinicRecordScreen() {
           await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
           const url = await getDownloadURL(fileRef);
 
-          // Replace with uploaded URL in the values array (same field name)
           recordsArr[i] = { field: rf.field, value: url };
         }
       }
 
-      // ---- Create Firestore record doc ----
       const recordsRef = collection(
         db,
         'clinics',
@@ -568,17 +576,13 @@ export default function ClinicRecordScreen() {
         clinicId,
         roomId,
         applianceId,
-
         appliance: {
           key: applianceKey ?? null,
           name: applianceName ?? null,
           typeKey: typeKey ?? null,
           typeName: typeName ?? null,
         },
-
-        // records is an array, aligned with recordFields order
         records: recordsArr,
-
         createdAt: serverTimestamp(),
         createdBy: {
           userId: user.uid,
@@ -588,13 +592,36 @@ export default function ClinicRecordScreen() {
 
       await addDoc(recordsRef, payload);
 
-      Alert.alert('Saved', 'Record saved successfully.');
-      router.back();
+      Alert.alert(
+        'Saved',
+        'Record saved successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setSaving(false);
+              router.back();
+            },
+          },
+        ],
+        { cancelable: false }
+      );
     } catch (e: any) {
       console.error('save record error', e);
-      Alert.alert('Save failed', e?.message ?? 'Unknown error');
-    } finally {
-      setSaving(false);
+
+      Alert.alert(
+        'Save failed',
+        e?.message ?? 'Unknown error',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              setSaving(false);
+            },
+          },
+        ],
+        { cancelable: false }
+      );
     }
   }, [
     clinicId,
@@ -897,6 +924,18 @@ export default function ClinicRecordScreen() {
           onChangeField(activePhotoField, croppedUri);
         }}
       />
+
+      {saving && (
+        <View style={styles.blockingOverlay} pointerEvents="auto">
+          <View style={styles.blockingCard}>
+            <ActivityIndicator size="large" color="#111" />
+            <Text style={styles.blockingTitle}>Saving record…</Text>
+            <Text style={styles.blockingText}>
+              Please wait. Photo upload may take a few seconds.
+            </Text>
+          </View>
+        </View>
+      )}
     </>
   );
 }
@@ -1110,4 +1149,42 @@ const styles = StyleSheet.create({
   },
   dateDoneText: { fontWeight: '900' },
   iosPicker: { width: '100%', minWidth: 280, height: 216 },
+
+  blockingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 9999,
+    elevation: 9999,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  blockingCard: {
+    minWidth: 220,
+    maxWidth: 300,
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  blockingTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#111',
+  },
+  blockingText: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#444',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
 });
