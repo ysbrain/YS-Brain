@@ -44,12 +44,18 @@ type RecordFieldItem = {
   required: boolean;
 };
 
+type RawRecordField = {
+  field?: unknown;
+  type?: unknown;
+  required?: unknown;
+};
+
 type ApplianceDocShape = {
   applianceKey?: string;
   applianceName?: string;
   typeKey?: string;
   typeName?: string;
-  recordFields?: any[];
+  recordFields?: RawRecordField[];
 };
 
 type RecordValue = string | boolean | null;
@@ -359,14 +365,45 @@ export default function ClinicRecordScreen() {
     setActivePicker(null);
   }, [activePicker, pickerDraft, onChangeField]);
 
+  const closeCamera = useCallback(() => {
+    setCameraOpen(false);
+    setActivePhotoField(null);
+  }, []);
+
+  const onCapturedPhoto = useCallback(
+    async (photo: { uri: string; width: number; height: number }) => {
+      if (!activePhotoField) {
+        closeCamera();
+        return;
+      }
+
+      try {
+        const croppedUri = await cropToAspect(photo.uri, photo.width, photo.height);
+        onChangeField(activePhotoField, croppedUri);
+      } catch (err) {
+        console.error('photo process error', err);
+        Alert.alert('Photo error', 'Failed to process the captured photo.');
+      } finally {
+        closeCamera();
+      }
+    },
+    [activePhotoField, closeCamera, onChangeField],
+  );
+
   // Subscribe to appliance doc
   useEffect(() => {
-    if (!clinicId || !roomId || !applianceId) return;
+    if (!clinicId || !roomId || !applianceId) {
+      setLoading(false);
+      setLoadError('Missing clinic, room, or appliance information.');
+      setRecordFields([]);
+      return;
+    }
 
     setLoading(true);
     setLoadError(null);
 
     const ref = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
+
     const unsub = onSnapshot(
       ref,
       (snap) => {
@@ -378,16 +415,24 @@ export default function ClinicRecordScreen() {
         setTypeName(String(data.typeName ?? ''));
 
         const raw = Array.isArray(data.recordFields) ? data.recordFields : [];
+
+        const seen = new Set<string>();
+
         const parsed: RecordFieldItem[] = raw
-          .map((x: any) => ({
+          .map((x) => ({
             field: String(x?.field ?? '').trim(),
             type: String(x?.type ?? 'string') as RecordFieldType,
             required: Boolean(x?.required ?? false),
           }))
-          .filter((x: RecordFieldItem) => x.field.length > 0)
-          .map((x: RecordFieldItem) => ({
+          .filter((x) => {
+            if (!x.field) return false;
+            if (seen.has(x.field)) return false;
+            seen.add(x.field);
+            return true;
+          })
+          .map((x) => ({
             field: x.field,
-            required: x.required,            
+            required: x.required,
             type:
               x.type === 'number' ||
               x.type === 'date' ||
@@ -400,14 +445,16 @@ export default function ClinicRecordScreen() {
 
         setRecordFields(parsed);
 
-        // Initialize missing values without wiping existing
+        // Keep only current configured fields, and initialize any missing ones
         setRecordValues((prev) => {
-          const next = { ...prev };
+          const next: Record<string, RecordValue> = {};
+
           for (const item of parsed) {
-            if (next[item.field] === undefined) {
-              next[item.field] = item.type === 'boolean' ? null : '';
-            }
+            const existing = prev[item.field];
+            next[item.field] =
+              existing !== undefined ? existing : item.type === 'boolean' ? null : '';
           }
+
           return next;
         });
 
@@ -428,21 +475,22 @@ export default function ClinicRecordScreen() {
       Alert.alert('Missing context', 'Clinic/Room/Appliance not available.');
       return;
     }
+
     if (!user?.uid) {
       Alert.alert('Not signed in', 'Please sign in before saving a record.');
       return;
     }
+
     if (loading) {
       Alert.alert('Please wait', 'Still loading appliance configuration.');
       return;
     }
+
     if (saving) return;
 
-    // Close/dismiss anything interactive before locking
     Keyboard.dismiss();
     setActivePicker(null);
 
-    // ---- Validate + normalize (values as ARRAY in same order as recordFields) ----
     type RecordValueItem = {
       field: string;
       value: string | number | boolean | null;
@@ -520,12 +568,16 @@ export default function ClinicRecordScreen() {
       return;
     }
 
-    try {
-      setSaving(true);
-      setUiLocked(true);
+    setSaving(true);
+    setUiLocked(true);
 
+    try {
       const storage = getStorage();
       const ts = formatReadableTimestamp();
+
+      const safeClinicId = makeSafeKey(String(clinicId));
+      const safeRoomId = makeSafeKey(String(roomId));
+      const safeApplianceSegment = makeSafeKey(applianceKey || String(applianceId));
 
       for (let i = 0; i < recordFields.length; i++) {
         const rf = recordFields[i];
@@ -541,7 +593,7 @@ export default function ClinicRecordScreen() {
           !current.startsWith('https://')
         ) {
           const safeField = makeSafeKey(rf.field);
-          const path = `clinics/${clinicId}/${roomId}/${applianceKey}/${ts}_${safeField}.jpg`;
+          const path = `clinics/${safeClinicId}/${safeRoomId}/${safeApplianceSegment}/${ts}_${safeField}.jpg`;
 
           const blob = await uriToBlob(current);
           const fileRef = storageRef(storage, path);
@@ -561,7 +613,7 @@ export default function ClinicRecordScreen() {
         roomId,
         'appliances',
         applianceId,
-        'records'
+        'records',
       );
 
       const payload = {
@@ -584,8 +636,6 @@ export default function ClinicRecordScreen() {
 
       await addDoc(recordsRef, payload);
 
-      setSaving(false);
-      setUiLocked(false);
       Alert.alert(
         'Saved',
         'Record saved successfully.',
@@ -597,25 +647,16 @@ export default function ClinicRecordScreen() {
             },
           },
         ],
-        { cancelable: false }
+        { cancelable: false },
       );
+      console.log('record saved');
     } catch (e: any) {
       console.error('save record error', e);
-
-      Alert.alert(
-        'Save failed',
-        e?.message ?? 'Unknown error',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setSaving(false);
-              setUiLocked(false);
-            },
-          },
-        ],
-        { cancelable: false }
-      );
+      Alert.alert('Save failed', e?.message ?? 'Unknown error');
+    } finally {
+      setSaving(false);
+      setUiLocked(false);
+      console.log('save record process completed');
     }
   }, [
     clinicId,
@@ -633,6 +674,7 @@ export default function ClinicRecordScreen() {
     profile?.name,
     router,
     requestScroll,
+    setUiLocked,
   ]);
 
   return (
@@ -828,11 +870,24 @@ export default function ClinicRecordScreen() {
                         placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
                         placeholderTextColor="#999"
                         style={styles.textInput}
-                        keyboardType={item.type === 'number' ? 'decimal-pad' : 'default'}
+                        keyboardType={
+                          item.type === 'number'
+                            ? Platform.OS === 'ios'
+                              ? 'decimal-pad'
+                              : 'numeric'
+                            : 'default'
+                        }
                         returnKeyType="done"
+                        autoCapitalize="none"
+                        autoCorrect={false}
                         onFocus={() => {
                           focusedKeyRef.current = key;
                           requestScroll(key, 'focus');
+                        }}
+                        onBlur={() => {
+                          if (focusedKeyRef.current === key) {
+                            focusedKeyRef.current = null;
+                          }
                         }}
                       />
                     )}
@@ -908,15 +963,8 @@ export default function ClinicRecordScreen() {
 
       <CameraCaptureModal
         visible={cameraOpen}
-        onClose={() => setCameraOpen(false)}
-        onCaptured={async (photo) => {
-          if (!activePhotoField) return;
-
-          // center-crop
-          const croppedUri = await cropToAspect(photo.uri, photo.width, photo.height);
-
-          onChangeField(activePhotoField, croppedUri);
-        }}
+        onClose={closeCamera}
+        onCaptured={onCapturedPhoto}
       />
     </>
   );
