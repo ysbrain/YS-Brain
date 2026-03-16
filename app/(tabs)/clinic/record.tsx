@@ -20,9 +20,7 @@ import {
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  BackHandler,
   Dimensions,
   Image,
   Keyboard,
@@ -296,13 +294,6 @@ export default function ClinicRecordScreen() {
       if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
     };
   }, [requestScroll]);
-  
-  useEffect(() => {
-    if (Platform.OS !== 'android' || !saving) return;
-
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
-    return () => sub.remove();
-  }, [saving]);
 
   useEffect(() => {
     if (!activePicker) return;
@@ -593,6 +584,8 @@ export default function ClinicRecordScreen() {
 
       await addDoc(recordsRef, payload);
 
+      setSaving(false);
+      setUiLocked(false);
       Alert.alert(
         'Saved',
         'Record saved successfully.',
@@ -600,8 +593,6 @@ export default function ClinicRecordScreen() {
           {
             text: 'OK',
             onPress: () => {
-              setSaving(false);
-              setUiLocked(false);
               router.back();
             },
           },
@@ -927,18 +918,6 @@ export default function ClinicRecordScreen() {
           onChangeField(activePhotoField, croppedUri);
         }}
       />
-
-      {saving && (
-        <View style={styles.blockingOverlay} pointerEvents="auto">
-          <View style={styles.blockingCard}>
-            <ActivityIndicator size="large" color="#111" />
-            <Text style={styles.blockingTitle}>Saving record…</Text>
-            <Text style={styles.blockingText}>
-              Please wait. Photo upload may take a few seconds.
-            </Text>
-          </View>
-        </View>
-      )}
     </>
   );
 }
@@ -1152,42 +1131,4 @@ const styles = StyleSheet.create({
   },
   dateDoneText: { fontWeight: '900' },
   iosPicker: { width: '100%', minWidth: 280, height: 216 },
-
-  blockingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 9999,
-    elevation: 9999,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  blockingCard: {
-    minWidth: 220,
-    maxWidth: 300,
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 18,
-    backgroundColor: '#fff',
-    paddingHorizontal: 18,
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-  blockingTitle: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111',
-  },
-  blockingText: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#444',
-    textAlign: 'center',
-    lineHeight: 18,
-  },
 });

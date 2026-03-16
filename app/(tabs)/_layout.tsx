@@ -5,10 +5,17 @@ import { UiLockProvider, useUiLock } from '@/src/contexts/UiLockContext';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, BackHandler, Platform, StyleSheet, Text, View } from 'react-native';
 
 function TabsWithOverlay() {
   const { uiLocked } = useUiLock();
+  
+  useEffect(() => {
+    if (Platform.OS !== 'android' || !uiLocked) return;
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => sub.remove();
+  }, [uiLocked]);
 
   return (
     <View style={styles.root}>
