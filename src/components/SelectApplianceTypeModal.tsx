@@ -36,6 +36,10 @@ type Props = {
   closeOnSelect?: boolean; // default true
 };
 
+function toSafeString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
 export default function SelectApplianceTypeModal({
   visible,
   roomName,
@@ -70,8 +74,8 @@ export default function SelectApplianceTypeModal({
           return {
             id: d.id,
             moduleIndex: Number(data.moduleIndex ?? 0),
-            moduleName: String(data.moduleName ?? ''),
-            description: String(data.description ?? ''),
+            moduleName: toSafeString(data.moduleName),
+            description: toSafeString(data.description),
             official: Boolean(data.official ?? false),
           };
         });
@@ -196,6 +200,7 @@ export default function SelectApplianceTypeModal({
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={ListEmpty}
         />
       )}
     </BottomSheetShell>

@@ -23,6 +23,7 @@ import {
   View,
   useColorScheme,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type SetupFieldType = 'string' | 'number' | 'date';
 type SetupConfigItem = { field: string; type: SetupFieldType };
@@ -187,6 +188,10 @@ export default function AddApplianceToRoomModal({
   const FOOTER_HEIGHT = 72;
   const FOCUS_ANCHOR_RATIO = 0.4;
 
+  const insets = useSafeAreaInsets();
+  const footerInset = insets.bottom;
+  const footerHeight = FOOTER_HEIGHT + footerInset;
+
   const focusedKeyRef = useRef<string | null>(null);
   const keyboardHeightRef = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -236,11 +241,13 @@ export default function AddApplianceToRoomModal({
         }
 
         lastScrollAtRef.current = now;
-
+        
+        /*
         if (__DEV__) {
           // eslint-disable-next-line no-console
           console.log('[scroll]', { reason, key: latestKey, elapsed });
         }
+        */
 
         const reqId = ++scrollReqIdRef.current;
         requestAnimationFrame(() => {
@@ -372,9 +379,9 @@ export default function AddApplianceToRoomModal({
         setSetupConfig(parsed);
 
         setConfigValues((prev) => {
-          const next = { ...prev };
+          const next: Record<string, string> = {};
           for (const item of parsed) {
-            if (next[item.field] === undefined) next[item.field] = '';
+            next[item.field] = prev[item.field] ?? '';
           }
           return next;
         });
@@ -637,7 +644,7 @@ export default function AddApplianceToRoomModal({
           style={styles.scroll}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: FOOTER_HEIGHT + 16 + bottomObstruction },
+            { paddingBottom: footerHeight + 16 + bottomObstruction },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -725,6 +732,11 @@ export default function AddApplianceToRoomModal({
                   focusedKeyRef.current = 'applianceName';
                   requestScroll('applianceName', 'focus');
                 }}
+                onBlur={() => {
+                  if (focusedKeyRef.current === 'applianceName') {
+                    focusedKeyRef.current = null;
+                  }
+                }}
               />
 
               {errorText && (
@@ -797,11 +809,22 @@ export default function AddApplianceToRoomModal({
                                   styles.textInput,
                                   formError?.fieldKey === k && styles.errorBorder,
                                 ]}
-                                keyboardType={item.type === 'number' ? 'number-pad' : 'default'}
+                                keyboardType={
+                                  item.type === 'number'
+                                    ? Platform.OS === 'ios'
+                                      ? 'decimal-pad'
+                                      : 'numeric'
+                                    : 'default'
+                                }
                                 returnKeyType="done"
                                 onFocus={() => {
                                   focusedKeyRef.current = k;
                                   requestScroll(k, 'focus');
+                                }}
+                                onBlur={() => {
+                                  if (focusedKeyRef.current === k) {
+                                    focusedKeyRef.current = null;
+                                  }
                                 }}
                               />
                             )}
@@ -817,8 +840,16 @@ export default function AddApplianceToRoomModal({
         </ScrollView>
 
         {/* Footer buttons (hide while date overlay is active) */}
-        {!activeDateField && (
-          <View style={styles.footerFixed}>
+        {!activeDateField && (          
+          <View
+            style={[
+              styles.footerFixed,
+              {
+                height: footerHeight,
+                paddingBottom: 12 + footerInset,
+              },
+            ]}
+          >
             <Pressable
               onPress={onBack}
               style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
@@ -989,11 +1020,10 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    height: 72,
     borderTopWidth: 1,
     borderTopColor: '#111',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

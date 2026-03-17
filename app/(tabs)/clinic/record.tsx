@@ -34,7 +34,6 @@ import {
   useColorScheme,
   View
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type RecordFieldType = 'string' | 'number' | 'date' | 'time' | 'boolean' | 'photo';
 
@@ -44,18 +43,12 @@ type RecordFieldItem = {
   required: boolean;
 };
 
-type RawRecordField = {
-  field?: unknown;
-  type?: unknown;
-  required?: unknown;
-};
-
 type ApplianceDocShape = {
   applianceKey?: string;
   applianceName?: string;
   typeKey?: string;
   typeName?: string;
-  recordFields?: RawRecordField[];
+  recordFields?: RecordFieldItem[];
 };
 
 type RecordValue = string | boolean | null;
@@ -119,6 +112,11 @@ function makeSafeKey(input: string) {
   return input.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60);
 }
 
+function normalizeParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+}
+
 async function uriToBlob(uri: string): Promise<Blob> {
   const res = await fetch(uri);
   return await res.blob();
@@ -161,9 +159,13 @@ export default function ClinicRecordScreen() {
 
   const clinicId = profile?.clinic;
 
-  const params = useLocalSearchParams<{ roomId: string; applianceId: string }>();
-  const roomId = params.roomId;
-  const applianceId = params.applianceId;
+  const params = useLocalSearchParams<{
+    roomId?: string | string[];
+    applianceId?: string | string[];
+  }>();
+
+  const roomId = normalizeParam(params.roomId);
+  const applianceId = normalizeParam(params.applianceId);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -196,7 +198,6 @@ export default function ClinicRecordScreen() {
   const overlayText = isDark ? '#fff' : '#111';
   const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
 
-  const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
   const scrollYRef = useRef(0);
 
@@ -209,9 +210,6 @@ export default function ClinicRecordScreen() {
   const FOOTER_BASE_HEIGHT = 84;
   const SAFE_GAP = 12;
   const FOCUS_ANCHOR_RATIO = 0.4;
-
-  const footerInset = Platform.OS === 'ios' ? insets.bottom : 0;
-  const footerHeight = FOOTER_BASE_HEIGHT + footerInset;
 
   const SCROLL_DEBOUNCE_MS = 16;
   const SCROLL_COOLDOWN_MS = 120;
@@ -227,7 +225,7 @@ export default function ClinicRecordScreen() {
 
   const pickerOverlayHeight = Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
   const bottomObstruction = Math.max(keyboardHeight, pickerOverlayHeight);
-  const contentBottomPadding = 24 + footerHeight + SAFE_GAP + bottomObstruction;
+  const contentBottomPadding = 24 + FOOTER_BASE_HEIGHT + SAFE_GAP + bottomObstruction;
 
   const requestScroll = useCallback(
     (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
@@ -575,10 +573,6 @@ export default function ClinicRecordScreen() {
       const storage = getStorage();
       const ts = formatReadableTimestamp();
 
-      const safeClinicId = makeSafeKey(String(clinicId));
-      const safeRoomId = makeSafeKey(String(roomId));
-      const safeApplianceSegment = makeSafeKey(applianceKey || String(applianceId));
-
       for (let i = 0; i < recordFields.length; i++) {
         const rf = recordFields[i];
         if (rf.type !== 'photo') continue;
@@ -593,7 +587,7 @@ export default function ClinicRecordScreen() {
           !current.startsWith('https://')
         ) {
           const safeField = makeSafeKey(rf.field);
-          const path = `clinics/${safeClinicId}/${safeRoomId}/${safeApplianceSegment}/${ts}_${safeField}.jpg`;
+          const path = `clinics/${clinicId}/${roomId}/${applianceKey}/${ts}_${safeField}.jpg`;
 
           const blob = await uriToBlob(current);
           const fileRef = storageRef(storage, path);
@@ -649,14 +643,12 @@ export default function ClinicRecordScreen() {
         ],
         { cancelable: false },
       );
-      console.log('record saved');
     } catch (e: any) {
       console.error('save record error', e);
       Alert.alert('Save failed', e?.message ?? 'Unknown error');
     } finally {
       setSaving(false);
       setUiLocked(false);
-      console.log('save record process completed');
     }
   }, [
     clinicId,
@@ -1045,8 +1037,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: '900',
+    fontSize: 16,
+    fontWeight: '800',
     marginBottom: 10,
   },
   hintText: { color: '#666', fontWeight: '700' },

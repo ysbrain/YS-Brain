@@ -1,5 +1,6 @@
-import { useProfile } from '@/src/contexts/ProfileContext';
-import { db } from '@/src/lib/firebase';
+// app/(tabs)/clinic/index.tsx
+
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
   collection,
@@ -9,20 +10,21 @@ import {
   query,
   QueryDocumentSnapshot,
 } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  ListRenderItem,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 
-import { getApplianceIcon } from '@/src/utils/applianceIcons';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-
+import { useProfile } from '@/src/contexts/ProfileContext';
 import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
+import { db } from '@/src/lib/firebase';
+import { getApplianceIcon } from '@/src/utils/applianceIcons';
 
 type ApplianceItem = {
   id: string;
@@ -40,25 +42,40 @@ type Room = {
   applianceList: ApplianceItem[];
 };
 
-function roomFromDoc(doc: QueryDocumentSnapshot<DocumentData>): Room {
-  const data = doc.data();
+function toSafeString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function roomFromDoc(docSnap: QueryDocumentSnapshot<DocumentData>): Room {
+  const data = docSnap.data();
   const applianceListRaw = Array.isArray(data.applianceList) ? data.applianceList : [];
 
-  const applianceList: ApplianceItem[] = applianceListRaw.map((a: any) => ({
-    id: String(a.id),
-    key: String(a?.key ?? ''),
-    name: String(a?.name ?? 'Unnamed appliance'),
-    typeKey: String(a?.typeKey ?? ''),
-    typeName: String(a?.typeName ?? ''),
-  }));
+  const applianceList: ApplianceItem[] = applianceListRaw
+    .map((a: any) => ({
+      id: toSafeString(a?.id),
+      key: toSafeString(a?.key),
+      name: toSafeString(a?.name, 'Unnamed appliance'),
+      typeKey: toSafeString(a?.typeKey),
+      typeName: toSafeString(a?.typeName),
+    }))
+    .filter((a) => a.id.length > 0);
 
   return {
-    id: doc.id,
+    id: docSnap.id,
     roomIndex: Number(data.roomIndex ?? 0),
-    roomName: String(data.roomName ?? 'Unnamed room'),
-    description: String(data.description ?? ''),
+    roomName: toSafeString(data.roomName, 'Unnamed room'),
+    description: toSafeString(data.description),
     applianceList,
   };
+}
+
+function AddApplianceChipContent() {
+  return (
+    <View style={styles.addChipRow}>
+      <MaterialCommunityIcons name="plus-circle-outline" size={22} color="#111" />
+      <Text style={styles.addChipText}>New Appliance</Text>
+    </View>
+  );
 }
 
 export default function ClinicScreen() {
@@ -71,14 +88,10 @@ export default function ClinicScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const applianceFlow = useAddApplianceFlow({ clinicId });
-  const openSelectModule = (room: Room) => {    
-    applianceFlow.open({ id: room.id, roomName: room.roomName });
-  };
-
   const roomsPathReady = useMemo(() => Boolean(clinicId), [clinicId]);
 
   useEffect(() => {
-    if (!roomsPathReady) {
+    if (!roomsPathReady || !clinicId) {
       setRooms([]);
       setLoadingRooms(false);
       setError(null);
@@ -88,8 +101,7 @@ export default function ClinicScreen() {
     setLoadingRooms(true);
     setError(null);
 
-    // Rooms query: order by roomIndex asc
-    const roomsRef = collection(db, 'clinics', clinicId!, 'rooms');
+    const roomsRef = collection(db, 'clinics', clinicId, 'rooms');
     const roomsQuery = query(roomsRef, orderBy('roomIndex', 'asc'));
 
     const unsubscribe = onSnapshot(
@@ -100,132 +112,166 @@ export default function ClinicScreen() {
       },
       (err) => {
         console.error('Rooms snapshot error:', err);
+        setRooms([]);
         setError('Failed to load rooms.');
         setLoadingRooms(false);
-      }
+      },
     );
 
     return unsubscribe;
   }, [roomsPathReady, clinicId]);
-  
-  const goRoomDetail = (room: Room) => {
-    router.push({
-      pathname: "/clinic/room/[roomId]",
-      params: { roomId: String(room.id) },
-    });
-  };
-  
-  const NewApplianceChipContent = () => (
-    <View style={styles.addChipRow}>
-      <MaterialCommunityIcons name="plus-circle-outline" size={22} color="#111" />
-      <Text style={styles.addChipText}>New Appliance</Text>
-    </View>
+
+  const goRoomDetail = useCallback(
+    (room: Room) => {
+      router.push({
+        pathname: '/clinic/room/[roomId]',
+        params: { roomId: String(room.id) },
+      });
+    },
+    [router],
   );
-  
-  const renderRoom = ({ item }: { item: Room }) => {
-    const appliances = item.applianceList ?? [];
-    const applianceCount = appliances.length;
 
-    // Rule: show up to 8 chips
-    const showMoreChip = applianceCount > 8;
-    const visibleAppliances = showMoreChip ? appliances.slice(0, 7) : appliances;
+  const goRecord = useCallback(
+    (roomId: string, applianceId: string) => {
+      router.push({
+        pathname: '/clinic/record',
+        params: {
+          roomId: String(roomId),
+          applianceId: String(applianceId),
+        },
+      });
+    },
+    [router],
+  );
 
-    // Rule:
-    // If applianceCount is odd AND < 8 AND > 0 (i.e., 1,3,5,7),
-    // append an additional "+ appliance" chip.
-    const showAddForOddUnder8 =
-      applianceCount > 0 && applianceCount < 8 && applianceCount % 2 === 1;
-    
-    return (
-      <Pressable
-        onPress={() => goRoomDetail(item)}
-        style={({ pressed }) => [{ opacity: pressed ? 0.95 : 1 }]}
-      >
-        <View style={styles.roomCard}>
-          <Text style={styles.roomTitle}>{item.roomName}</Text>
+  const openSelectModule = useCallback(
+    (room: Room) => {
+      applianceFlow.open({ id: room.id, roomName: room.roomName });
+    },
+    [applianceFlow],
+  );
 
-          <View style={styles.chipsWrap}>
-            {applianceCount > 0 ? (
-              <>
-                {visibleAppliances.map((a) => (                  
-                  <Pressable
-                    key={`${item.id}:${a.id}`}
-                    onPress={(e) => {                      
-                      e.stopPropagation?.(); // keep “chip press doesn’t open room”
-                      router.push({
-                        pathname: "/clinic/record",
-                        params: {
-                          roomId: String(item.id),
-                          applianceId: String(a.id),
-                        },
-                      });
-                    }}
-                    style={styles.applianceChip}
-                  >
-                    <View style={styles.chipTopRow}>
-                      <MaterialCommunityIcons
-                        name={getApplianceIcon(a.typeKey).name}
-                        size={22}
-                        color={getApplianceIcon(a.typeKey).color ?? '#111'}
-                        style={styles.chipIcon}
-                      />
-                      <Text style={styles.applianceName} numberOfLines={1}>
-                        {a.name}
-                      </Text>
-                    </View>
+  const renderRoom: ListRenderItem<Room> = useCallback(
+    ({ item }) => {
+      const appliances = item.applianceList ?? [];
+      const applianceCount = appliances.length;
 
-                    {!!a.typeName && (
-                      <Text style={styles.applianceType} numberOfLines={1}>
-                        {a.typeName}
-                      </Text>
-                    )}
-                  </Pressable>
-                ))}
-                
-                {showMoreChip && (
-                  <Pressable
-                    onPress={(e) => {
-                      // Prevent double-trigger if parent also receives press (safe)
-                      e.stopPropagation?.();
-                      goRoomDetail(item); // same as pressing the room card
-                    }}
-                    style={[styles.applianceChip, styles.moreChip]}
-                  >
-                    <View style={styles.chipTopRow}>
-                      <MaterialCommunityIcons name="dots-horizontal" size={22} color="#111" />
-                      <Text style={styles.moreChipText}>+{applianceCount - 7} more</Text>
-                    </View>
-                  </Pressable>
-                )}
+      const showMoreChip = applianceCount > 8;
+      const visibleAppliances = showMoreChip ? appliances.slice(0, 7) : appliances;
 
-                {showAddForOddUnder8 && (
-                  <Pressable
-                    onPress={(e) => {
-                      e.stopPropagation?.();
-                      openSelectModule(item);
-                    }}
-                    style={styles.addChip}
-                  >
-                    <NewApplianceChipContent />
-                  </Pressable>
-                )}
-              </>
-            ) : (
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation?.();
-                  openSelectModule(item);
-                }}
-                style={styles.addChip}
-              >
-                <NewApplianceChipContent />
-              </Pressable>
+      const showAddForOddUnder8 =
+        applianceCount > 0 && applianceCount < 8 && applianceCount % 2 === 1;
+
+      return (
+        <Pressable
+          onPress={() => goRoomDetail(item)}
+          style={({ pressed }) => [styles.roomCardPressable, pressed && { opacity: 0.96 }]}
+          accessibilityRole="button"
+        >
+          <View style={styles.roomCard}>
+            <Text style={styles.roomTitle}>{item.roomName}</Text>
+
+            {!!item.description && (
+              <Text style={styles.roomDescription} numberOfLines={2}>
+                {item.description}
+              </Text>
             )}
+
+            <View style={styles.chipsWrap}>
+              {applianceCount > 0 ? (
+                <>
+                  {visibleAppliances.map((a) => {
+                    const icon = getApplianceIcon(a.typeKey);
+
+                    return (
+                      <Pressable
+                        key={`${item.id}:${a.id}`}
+                        onPress={(e) => {
+                          e.stopPropagation?.();
+                          goRecord(item.id, a.id);
+                        }}
+                        style={({ pressed }) => [
+                          styles.applianceChip,
+                          pressed && styles.applianceChipPressed,
+                        ]}
+                        accessibilityRole="button"
+                      >
+                        <View style={styles.chipTopRow}>
+                          <MaterialCommunityIcons
+                            name={icon.name}
+                            size={22}
+                            color={icon.color ?? '#111'}
+                            style={styles.chipIcon}
+                          />
+                          <Text style={styles.applianceName} numberOfLines={1}>
+                            {a.name}
+                          </Text>
+                        </View>
+
+                        {!!a.typeName && (
+                          <Text style={styles.applianceType} numberOfLines={1}>
+                            {a.typeName}
+                          </Text>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+
+                  {showMoreChip && (
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        goRoomDetail(item);
+                      }}
+                      style={({ pressed }) => [
+                        styles.applianceChip,
+                        styles.moreChip,
+                        pressed && styles.applianceChipPressed,
+                      ]}
+                      accessibilityRole="button"
+                    >
+                      <View style={styles.chipTopRow}>
+                        <MaterialCommunityIcons name="dots-horizontal" size={22} color="#111" />
+                        <Text style={styles.moreChipText}>+{applianceCount - 7} more</Text>
+                      </View>
+                    </Pressable>
+                  )}
+
+                  {showAddForOddUnder8 && (
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        openSelectModule(item);
+                      }}
+                      style={({ pressed }) => [
+                        styles.addChip,
+                        pressed && styles.applianceChipPressed,
+                      ]}
+                      accessibilityRole="button"
+                    >
+                      <AddApplianceChipContent />
+                    </Pressable>
+                  )}
+                </>
+              ) : (
+                <Pressable
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    openSelectModule(item);
+                  }}
+                  style={({ pressed }) => [styles.addChip, pressed && styles.applianceChipPressed]}
+                  accessibilityRole="button"
+                >
+                  <AddApplianceChipContent />
+                </Pressable>
+              )}
+            </View>
           </View>
-        </View>
-      </Pressable>
-    );
-  };
+        </Pressable>
+      );
+    },
+    [goRecord, goRoomDetail, openSelectModule],
+  );
 
   return (
     <View style={styles.container}>
@@ -256,7 +302,7 @@ export default function ClinicScreen() {
           }
         />
       )}
-      
+
       {applianceFlow.Modals}
     </View>
   );
@@ -286,7 +332,9 @@ const styles = StyleSheet.create({
     color: '#B00020',
     fontWeight: '600',
   },
-
+  roomCardPressable: {
+    borderRadius: 22,
+  },
   roomCard: {
     borderWidth: 1,
     borderColor: '#111',
@@ -296,27 +344,21 @@ const styles = StyleSheet.create({
   },
   roomTitle: {
     fontSize: 16,
-    fontWeight: '700',    
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  roomDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: '#555',
     marginBottom: 12,
   },
-
-  /**
-   * ✅ Two-per-row centered grid:
-   * - flexWrap to wrap
-   * - justifyContent center to keep rows centered
-   * - each chip width ~48% so 2 chips fit with gap
-   */
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 12,
   },
-
-  /**
-   * ✅ Bigger chip for better fit & readability
-   * width: '48%' makes 2 chips per row (with gap)
-   */
   applianceChip: {
     width: '48%',
     borderWidth: 1,
@@ -328,7 +370,11 @@ const styles = StyleSheet.create({
     minHeight: 64,
     justifyContent: 'center',
   },
+  applianceChipPressed: {
+    opacity: 0.82,
+  },
   applianceName: {
+    flex: 1,
     fontSize: 15,
     fontWeight: '800',
   },
@@ -338,7 +384,6 @@ const styles = StyleSheet.create({
     color: '#444',
     fontWeight: '600',
   },
-  
   chipTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -347,8 +392,6 @@ const styles = StyleSheet.create({
   chipIcon: {
     marginTop: 1,
   },
-
-  // "+ more" chip styling
   moreChip: {
     backgroundColor: '#F3F3F3',
     borderStyle: 'dashed',
@@ -358,8 +401,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
   },
-
-  // Add appliance button (when empty)
   addChip: {
     width: '48%',
     borderWidth: 1,
@@ -375,7 +416,7 @@ const styles = StyleSheet.create({
   addChipText: {
     fontSize: 15,
     fontWeight: '800',
-  },  
+  },
   addChipRow: {
     flexDirection: 'row',
     alignItems: 'center',

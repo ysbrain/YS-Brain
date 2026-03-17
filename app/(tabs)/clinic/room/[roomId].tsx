@@ -1,17 +1,22 @@
 // app/(tabs)/clinic/room/[roomId].tsx
 
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { useProfile } from '@/src/contexts/ProfileContext';
-import { db } from '@/src/lib/firebase';
-
-import { getApplianceIcon } from '@/src/utils/applianceIcons';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-
 import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
+import { db } from '@/src/lib/firebase';
+import { getApplianceIcon } from '@/src/utils/applianceIcons';
 
 type ApplianceListItem = {
   id: string;
@@ -22,96 +27,151 @@ type ApplianceListItem = {
 };
 
 type RoomDocShape = {
+  roomName?: unknown;
+  description?: unknown;
+  applianceList?: unknown;
+};
+
+type RoomState = {
   roomName: string;
   description: string;
   applianceList: ApplianceListItem[];
 };
 
-export default function RoomDetailScreen() {  
+function toSafeString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function normalizeParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+}
+
+function parseApplianceList(value: unknown): ApplianceListItem[] {
+  const list = Array.isArray(value) ? value : [];
+
+  return list
+    .map((a: any) => ({
+      id: toSafeString(a?.id),
+      key: toSafeString(a?.key),
+      name: toSafeString(a?.name, 'Unnamed appliance'),
+      typeKey: toSafeString(a?.typeKey),
+      typeName: toSafeString(a?.typeName),
+    }))
+    .filter((a) => a.id.length > 0);
+}
+
+export default function RoomDetailScreen() {
   const profile = useProfile();
   const clinicId = profile?.clinic;
   const router = useRouter();
 
-  const roomId = useLocalSearchParams<{ roomId: string }>().roomId;
-  const initialRoom: RoomDocShape = useMemo(
+  const params = useLocalSearchParams<{ roomId?: string | string[] }>();
+  const roomId = normalizeParam(params.roomId);
+
+  const initialRoom: RoomState = useMemo(
     () => ({ roomName: 'Room', description: '', applianceList: [] }),
-    []
+    [],
   );
 
-  const [room, setRoom] = useState<RoomDocShape>(initialRoom);
+  const [room, setRoom] = useState<RoomState>(initialRoom);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Subscribe to room doc for live updates
-  useEffect(() => {    
-    if (!clinicId || !roomId) return;
+  const applianceFlow = useAddApplianceFlow({
+    clinicId,
+    defaultRoom: roomId ? { id: roomId, roomName: room.roomName } : undefined,
+  });
+
+  useEffect(() => {
+    if (!clinicId || !roomId) {
+      setRoom(initialRoom);
+      setLoadError('Missing clinic or room information.');
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
+    setLoadError(null);
+
     const ref = doc(db, 'clinics', clinicId, 'rooms', roomId);
+
     const unsub = onSnapshot(
       ref,
       (snap) => {
-        const data = snap.data() as any;
+        const data = (snap.data() as RoomDocShape | undefined) ?? undefined;
+
         if (!data) {
           setRoom(initialRoom);
+          setLoadError('Room not found.');
           setLoading(false);
           return;
         }
 
-        const applianceListRaw = Array.isArray(data.applianceList) ? data.applianceList : [];
-        const applianceList: ApplianceListItem[] = applianceListRaw.map((a: any) => ({
-          id: String(a.id),
-          key: String(a?.key ?? ''),
-          name: String(a?.name ?? 'Unnamed appliance'),
-          typeKey: String(a?.typeKey ?? ''),
-          typeName: String(a?.typeName ?? ''),
-        }));
-
         setRoom({
-          roomName: String(data.roomName ?? initialRoom.roomName),
-          description: String(data.description ?? initialRoom.description),
-          applianceList,
+          roomName: toSafeString(data.roomName, initialRoom.roomName),
+          description: toSafeString(data.description),
+          applianceList: parseApplianceList(data.applianceList),
         });
+
         setLoading(false);
-      },      
+      },
       (err) => {
         console.error('room doc snapshot error', err);
         setRoom(initialRoom);
+        setLoadError('Failed to load room.');
         setLoading(false);
-      }
+      },
     );
 
     return () => unsub();
   }, [clinicId, roomId, initialRoom]);
-  
-  const applianceFlow = useAddApplianceFlow({
-    clinicId,
-    defaultRoom: { id: roomId, roomName: room.roomName },
-  });
+
+  const openAddAppliance = useCallback(() => {
+    if (!roomId) return;
+    applianceFlow.open({ id: roomId, roomName: room.roomName });
+  }, [applianceFlow, roomId, room.roomName]);
+
+  const goRecord = useCallback(
+    (applianceId: string) => {
+      if (!roomId) return;
+
+      router.push({
+        pathname: '/clinic/record',
+        params: {
+          roomId: String(roomId),
+          applianceId: String(applianceId),
+        },
+      });
+    },
+    [router, roomId],
+  );
 
   return (
     <>
-      {/* 1) Header title = room name */}
       <Stack.Screen options={{ title: room.roomName }} />
 
-      {/* Pattern C: no SafeAreaView here; header/tab will manage safe areas */}
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        {/* 2) Room description from clinic.tsx room doc field "description" */}
         <Text style={styles.description}>{room.description || ' '}</Text>
 
-        {/* Appliances section */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Appliances</Text>
 
             <Pressable
-              onPress={() => applianceFlow.open({ id: roomId, roomName: room.roomName })}
+              onPress={openAddAppliance}
               style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.8 }]}
+              accessibilityRole="button"
             >
               <Text style={styles.newButtonText}>+ Appliance</Text>
             </Pressable>
           </View>
 
-          {loading && room.applianceList.length === 0 ? (
+          {loadError ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.errorText}>{loadError}</Text>
+            </View>
+          ) : loading && room.applianceList.length === 0 ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator />
               <Text style={styles.loadingText}>Loading appliances…</Text>
@@ -122,59 +182,49 @@ export default function RoomDetailScreen() {
             </View>
           ) : (
             <View style={styles.applianceList}>
-              {/** 5) List in the same order as applianceList array */}
-              {room.applianceList.map((a) => (                
-                <Pressable
-                  key={a.id}
-                  onPress={() => {                    
-                    router.push({
-                      pathname: "/clinic/record",
-                      params: {
-                        roomId: String(roomId),
-                        applianceId: String(a.id),
-                      },
-                    });
-                  }}
-                  style={({ pressed }) => [
-                    styles.applianceRow,
-                    pressed && styles.applianceRowPressed,
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <View style={styles.rowTop}>
-                    <View style={styles.rowIconWrap}>
-                      <MaterialCommunityIcons
-                        name={getApplianceIcon(a.typeKey).name}
-                        size={26}
-                        color={getApplianceIcon(a.typeKey).color ?? '#111'}
-                      />
-                    </View>
+              {room.applianceList.map((a) => {
+                const icon = getApplianceIcon(a.typeKey);
 
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.applianceName} numberOfLines={1}>
-                        {a.name}
-                      </Text>
-                      {!!a.typeName && (
-                        <Text style={styles.applianceType} numberOfLines={1}>
-                          {a.typeName}
+                return (
+                  <Pressable
+                    key={a.id}
+                    onPress={() => goRecord(a.id)}
+                    style={({ pressed }) => [
+                      styles.applianceRow,
+                      pressed && styles.applianceRowPressed,
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <View style={styles.rowTop}>
+                      <View style={styles.rowIconWrap}>
+                        <MaterialCommunityIcons
+                          name={icon.name}
+                          size={26}
+                          color={icon.color ?? '#111'}
+                        />
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.applianceName} numberOfLines={1}>
+                          {a.name}
                         </Text>
-                      )}
-                    </View>
 
-                    {/* Optional chevron to indicate "config" later */}
-                    <MaterialCommunityIcons
-                      name="chevron-right"
-                      size={26}
-                      color="#777"
-                    />
-                  </View>
-                </Pressable>
-              ))}
+                        {!!a.typeName && (
+                          <Text style={styles.applianceType} numberOfLines={1}>
+                            {a.typeName}
+                          </Text>
+                        )}
+                      </View>
+
+                      <MaterialCommunityIcons name="chevron-right" size={26} color="#777" />
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
         </View>
 
-        {/* 6) Room Activities placeholder */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Room Activities</Text>
           <View style={styles.activitiesBox}>
@@ -182,7 +232,7 @@ export default function RoomDetailScreen() {
           </View>
         </View>
       </ScrollView>
-      
+
       {applianceFlow.Modals}
     </>
   );
@@ -196,7 +246,6 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 12,
   },
-
   description: {
     textAlign: 'center',
     color: '#222',
@@ -204,7 +253,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
   },
-
   sectionCard: {
     borderWidth: 1,
     borderColor: '#111',
@@ -212,7 +260,6 @@ const styles = StyleSheet.create({
     padding: 14,
     backgroundColor: '#fff',
   },
-
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -224,7 +271,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-
   newButton: {
     borderWidth: 1,
     borderColor: '#111',
@@ -237,7 +283,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
-
   loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,7 +293,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '600',
   },
-
   emptyBox: {
     borderWidth: 1,
     borderColor: '#DDD',
@@ -261,13 +305,15 @@ const styles = StyleSheet.create({
     color: '#666',
     fontWeight: '600',
   },
-
+  errorText: {
+    textAlign: 'center',
+    color: '#B00020',
+    fontWeight: '700',
+  },
   applianceList: {
     gap: 12,
     paddingBottom: 2,
   },
-
-  // Large rows like your sketch (big rounded rectangles)
   applianceRow: {
     borderWidth: 1,
     borderColor: '#111',
@@ -277,7 +323,7 @@ const styles = StyleSheet.create({
     minHeight: 72,
     justifyContent: 'center',
     backgroundColor: '#fff',
-  },  
+  },
   applianceRowPressed: {
     opacity: 0.75,
   },
@@ -291,7 +337,6 @@ const styles = StyleSheet.create({
     color: '#444',
     fontWeight: '700',
   },
-  
   rowTop: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -307,7 +352,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-
   activitiesBox: {
     marginTop: 10,
     borderWidth: 1,
