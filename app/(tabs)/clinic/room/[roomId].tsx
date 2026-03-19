@@ -2,7 +2,7 @@
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -26,39 +26,15 @@ type ApplianceListItem = {
   typeName: string;
 };
 
-type RoomDocShape = {
-  roomName?: unknown;
-  description?: unknown;
-  applianceList?: unknown;
-};
-
 type RoomState = {
   roomName: string;
   description: string;
   applianceList: ApplianceListItem[];
 };
 
-function toSafeString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback;
-}
-
 function normalizeParam(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] ?? '';
   return value ?? '';
-}
-
-function parseApplianceList(value: unknown): ApplianceListItem[] {
-  const list = Array.isArray(value) ? value : [];
-
-  return list
-    .map((a: any) => ({
-      id: toSafeString(a?.id),
-      key: toSafeString(a?.key),
-      name: toSafeString(a?.name, 'Unnamed appliance'),
-      typeKey: toSafeString(a?.typeKey),
-      typeName: toSafeString(a?.typeName),
-    }))
-    .filter((a) => a.id.length > 0);
 }
 
 export default function RoomDetailScreen() {
@@ -66,12 +42,23 @@ export default function RoomDetailScreen() {
   const clinicId = profile?.clinic;
   const router = useRouter();
 
-  const params = useLocalSearchParams<{ roomId?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    roomId?: string | string[];
+    roomName?: string | string[];
+    description?: string | string[];
+  }>();
+
   const roomId = normalizeParam(params.roomId);
+  const roomNameParam = normalizeParam(params.roomName);
+  const descriptionParam = normalizeParam(params.description);
 
   const initialRoom: RoomState = useMemo(
-    () => ({ roomName: 'Room', description: '', applianceList: [] }),
-    [],
+    () => ({
+      roomName: roomNameParam || 'Room',
+      description: descriptionParam || '',
+      applianceList: [],
+    }),
+    [roomNameParam, descriptionParam],
   );
 
   const [room, setRoom] = useState<RoomState>(initialRoom);
@@ -85,7 +72,6 @@ export default function RoomDetailScreen() {
 
   useEffect(() => {
     if (!clinicId || !roomId) {
-      setRoom(initialRoom);
       setLoadError('Missing clinic or room information.');
       setLoading(false);
       return;
@@ -94,38 +80,38 @@ export default function RoomDetailScreen() {
     setLoading(true);
     setLoadError(null);
 
-    const ref = doc(db, 'clinics', clinicId, 'rooms', roomId);
+    const appliancesRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
+    const appliancesQuery = query(appliancesRef, orderBy('applianceName', 'asc'));
 
     const unsub = onSnapshot(
-      ref,
-      (snap) => {
-        const data = (snap.data() as RoomDocShape | undefined) ?? undefined;
-
-        if (!data) {
-          setRoom(initialRoom);
-          setLoadError('Room not found.');
-          setLoading(false);
-          return;
-        }
-
-        setRoom({
-          roomName: toSafeString(data.roomName, initialRoom.roomName),
-          description: toSafeString(data.description),
-          applianceList: parseApplianceList(data.applianceList),
+      appliancesQuery,
+      (snapshot) => {
+        const applianceList = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            key: typeof data.applianceKey === 'string' ? data.applianceKey : '',
+            name: typeof data.applianceName === 'string' ? data.applianceName : 'Unnamed appliance',
+            typeKey: typeof data.typeKey === 'string' ? data.typeKey : '',
+            typeName: typeof data.typeName === 'string' ? data.typeName : '',
+          };
         });
 
+        setRoom((prev) => ({
+          ...prev,
+          applianceList,
+        }));
         setLoading(false);
       },
       (err) => {
-        console.error('room doc snapshot error', err);
-        setRoom(initialRoom);
-        setLoadError('Failed to load room.');
+        console.error('appliances snapshot error', err);
+        setLoadError('Failed to load appliances.');
         setLoading(false);
       },
     );
 
     return () => unsub();
-  }, [clinicId, roomId, initialRoom]);
+  }, [clinicId, roomId]);
 
   const openAddAppliance = useCallback(() => {
     if (!roomId) return;

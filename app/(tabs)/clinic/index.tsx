@@ -124,8 +124,12 @@ export default function ClinicScreen() {
   const goRoomDetail = useCallback(
     (room: Room) => {
       router.push({
-        pathname: '/clinic/room/[roomId]',
-        params: { roomId: String(room.id) },
+        pathname: '/clinic/room/[roomId]',        
+        params: {
+          roomId: String(room.id),
+          roomName: room.roomName,
+          description: room.description,
+        },
       });
     },
     [router],

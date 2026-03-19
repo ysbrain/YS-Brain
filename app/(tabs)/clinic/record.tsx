@@ -404,7 +404,14 @@ export default function ClinicRecordScreen() {
 
     const unsub = onSnapshot(
       ref,
-      (snap) => {
+      (snap) => {        
+        if (!snap.exists()) {
+          setLoadError('Appliance not found.');
+          setRecordFields([]);
+          setLoading(false);
+          return;
+        }
+
         const data = (snap.data() as ApplianceDocShape) ?? {};
 
         setApplianceName(String(data.applianceName ?? ''));
