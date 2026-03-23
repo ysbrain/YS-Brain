@@ -4,7 +4,7 @@ import BottomSheetShell from '@/src/components/BottomSheetShell';
 import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
-import { slugifyType } from '@/src/utils/slugify';
+import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
@@ -27,6 +27,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type SetupFieldType = 'string' | 'number' | 'date';
 type SetupConfigItem = { field: string; type: SetupFieldType };
+
+type SetupStoredValue = string | number;
+
+type SetupStoredItem = {
+  field: string;
+  value: SetupStoredValue;
+};
+
+type SetupStoredMap = Record<string, SetupStoredItem>;
 
 type Props = {
   visible: boolean;
@@ -136,7 +145,7 @@ export default function AddApplianceToRoomModal({
   const [moduleRecordFields, setModuleRecordFields] = useState<any[] | undefined>(undefined);
   const [saving, setSaving] = useState(false);
 
-  const applianceKey = useMemo(() => slugifyType(applianceName.trim()), [applianceName]);
+  const applianceKey = useMemo(() => toFirestoreSafeKey(applianceName), [applianceName]);
 
   const [formError, setFormError] = useState<FormError | null>(null);
   const errorText = useMemo(
@@ -433,10 +442,12 @@ export default function AddApplianceToRoomModal({
 
   const validateAndBuildSetup = useCallback(() => {
     const cfg = setupConfig ?? [];
-    const setup: Record<string, any> = {};
+    const setup: SetupStoredMap = {};
+    const seenSetupKeys = new Set<string>();
 
     for (const item of cfg) {
       const raw = (configValues[item.field] ?? '').trim();
+
       if (!raw) {
         return {
           ok: false as const,
@@ -447,6 +458,8 @@ export default function AddApplianceToRoomModal({
           },
         };
       }
+
+      let parsedValue: SetupStoredValue;
 
       if (item.type === 'number') {
         const n = Number(raw);
@@ -460,7 +473,7 @@ export default function AddApplianceToRoomModal({
             },
           };
         }
-        setup[item.field] = n;
+        parsedValue = n;
       } else if (item.type === 'date') {
         const d = parseYYYYMMDD(raw);
         if (!d) {
@@ -473,10 +486,46 @@ export default function AddApplianceToRoomModal({
             },
           };
         }
-        setup[item.field] = raw; // keep string
+        parsedValue = raw; // keep date as YYYY/MM/DD string
       } else {
-        setup[item.field] = raw;
+        parsedValue = raw;
       }
+
+      const safeFieldKey = toFirestoreSafeKey(item.field, { fallback: '' });
+
+      if (!safeFieldKey) {
+        return {
+          ok: false as const,
+          error: {
+            code: 'UNKNOWN' as const,
+            fieldKey: `setup:${item.field}` as FieldKey,
+            meta: { field: item.field },
+          },
+        };
+      }
+
+      // Guard against two field labels collapsing to the same safe key
+      if (seenSetupKeys.has(safeFieldKey)) {
+        return {
+          ok: false as const,
+          error: {
+            code: 'UNKNOWN' as const,
+            fieldKey: `setup:${item.field}` as FieldKey,
+            meta: {
+              field: item.field,
+              reason: 'duplicate_setup_key',
+              key: safeFieldKey,
+            },
+          },
+        };
+      }
+
+      seenSetupKeys.add(safeFieldKey);
+
+      setup[safeFieldKey] = {
+        field: item.field,
+        value: parsedValue,
+      };
     }
 
     return { ok: true as const, setup };
@@ -491,7 +540,7 @@ export default function AddApplianceToRoomModal({
     }
 
     const name = applianceName.trim();
-    const applianceKey = slugifyType(name);
+    const applianceKey = toFirestoreSafeKey(name, { fallback: "" });
 
     if (!applianceKey) {
       setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
@@ -530,7 +579,7 @@ export default function AddApplianceToRoomModal({
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
 
       const name = applianceName.trim();
-      const applianceKey = slugifyType(name);
+      const applianceKey = toFirestoreSafeKey(name);
 
       // Create an auto-ID doc ref *outside* the transaction so it stays stable even if the tx retries
       const newApplianceRef = doc(appliancesColRef);

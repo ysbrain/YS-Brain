@@ -4,7 +4,7 @@ import {
   runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
-import { safeTypeKeyFromLabel } from '../utils/slugify';
+import { safeTypeKeyFromLabel } from '../utils/firestoreKeys';
 
 export type ModuleDoc = {
   typeKey: string;       // doc id mirror

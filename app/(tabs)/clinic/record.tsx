@@ -6,6 +6,7 @@ import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
+import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
@@ -105,11 +106,6 @@ function formatReadableTimestamp(d = new Date()) {
   const ms = String(d.getMilliseconds()).padStart(3, '0');
 
   return `${yyyy}-${mm}-${dd}_${hh}-${min}-${ss}-${ms}`;
-}
-
-function makeSafeKey(input: string) {
-  // prevent slashes and weird chars in storage paths
-  return input.replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 60);
 }
 
 function normalizeParam(value: string | string[] | undefined): string {
@@ -593,7 +589,10 @@ export default function ClinicRecordScreen() {
           !current.startsWith('http://') &&
           !current.startsWith('https://')
         ) {
-          const safeField = makeSafeKey(rf.field);
+          const safeField = toFirestoreSafeKey(rf.field, {
+            maxLength: 40,
+            fallback: "photo",
+          });
           const path = `clinics/${clinicId}/${roomId}/${applianceKey}/${ts}_${safeField}.jpg`;
 
           const blob = await uriToBlob(current);

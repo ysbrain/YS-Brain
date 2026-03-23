@@ -81,7 +81,7 @@ export default function RoomDetailScreen() {
     setLoadError(null);
 
     const appliancesRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
-    const appliancesQuery = query(appliancesRef, orderBy('applianceName', 'asc'));
+    const appliancesQuery = query(appliancesRef, orderBy('createdAt', 'asc'));
 
     const unsub = onSnapshot(
       appliancesQuery,
