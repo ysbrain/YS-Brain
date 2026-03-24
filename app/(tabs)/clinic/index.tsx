@@ -39,7 +39,7 @@ type Room = {
   roomIndex: number;
   roomName: string;
   description: string;
-  applianceList: ApplianceItem[];
+  appliances: ApplianceItem[];
 };
 
 function toSafeString(value: unknown, fallback = ''): string {
@@ -47,35 +47,14 @@ function toSafeString(value: unknown, fallback = ''): string {
 }
 
 function roomFromDoc(docSnap: QueryDocumentSnapshot<DocumentData>): Room {
-  const data = docSnap.data();
-  const applianceListRaw = Array.isArray(data.applianceList) ? data.applianceList : [];
-
-  const applianceList: ApplianceItem[] = applianceListRaw
-    .map((a: any) => ({
-      id: toSafeString(a?.id),
-      key: toSafeString(a?.key),
-      name: toSafeString(a?.name, 'Unnamed appliance'),
-      typeKey: toSafeString(a?.typeKey),
-      typeName: toSafeString(a?.typeName),
-    }))
-    .filter((a) => a.id.length > 0);
-
+  const data = docSnap.data();  
   return {
     id: docSnap.id,
     roomIndex: Number(data.roomIndex ?? 0),
     roomName: toSafeString(data.roomName, 'Unnamed room'),
     description: toSafeString(data.description),
-    applianceList,
+    appliances: [],
   };
-}
-
-function AddApplianceChipContent() {
-  return (
-    <View style={styles.addChipRow}>
-      <MaterialCommunityIcons name="plus-circle-outline" size={22} color="#111" />
-      <Text style={styles.addChipText}>New Appliance</Text>
-    </View>
-  );
 }
 
 export default function ClinicScreen() {
@@ -89,6 +68,7 @@ export default function ClinicScreen() {
 
   const applianceFlow = useAddApplianceFlow({ clinicId });
   const roomsPathReady = useMemo(() => Boolean(clinicId), [clinicId]);
+  const roomIdsKey = useMemo(() => rooms.map((r) => r.id).join('|'), [rooms]);
 
   useEffect(() => {
     if (!roomsPathReady || !clinicId) {
@@ -106,8 +86,18 @@ export default function ClinicScreen() {
 
     const unsubscribe = onSnapshot(
       roomsQuery,
-      (snapshot) => {
-        setRooms(snapshot.docs.map(roomFromDoc));
+      (snapshot) => {        
+        setRooms((prev) => {
+          const prevMap = new Map(prev.map((room) => [room.id, room]));
+          return snapshot.docs.map((docSnap) => {
+            const baseRoom = roomFromDoc(docSnap);
+            const prevRoom = prevMap.get(baseRoom.id);
+            return {
+              ...baseRoom,
+              appliances: prevRoom?.appliances ?? [],
+            };
+          });
+        });
         setLoadingRooms(false);
       },
       (err) => {
@@ -120,6 +110,57 @@ export default function ClinicScreen() {
 
     return unsubscribe;
   }, [roomsPathReady, clinicId]);
+
+  
+  useEffect(() => {
+    if (!clinicId || !roomIdsKey) {
+      return;
+    }
+
+    const roomIds = roomIdsKey.split('|').filter(Boolean);
+    if (roomIds.length === 0) {
+      return;
+    }
+
+    const unsubscribers = roomIds.map((roomId) => {
+      const appliancesRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
+      const appliancesQuery = query(appliancesRef, orderBy('createdAt', 'asc'));
+
+      return onSnapshot(
+        appliancesQuery,
+        (snapshot) => {
+          const applianceList: ApplianceItem[] = snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              key: toSafeString(data.applianceKey),
+              name: toSafeString(data.applianceName, 'Unnamed appliance'),
+              typeKey: toSafeString(data.typeKey),
+              typeName: toSafeString(data.typeName),
+            };
+          });
+
+          setRooms((prev) =>
+            prev.map((room) =>
+              room.id === roomId
+                ? {
+                    ...room,
+                    appliances: applianceList,
+                  }
+                : room,
+            ),
+          );
+        },
+        (err) => {
+          console.error(`Appliances snapshot error for room ${roomId}:`, err);
+        },
+      );
+    });
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [clinicId, roomIdsKey]);
 
   const goRoomDetail = useCallback(
     (room: Room) => {
@@ -157,14 +198,10 @@ export default function ClinicScreen() {
 
   const renderRoom: ListRenderItem<Room> = useCallback(
     ({ item }) => {
-      const appliances = item.applianceList ?? [];
+      const appliances = item.appliances ?? [];
       const applianceCount = appliances.length;
-
       const showMoreChip = applianceCount > 8;
       const visibleAppliances = showMoreChip ? appliances.slice(0, 7) : appliances;
-
-      const showAddForOddUnder8 =
-        applianceCount > 0 && applianceCount < 8 && applianceCount % 2 === 1;
 
       return (
         <Pressable
@@ -173,103 +210,86 @@ export default function ClinicScreen() {
           accessibilityRole="button"
         >
           <View style={styles.roomCard}>
-            <Text style={styles.roomTitle}>{item.roomName}</Text>
-
-            {!!item.description && (
-              <Text style={styles.roomDescription} numberOfLines={2}>
-                {item.description}
+            <View style={styles.roomHeader}>
+              <Text style={styles.roomTitle} numberOfLines={1}>
+                {item.roomName}
               </Text>
-            )}
 
-            <View style={styles.chipsWrap}>
-              {applianceCount > 0 ? (
-                <>
-                  {visibleAppliances.map((a) => {
-                    const icon = getApplianceIcon(a.typeKey);
+              <Pressable
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  openSelectModule(item);
+                }}
+                style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.8 }]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.newButtonText}>+ Appliance</Text>
+              </Pressable>
+            </View>
 
-                    return (
-                      <Pressable
-                        key={`${item.id}:${a.id}`}
-                        onPress={(e) => {
-                          e.stopPropagation?.();
-                          goRecord(item.id, a.id);
-                        }}
-                        style={({ pressed }) => [
-                          styles.applianceChip,
-                          pressed && styles.applianceChipPressed,
-                        ]}
-                        accessibilityRole="button"
-                      >
-                        <View style={styles.chipTopRow}>
-                          <MaterialCommunityIcons
-                            name={icon.name}
-                            size={22}
-                            color={icon.color ?? '#111'}
-                            style={styles.chipIcon}
-                          />
-                          <Text style={styles.applianceName} numberOfLines={1}>
-                            {a.name}
-                          </Text>
-                        </View>
-
-                        {!!a.typeName && (
-                          <Text style={styles.applianceType} numberOfLines={1}>
-                            {a.typeName}
-                          </Text>
-                        )}
-                      </Pressable>
-                    );
-                  })}
-
-                  {showMoreChip && (
+            {applianceCount === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyText}>No appliances yet.</Text>
+              </View>
+            ) : (
+              <View style={styles.chipsWrap}>
+                {visibleAppliances.map((a) => {
+                  const icon = getApplianceIcon(a.typeKey);
+                  return (
                     <Pressable
+                      key={`${item.id}:${a.id}`}
                       onPress={(e) => {
                         e.stopPropagation?.();
-                        goRoomDetail(item);
+                        goRecord(item.id, a.id);
                       }}
                       style={({ pressed }) => [
                         styles.applianceChip,
-                        styles.moreChip,
                         pressed && styles.applianceChipPressed,
                       ]}
                       accessibilityRole="button"
                     >
                       <View style={styles.chipTopRow}>
-                        <MaterialCommunityIcons name="dots-horizontal" size={22} color="#111" />
-                        <Text style={styles.moreChipText}>+{applianceCount - 7} more</Text>
+                        <MaterialCommunityIcons
+                          name={icon.name}
+                          size={22}
+                          color={icon.color ?? '#111'}
+                          style={styles.chipIcon}
+                        />
+                        <Text style={styles.applianceName} numberOfLines={1}>
+                          {a.name}
+                        </Text>
                       </View>
-                    </Pressable>
-                  )}
 
-                  {showAddForOddUnder8 && (
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation?.();
-                        openSelectModule(item);
-                      }}
-                      style={({ pressed }) => [
-                        styles.addChip,
-                        pressed && styles.applianceChipPressed,
-                      ]}
-                      accessibilityRole="button"
-                    >
-                      <AddApplianceChipContent />
+                      {!!a.typeName && (
+                        <Text style={styles.applianceType} numberOfLines={1}>
+                          {a.typeName}
+                        </Text>
+                      )}
                     </Pressable>
-                  )}
-                </>
-              ) : (
-                <Pressable
-                  onPress={(e) => {
-                    e.stopPropagation?.();
-                    openSelectModule(item);
-                  }}
-                  style={({ pressed }) => [styles.addChip, pressed && styles.applianceChipPressed]}
-                  accessibilityRole="button"
-                >
-                  <AddApplianceChipContent />
-                </Pressable>
-              )}
-            </View>
+                  );
+                })}
+
+                {showMoreChip && (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      goRoomDetail(item);
+                    }}
+                    style={({ pressed }) => [
+                      styles.applianceChip,
+                      styles.moreChip,
+                      pressed && styles.applianceChipPressed,
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <View style={styles.chipTopRow}>
+                      <MaterialCommunityIcons name="dots-horizontal" size={22} color="#111" />
+                      <Text style={styles.moreChipText}>+{applianceCount - 7} more</Text>
+                    </View>
+                  </Pressable>
+                )}
+              </View>
+            )}
           </View>
         </Pressable>
       );
@@ -338,24 +358,25 @@ const styles = StyleSheet.create({
   },
   roomCardPressable: {
     borderRadius: 22,
-  },
+  },  
   roomCard: {
     borderWidth: 1,
     borderColor: '#111',
     borderRadius: 22,
-    padding: 16,
+    padding: 14,
     backgroundColor: '#FFF',
-  },
-  roomTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  roomDescription: {
-    fontSize: 13,
-    lineHeight: 18,
-    color: '#555',
+  },  
+  roomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
     marginBottom: 12,
+  },
+  roomTitle: {    
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
   },
   chipsWrap: {
     flexDirection: 'row',
@@ -404,27 +425,29 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     textAlign: 'center',
-  },
-  addChip: {
-    width: '48%',
+  },  
+  newButton: {
     borderWidth: 1,
     borderColor: '#111',
-    borderRadius: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    backgroundColor: '#FFF',
-    minHeight: 64,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
   },
-  addChipText: {
-    fontSize: 15,
+  newButtonText: {
+    fontSize: 13,
     fontWeight: '800',
   },
-  addChipRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
+  emptyBox: {
+    borderWidth: 1,
+    borderColor: '#DDD',
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: '#FAFAFA',
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#666',
+    fontWeight: '600',
   },
 });

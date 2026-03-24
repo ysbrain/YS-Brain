@@ -2,7 +2,7 @@
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -80,10 +80,46 @@ export default function RoomDetailScreen() {
     setLoading(true);
     setLoadError(null);
 
+    const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
     const appliancesRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
     const appliancesQuery = query(appliancesRef, orderBy('createdAt', 'asc'));
+    
+    const unsubRoom = onSnapshot(
+      roomRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setRoom((prev) => ({
+            ...prev,
+            roomName: 'Room',
+            description: '',
+            applianceList: [],
+          }));
+          setLoadError('Room not found.');
+          setLoading(false);
+          return;
+        }
 
-    const unsub = onSnapshot(
+        const data = snap.data();
+        setRoom((prev) => ({
+          ...prev,
+          roomName:
+            typeof data.roomName === 'string' && data.roomName.trim().length > 0
+              ? data.roomName
+              : 'Room',
+          description:
+            typeof data.description === 'string'
+              ? data.description
+              : '',
+        }));
+      },
+      (err) => {
+        console.error('room snapshot error', err);
+        setLoadError('Failed to load room.');
+        setLoading(false);
+      },
+    );
+
+    const unsubAppliances = onSnapshot(
       appliancesQuery,
       (snapshot) => {
         const applianceList = snapshot.docs.map((docSnap) => {
@@ -110,7 +146,10 @@ export default function RoomDetailScreen() {
       },
     );
 
-    return () => unsub();
+    return () => {
+      unsubRoom();
+      unsubAppliances();
+    };
   }, [clinicId, roomId]);
 
   const openAddAppliance = useCallback(() => {

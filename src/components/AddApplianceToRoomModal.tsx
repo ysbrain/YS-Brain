@@ -7,7 +7,17 @@ import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { collection, doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  query,
+  runTransaction,
+  serverTimestamp,
+  where,
+} from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -540,7 +550,7 @@ export default function AddApplianceToRoomModal({
     }
 
     const name = applianceName.trim();
-    const applianceKey = toFirestoreSafeKey(name, { fallback: "" });
+    const applianceKey = toFirestoreSafeKey(name, { fallback: '' });
 
     if (!applianceKey) {
       setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
@@ -571,19 +581,34 @@ export default function AddApplianceToRoomModal({
       }
       return;
     }
-    
+
     try {
       setSaving(true);
 
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
 
-      const name = applianceName.trim();
-      const applianceKey = toFirestoreSafeKey(name);
+      // Preflight uniqueness check against the appliances subcollection
+      const collisionQuery = query(
+        appliancesColRef,
+        where('applianceKey', '==', applianceKey),
+        limit(1),
+      );
+      const collisionSnap = await getDocs(collisionQuery);
 
-      // Create an auto-ID doc ref *outside* the transaction so it stays stable even if the tx retries
-      const newApplianceRef = doc(appliancesColRef);
-      const newApplianceId = newApplianceRef.id;
+      if (!collisionSnap.empty) {
+        setFormError({ code: 'NAME_COLLISION', fieldKey: 'applianceName' });
+        focusApplianceName();
+        return;
+      }
+
+      // Build custom document ID: <typeKey>_<randomId>
+      const safeTypeKey = toFirestoreSafeKey(selectedModule.id, { fallback: 'appliance' });
+      const randomPart = doc(appliancesColRef).id; // Firestore-style random ID
+      const applianceDocId = `${safeTypeKey}_${randomPart}`;
+
+      // Create a stable custom doc ref outside the transaction
+      const newApplianceRef = doc(appliancesColRef, applianceDocId);
 
       await runTransaction(db, async (tx) => {
         const roomSnap = await tx.get(roomRef);
@@ -591,30 +616,6 @@ export default function AddApplianceToRoomModal({
           throw new FormAppError('ROOM_NOT_FOUND');
         }
 
-        const data: any = roomSnap.data() ?? {};
-        const list = Array.isArray(data.applianceList) ? data.applianceList : [];
-
-        // Collision check using applianceKey vs item.key
-        const collision = list.some((x: any) => String(x?.key ?? '') === applianceKey);
-        if (collision) {
-          throw new FormAppError('NAME_COLLISION', { fieldKey: 'applianceName' });
-        }
-
-        // Append to applianceList using auto-ID as id, and applianceKey as key
-        const newList = [
-          ...list,
-          {
-            id: newApplianceId,
-            key: applianceKey,
-            name,
-            typeKey: selectedModule.id,
-            typeName: selectedModule.moduleName,
-          },
-        ];
-
-        tx.update(roomRef, { applianceList: newList });
-
-        // Create appliance doc using auto-ID doc name, store applianceKey as field
         tx.set(newApplianceRef, {
           applianceKey,
           applianceName: name,

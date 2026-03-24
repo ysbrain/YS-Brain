@@ -309,6 +309,20 @@ export default function ClinicRecordScreen() {
     return parseHHMM(s) ?? new Date();
   }, [activePicker, recordValues]);
 
+  const hasValidContext = Boolean(clinicId && roomId && applianceId);
+
+  const applianceReady =
+    !loading &&
+    !loadError &&
+    applianceName.trim().length > 0 &&
+    recordFields.length > 0;
+
+  const canSave =
+    hasValidContext &&
+    Boolean(user?.uid) &&
+    applianceReady &&
+    !saving;
+
   const icon = useMemo(() => getApplianceIcon(typeKey), [typeKey]);
 
   const onChangeField = useCallback((field: string, value: RecordValue) => {
@@ -487,6 +501,21 @@ export default function ClinicRecordScreen() {
       return;
     }
 
+    if (loadError) {
+      Alert.alert('Cannot save', loadError);
+      return;
+    }
+
+    if (!applianceName.trim()) {
+      Alert.alert('Cannot save', 'Appliance information is incomplete.');
+      return;
+    }
+
+    if (recordFields.length === 0) {
+      Alert.alert('Cannot save', 'This appliance has no record fields configured.');
+      return;
+    }
+
     if (saving) return;
 
     Keyboard.dismiss();
@@ -503,7 +532,6 @@ export default function ClinicRecordScreen() {
 
     for (const item of recordFields) {
       const raw = recordValues[item.field];
-
       const markInvalid = (msg: string) => {
         errors.push(msg);
         if (!firstInvalidField) firstInvalidField = item.field;
@@ -517,7 +545,7 @@ export default function ClinicRecordScreen() {
           value = null;
         } else {
           const n = Number(s);
-          if (Number.isNaN(n)) {
+          if (!Number.isFinite(n)) {
             markInvalid(`${item.field} must be a valid number`);
             value = null;
           } else {
@@ -591,16 +619,13 @@ export default function ClinicRecordScreen() {
         ) {
           const safeField = toFirestoreSafeKey(rf.field, {
             maxLength: 40,
-            fallback: "photo",
+            fallback: 'photo',
           });
           const path = `clinics/${clinicId}/${roomId}/${applianceKey}/${ts}_${safeField}.jpg`;
-
           const blob = await uriToBlob(current);
           const fileRef = storageRef(storage, path);
-
           await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
           const url = await getDownloadURL(fileRef);
-
           recordsArr[i] = { field: rf.field, value: url };
         }
       }
@@ -667,6 +692,7 @@ export default function ClinicRecordScreen() {
     recordFields,
     recordValues,
     loading,
+    loadError,
     saving,
     user?.uid,
     profile?.name,
@@ -901,15 +927,17 @@ export default function ClinicRecordScreen() {
           <View style={styles.footerFixed}>
             <Pressable
               onPress={onSaveRecord}
-              disabled={loading || saving}
+              disabled={!canSave}
               style={({ pressed }) => [
                 styles.primaryBtn,
-                (loading || saving) && styles.primaryBtnDisabled,
-                pressed && !(loading || saving) && { opacity: 0.9 },
+                !canSave && styles.primaryBtnDisabled,
+                pressed && canSave && { opacity: 0.9 },
               ]}
               accessibilityRole="button"
             >
-              <Text style={styles.primaryBtnText}>{saving ? 'Saving…' : 'Save Record'}</Text>
+              <Text style={styles.primaryBtnText}>
+                {saving ? 'Saving…' : 'Save Record'}
+              </Text>
             </Pressable>
           </View>
         )}
