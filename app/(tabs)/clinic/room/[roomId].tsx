@@ -157,12 +157,12 @@ export default function RoomDetailScreen() {
     applianceFlow.open({ id: roomId, roomName: room.roomName });
   }, [applianceFlow, roomId, room.roomName]);
 
-  const goRecord = useCallback(
-    (applianceId: string) => {
+  const openApplianceScreen = useCallback(
+    (applianceId: string, typeKey: string) => {
       if (!roomId) return;
 
       router.push({
-        pathname: '/clinic/record',
+        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/record',
         params: {
           roomId: String(roomId),
           applianceId: String(applianceId),
@@ -213,7 +213,7 @@ export default function RoomDetailScreen() {
                 return (
                   <Pressable
                     key={a.id}
-                    onPress={() => goRecord(a.id)}
+                    onPress={() => openApplianceScreen(a.id, a.typeKey)}
                     style={({ pressed }) => [
                       styles.applianceRow,
                       pressed && styles.applianceRowPressed,

@@ -176,10 +176,10 @@ export default function ClinicScreen() {
     [router],
   );
 
-  const goRecord = useCallback(
-    (roomId: string, applianceId: string) => {
+  const openApplianceScreen = useCallback(
+    (roomId: string, applianceId: string, typeKey: string) => {
       router.push({
-        pathname: '/clinic/record',
+        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/record',
         params: {
           roomId: String(roomId),
           applianceId: String(applianceId),
@@ -240,7 +240,7 @@ export default function ClinicScreen() {
                       key={`${item.id}:${a.id}`}
                       onPress={(e) => {
                         e.stopPropagation?.();
-                        goRecord(item.id, a.id);
+                        openApplianceScreen(item.id, a.id, a.typeKey);
                       }}
                       style={({ pressed }) => [
                         styles.applianceChip,
@@ -294,7 +294,7 @@ export default function ClinicScreen() {
         </Pressable>
       );
     },
-    [goRecord, goRoomDetail, openSelectModule],
+    [openApplianceScreen, goRoomDetail, openSelectModule],
   );
 
   return (

@@ -36,6 +36,7 @@ export default function ClinicLayout() {
         <Stack.Screen name="index" options={{ title: 'Clinic 01' }} />
         <Stack.Screen name="room/[roomId]" />
         <Stack.Screen name="record" options={{ title: 'Record Status' }} />
+        <Stack.Screen name="autoclave" options={{ title: 'Autoclave' }} />
       </Stack>
     </ProfileProvider>
   );
