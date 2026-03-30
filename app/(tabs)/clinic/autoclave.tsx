@@ -1,7 +1,12 @@
 // app/(tabs)/clinic/autoclave.tsx
 
+import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
+import { useAuth } from '@/src/contexts/AuthContext';
+import { useProfile } from '@/src/contexts/ProfileContext';
+import { db } from '@/src/lib/firebase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
@@ -10,11 +15,18 @@ import {
   serverTimestamp,
   writeBatch,
 } from 'firebase/firestore';
+import {
+  getDownloadURL,
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+} from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -27,11 +39,8 @@ import {
   View,
 } from 'react-native';
 
-import { useAuth } from '@/src/contexts/AuthContext';
-import { useProfile } from '@/src/contexts/ProfileContext';
-import { db } from '@/src/lib/firebase';
-
 type TabKey = 'dailyOps' | 'helix' | 'spore';
+type PickerField = 'startTime' | 'unloadTime';
 
 type SetupStoredValue = string | number;
 type SetupStoredItem = {
@@ -49,11 +58,33 @@ type ApplianceDocShape = {
     cycleNumber?: number;
     dateExecuted?: string;
   };
+  _status?: {
+    isRunning?: boolean;
+    currentCycle?: string;
+  };
 };
 
+type DailyOpsCycleDoc = {
+  _isFinished?: boolean;
+  createdAt?: unknown;  
+  settings?: {
+    temperature?: number;
+    pressure?: number;
+  };
+  cycleBeginTime?: string;
+  cycleBeganBy?: {
+    userId?: string;
+    userName?: string | null;
+  };
+};
+
+// Something measurable for auto-scroll
 type MeasurableRef = {
   measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void;
 };
+
+const PHOTO_ASPECT = 4 / 3;
+const PHOTO_ASPECT_EMPTY = 16 / 9;
 
 function normalizeParam(value: string | string[] | undefined): string {
   if (Array.isArray(value)) return value[0] ?? '';
@@ -124,6 +155,39 @@ function validatePositiveIntUpTo3Digits(value: string): number | null {
   return n;
 }
 
+async function cropToAspect(uri: string, width: number, height: number): Promise<string> {
+  let cropW = width;
+  let cropH = height;
+  let originX = 0;
+  let originY = 0;
+
+  const currentRatio = width / height;
+
+  if (currentRatio > PHOTO_ASPECT) {
+    cropW = Math.round(height * PHOTO_ASPECT);
+    originX = Math.round((width - cropW) / 2);
+  } else if (currentRatio < PHOTO_ASPECT) {
+    cropH = Math.round(width / PHOTO_ASPECT);
+    originY = Math.round((height - cropH) / 2);
+  }
+
+  const ctx = ImageManipulator.manipulate(uri);
+  ctx.crop({ originX, originY, width: cropW, height: cropH });
+
+  const rendered = await ctx.renderAsync();
+  const result = await rendered.saveAsync({
+    compress: 0.85,
+    format: SaveFormat.JPEG,
+  });
+
+  return result.uri;
+}
+
+async function uriToBlob(uri: string): Promise<Blob> {
+  const res = await fetch(uri);
+  return await res.blob();
+}
+
 function PlaceholderTab({ label }: { label: string }) {
   return (
     <View style={styles.placeholderCard}>
@@ -155,14 +219,31 @@ export default function AutoclaveScreen() {
   const [saving, setSaving] = useState(false);
 
   const [applianceName, setApplianceName] = useState('');
+  const [applianceKey, setApplianceKey] = useState('');
   const [setup, setSetup] = useState<Record<string, SetupStoredItem | undefined>>({});
   const [lastCycle, setLastCycle] = useState<{ cycleNumber?: number; dateExecuted?: string }>({});
+  const [isRunning, setIsRunning] = useState(false);
+  const [currentCycle, setCurrentCycle] = useState('');
 
+  // Start page state
   const [maxTemp, setMaxTemp] = useState('');
   const [pressure, setPressure] = useState('');
   const [startTime, setStartTime] = useState(formatTimeHHMM(new Date()));
 
-  const [activePicker, setActivePicker] = useState<{ field: 'startTime'; mode: 'time' } | null>(
+  // Running page state
+  const [cycleDocLoading, setCycleDocLoading] = useState(false);
+  const [cycleDocError, setCycleDocError] = useState<string | null>(null);
+  const [cycleDoc, setCycleDoc] = useState<DailyOpsCycleDoc | null>(null);
+
+  const [unloadTime, setUnloadTime] = useState(formatTimeHHMM(new Date()));
+  const [internalIndicator, setInternalIndicator] = useState<boolean | null>(null);
+  const [externalIndicator, setExternalIndicator] = useState<boolean | null>(null);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [notes, setNotes] = useState('');
+
+  const [cameraOpen, setCameraOpen] = useState(false);
+
+  const [activePicker, setActivePicker] = useState<{ field: PickerField; mode: 'time' } | null>(
     null,
   );
   const [pickerDraft, setPickerDraft] = useState<Date>(new Date());
@@ -181,7 +262,7 @@ export default function AutoclaveScreen() {
   const focusedKeyRef = useRef<string | null>(null);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  // ----- Scroll behavior (same pattern as record.tsx)
+  // ----- Scroll behavior -----
   const SAFE_GAP = 12;
   const FOCUS_ANCHOR_RATIO = 0.4;
   const SCROLL_DEBOUNCE_MS = 16;
@@ -275,12 +356,23 @@ export default function AutoclaveScreen() {
     requestAnimationFrame(() => requestScroll(key, 'pickerOpen', 0));
   }, [activePicker, requestScroll]);
 
+  // Reset start-page editable defaults when appliance changes
   useEffect(() => {
     setMaxTemp('');
     setPressure('');
     setStartTime(formatTimeHHMM(new Date()));
   }, [applianceId]);
 
+  // Reset running-page form state when cycle changes
+  useEffect(() => {
+    setUnloadTime(formatTimeHHMM(new Date()));
+    setInternalIndicator(null);
+    setExternalIndicator(null);
+    setPhotoUri(null);
+    setNotes('');
+  }, [currentCycle]);
+
+  // Appliance doc subscription
   useEffect(() => {
     if (!clinicId || !roomId || !applianceId) {
       setLoadError('Missing clinic, room, or appliance information.');
@@ -310,6 +402,12 @@ export default function AutoclaveScreen() {
             : 'Autoclave',
         );
 
+        setApplianceKey(
+          typeof data.applianceKey === 'string' && data.applianceKey.trim().length > 0
+            ? data.applianceKey
+            : '',
+        );
+
         const nextSetup =
           data.setup && typeof data.setup === 'object'
             ? data.setup
@@ -321,6 +419,10 @@ export default function AutoclaveScreen() {
             ? data.lastCycle
             : { cycleNumber: undefined, dateExecuted: undefined };
         setLastCycle(nextLastCycle);
+
+        const nextStatus = data._status ?? {};
+        setIsRunning(Boolean(nextStatus.isRunning));
+        setCurrentCycle(typeof nextStatus.currentCycle === 'string' ? nextStatus.currentCycle : '');
 
         setMaxTemp((prev) =>
           prev.trim().length > 0
@@ -346,6 +448,55 @@ export default function AutoclaveScreen() {
     return () => unsub();
   }, [clinicId, roomId, applianceId]);
 
+  // Current running cycle subscription
+  useEffect(() => {
+    if (!clinicId || !roomId || !applianceId || !isRunning || !currentCycle) {
+      setCycleDoc(null);
+      setCycleDocError(null);
+      setCycleDocLoading(false);
+      return;
+    }
+
+    setCycleDocLoading(true);
+    setCycleDocError(null);
+
+    const cycleRef = doc(
+      db,
+      'clinics',
+      clinicId,
+      'rooms',
+      roomId,
+      'appliances',
+      applianceId,
+      'records_DailyOps',
+      currentCycle,
+    );
+
+    const unsub = onSnapshot(
+      cycleRef,
+      (snap) => {
+        if (!snap.exists()) {
+          setCycleDoc(null);
+          setCycleDocError('Current cycle record not found.');
+          setCycleDocLoading(false);
+          return;
+        }
+
+        setCycleDoc((snap.data() as DailyOpsCycleDoc) ?? {});
+        setCycleDocError(null);
+        setCycleDocLoading(false);
+      },
+      (err) => {
+        console.error('autoclave cycle snapshot error', err);
+        setCycleDoc(null);
+        setCycleDocError('Failed to load current cycle.');
+        setCycleDocLoading(false);
+      },
+    );
+
+    return () => unsub();
+  }, [clinicId, roomId, applianceId, isRunning, currentCycle]);
+
   const serialNumber = useMemo(() => {
     return setupValueToString(setup, 'serial_number', '').trim();
   }, [setup]);
@@ -370,23 +521,31 @@ export default function AutoclaveScreen() {
 
   const activePickerValue = useMemo(() => {
     if (!activePicker) return new Date();
+
     if (activePicker.field === 'startTime') {
       return parseHHMM(startTime) ?? new Date();
     }
+
+    if (activePicker.field === 'unloadTime') {
+      return parseHHMM(unloadTime) ?? new Date();
+    }
+
     return new Date();
-  }, [activePicker, startTime]);
+  }, [activePicker, startTime, unloadTime]);
 
   const openPicker = useCallback(
-    (field: 'startTime', mode: 'time') => {
+    (field: PickerField, mode: 'time') => {
       Keyboard.dismiss();
 
       const initial =
-        field === 'startTime' ? parseHHMM(startTime) ?? new Date() : new Date();
+        field === 'startTime'
+          ? parseHHMM(startTime) ?? new Date()
+          : parseHHMM(unloadTime) ?? new Date();
 
       setPickerDraft(initial);
       setActivePicker({ field, mode });
     },
-    [startTime],
+    [startTime, unloadTime],
   );
 
   const onPickerChange = useCallback(
@@ -407,6 +566,8 @@ export default function AutoclaveScreen() {
 
       if (activePicker.field === 'startTime') {
         setStartTime(formatTimeHHMM(date));
+      } else if (activePicker.field === 'unloadTime') {
+        setUnloadTime(formatTimeHHMM(date));
       }
 
       setActivePicker(null);
@@ -419,9 +580,31 @@ export default function AutoclaveScreen() {
   const commitPicker = useCallback(() => {
     if (activePicker?.field === 'startTime') {
       setStartTime(formatTimeHHMM(pickerDraft));
+    } else if (activePicker?.field === 'unloadTime') {
+      setUnloadTime(formatTimeHHMM(pickerDraft));
     }
+
     setActivePicker(null);
   }, [activePicker, pickerDraft]);
+
+  const closeCamera = useCallback(() => {
+    setCameraOpen(false);
+  }, []);
+
+  const onCapturedPhoto = useCallback(
+    async (photo: { uri: string; width: number; height: number }) => {
+      try {
+        const croppedUri = await cropToAspect(photo.uri, photo.width, photo.height);
+        setPhotoUri(croppedUri);
+      } catch (err) {
+        console.error('autoclave photo process error', err);
+        Alert.alert('Photo error', 'Failed to process the captured photo.');
+      } finally {
+        closeCamera();
+      }
+    },
+    [closeCamera],
+  );
 
   const onStartMachine = useCallback(async () => {
     if (!clinicId || !roomId || !applianceId) {
@@ -530,13 +713,15 @@ export default function AutoclaveScreen() {
       batch.set(cycleRef, {
         _isFinished: false,
         createdAt: serverTimestamp(),
-        pressure: pressureValue,
-        startTime: trimmedStartTime,
-        startedBy: {
+        settings: {
+          temperature: temperatureValue,
+          pressure: pressureValue,
+        },
+        cycleBeginTime: trimmedStartTime,
+        cycleBeganBy: {
           userId: user.uid,
           userName: profile?.name ?? null,
         },
-        temperature: temperatureValue,
       });
 
       await batch.commit();
@@ -577,6 +762,192 @@ export default function AutoclaveScreen() {
     requestScroll,
     router,
   ]);
+  
+  const onFinishAndUnload = useCallback(async () => {
+    if (!clinicId || !roomId || !applianceId) {
+      Alert.alert('Missing context', 'Clinic, room, or appliance information is missing.');
+      return;
+    }
+
+    if (!user?.uid) {
+      Alert.alert('Not signed in', 'Please sign in before finishing the cycle.');
+      return;
+    }
+
+    if (loading || cycleDocLoading) {
+      Alert.alert('Please wait', 'Cycle information is still loading.');
+      return;
+    }
+
+    if (loadError) {
+      Alert.alert('Cannot finish', loadError);
+      return;
+    }
+
+    if (cycleDocError) {
+      Alert.alert('Cannot finish', cycleDocError);
+      return;
+    }
+
+    if (!isRunning || !currentCycle) {
+      Alert.alert('Cannot finish', 'No running cycle was found.');
+      return;
+    }
+
+    if (!applianceKey.trim()) {
+      Alert.alert('Cannot finish', 'Appliance key is missing.');
+      return;
+    }
+
+    const trimmedUnloadTime = unloadTime.trim();
+    const trimmedNotes = notes.trim();
+
+    if (!trimmedUnloadTime) {
+      Alert.alert('Validation', 'Unload Time is required.');
+      requestScroll('daily:unloadTime', 'validation', 0);
+      return;
+    }
+
+    if (!parseHHMM(trimmedUnloadTime)) {
+      Alert.alert('Validation', 'Unload Time must be a valid time in HH:MM format.');
+      requestScroll('daily:unloadTime', 'validation', 0);
+      return;
+    }
+
+    if (internalIndicator === null) {
+      Alert.alert('Validation', 'Please select Internal Indicator result.');
+      requestScroll('daily:internalIndicator', 'validation', 0);
+      return;
+    }
+
+    if (externalIndicator === null) {
+      Alert.alert('Validation', 'Please select External Indicator result.');
+      requestScroll('daily:externalIndicator', 'validation', 0);
+      return;
+    }
+
+    if (!photoUri || photoUri.trim().length === 0) {
+      Alert.alert('Validation', 'Photo Evidence is required.');
+      requestScroll('daily:photoEvidence', 'validation', 0);
+      return;
+    }
+
+    const cycleParts = currentCycle.split('-');
+    if (cycleParts.length < 3) {
+      Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
+      return;
+    }
+
+    const cycleDatePart = cycleParts[0];
+    const cycleNumberPart = Number(cycleParts[cycleParts.length - 1]);
+
+    if (!/^\d{8}$/.test(cycleDatePart) || !Number.isFinite(cycleNumberPart)) {
+      Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
+      return;
+    }
+
+    if (saving) return;
+
+    Keyboard.dismiss();
+    setActivePicker(null);
+    setSaving(true);
+
+    try {
+      const storage = getStorage();
+      const blob = await uriToBlob(photoUri);
+
+      const photoPath = `clinics/${clinicId}/${roomId}/${applianceKey}/dailyOps/${currentCycle}.jpg`;
+      const fileRef = storageRef(storage, photoPath);
+
+      await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
+      const photoUrl = await getDownloadURL(fileRef);
+
+      const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
+      const cycleRef = doc(
+        db,
+        'clinics',
+        clinicId,
+        'rooms',
+        roomId,
+        'appliances',
+        applianceId,
+        'records_DailyOps',
+        currentCycle,
+      );
+
+      const batch = writeBatch(db);
+
+      batch.update(cycleRef, {
+        _isFinished: true,
+        cycleEndTime: trimmedUnloadTime,
+        cycleEndedBy: {
+          userId: user.uid,
+          userName: profile?.name ?? null,
+        },
+        results: {
+          internalIndicator,
+          externalIndicator,
+          notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+          photoUrl,
+        },
+        updatedAt: serverTimestamp(),
+      });
+
+      batch.update(applianceRef, {
+        _status: {
+          isRunning: false,
+          currentCycle: '',
+        },
+        lastCycle: {
+          dateExecuted: cycleDatePart,
+          cycleNumber: cycleNumberPart,
+        },
+        updatedAt: serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      Alert.alert(
+        'Finished',
+        'Cycle finished and unloaded successfully.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.back();
+            },
+          },
+        ],
+        { cancelable: false },
+      );
+    } catch (e: any) {
+      console.error('finish autoclave cycle error', e);
+      Alert.alert('Finish failed', e?.message ?? 'Unknown error');
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    clinicId,
+    roomId,
+    applianceId,
+    user?.uid,
+    loading,
+    cycleDocLoading,
+    loadError,
+    cycleDocError,
+    isRunning,
+    currentCycle,
+    applianceKey,
+    unloadTime,
+    internalIndicator,
+    externalIndicator,
+    photoUri,
+    notes,
+    saving,
+    profile?.name,
+    requestScroll,
+    router,
+  ]);
 
   const canStartMachine =
     !loading &&
@@ -585,9 +956,23 @@ export default function AutoclaveScreen() {
     !!clinicId &&
     !!roomId &&
     !!applianceId &&
-    !!user?.uid;
+    !!user?.uid &&
+    !isRunning;
+  
+  const canFinishUnload =
+    !loading &&
+    !cycleDocLoading &&
+    !saving &&
+    !loadError &&
+    !cycleDocError &&
+    !!clinicId &&
+    !!roomId &&
+    !!applianceId &&
+    !!user?.uid &&
+    isRunning &&
+    !!currentCycle;
 
-  const renderDailyOps = () => {
+  const renderDailyOpsStart = () => {
     return (
       <View style={styles.card}>
         <View style={styles.heroWrap}>
@@ -695,6 +1080,321 @@ export default function AutoclaveScreen() {
         </Pressable>
       </View>
     );
+  };
+
+  const renderDailyOpsRunning = () => {
+    if (cycleDocLoading) {
+      return (
+        <View style={styles.centerInline}>
+          <ActivityIndicator />
+          <Text style={styles.helperText}>Loading current cycle...</Text>
+        </View>
+      );
+    }
+
+    if (cycleDocError) {
+      return (
+        <View style={styles.centerInline}>
+          <Text style={styles.errorText}>{cycleDocError}</Text>
+        </View>
+      );
+    }
+
+    const temperatureText =
+      typeof cycleDoc?.settings?.temperature === 'number'
+        ? `${cycleDoc.settings.temperature}°C`
+        : '--';
+
+    const pressureText =
+      typeof cycleDoc?.settings?.pressure === 'number'
+        ? String(cycleDoc.settings.pressure)
+        : '--';
+
+    const startedAtText =
+      typeof cycleDoc?.cycleBeginTime === 'string' && cycleDoc.cycleBeginTime.trim().length > 0
+        ? cycleDoc.cycleBeginTime
+        : '--';
+
+    const startedByText =
+      typeof cycleDoc?.cycleBeganBy?.userName === 'string' &&
+      cycleDoc.cycleBeganBy.userName.trim().length > 0
+        ? cycleDoc.cycleBeganBy.userName
+        : 'Unknown';
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.runningHeader}>
+          <View style={styles.runningTitleRow}>
+            <View style={styles.runningClockIcon}>
+              <MaterialCommunityIcons name="clock-outline" size={22} color="#ea580c" />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.runningTitle}>Cycle In Progress</Text>
+              <Text style={styles.runningCycleId}>Cycle {currentCycle}</Text>
+            </View>
+          </View>
+
+          <View style={styles.startedByWrap}>
+            <Text style={styles.startedByLabel}>STARTED BY</Text>
+            <Text style={styles.startedByValue} numberOfLines={1}>
+              {startedByText}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.metricsRow}>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>TEMP</Text>
+            <Text style={styles.metricValue}>{temperatureText}</Text>
+          </View>
+
+          <View style={styles.metricDivider} />
+
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>PRESSURE</Text>
+            <Text style={styles.metricValue}>{pressureText}</Text>
+          </View>
+
+          <View style={styles.metricDivider} />
+
+          <View style={styles.metricBox}>
+            <Text style={styles.metricLabel}>STARTED AT</Text>
+            <Text style={styles.metricValue}>{startedAtText}</Text>
+          </View>
+        </View>
+
+        <View style={styles.fieldBlock}>
+          <Text style={styles.fieldLabel}>Unload Time</Text>
+
+          <Pressable
+            ref={(r: any) => {
+              inputRefs.current['daily:unloadTime'] = r as any;
+            }}
+            collapsable={false}
+            onPress={() => {
+              focusedKeyRef.current = 'daily:unloadTime';
+              openPicker('unloadTime', 'time');
+            }}
+            style={({ pressed }) => [styles.timeField, pressed && { opacity: 0.88 }]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.timeValue}>{unloadTime}</Text>
+          </Pressable>
+        </View>
+
+        <View style={styles.verifySection}>
+          <Text style={styles.verifyTitle}>Verification Check</Text>
+
+          <View style={styles.verifyDivider} />
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.verifyFieldLabel}>
+              Internal Indicator<Text style={styles.required}> *</Text>
+            </Text>
+
+            <View
+              ref={(r: any) => {
+                inputRefs.current['daily:internalIndicator'] = r as any;
+              }}
+              collapsable={false}
+            >
+              <View style={styles.booleanRow}>
+                <Pressable
+                  onPress={() => setInternalIndicator(true)}
+                  style={({ pressed }) => [
+                    styles.booleanBtn,
+                    internalIndicator === true && styles.booleanBtnPassActive,
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons
+                    name="shield-check-outline"
+                    size={18}
+                    color={internalIndicator === true ? '#15803d' : '#94a3b8'}
+                  />
+                  <Text
+                    style={[
+                      styles.booleanBtnText,
+                      internalIndicator === true && styles.booleanBtnTextPassActive,
+                    ]}
+                  >
+                    Pass
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setInternalIndicator(false)}
+                  style={({ pressed }) => [
+                    styles.booleanBtn,
+                    internalIndicator === false && styles.booleanBtnFailActive,
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons
+                    name="shield-alert-outline"
+                    size={18}
+                    color={internalIndicator === false ? '#b91c1c' : '#94a3b8'}
+                  />
+                  <Text
+                    style={[
+                      styles.booleanBtnText,
+                      internalIndicator === false && styles.booleanBtnTextFailActive,
+                    ]}
+                  >
+                    Fail
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.verifyFieldLabel}>
+              External Indicator<Text style={styles.required}> *</Text>
+            </Text>
+
+            <View
+              ref={(r: any) => {
+                inputRefs.current['daily:externalIndicator'] = r as any;
+              }}
+              collapsable={false}
+            >
+              <View style={styles.booleanRow}>
+                <Pressable
+                  onPress={() => setExternalIndicator(true)}
+                  style={({ pressed }) => [
+                    styles.booleanBtn,
+                    externalIndicator === true && styles.booleanBtnPassActive,
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons
+                    name="shield-check-outline"
+                    size={18}
+                    color={externalIndicator === true ? '#15803d' : '#94a3b8'}
+                  />
+                  <Text
+                    style={[
+                      styles.booleanBtnText,
+                      externalIndicator === true && styles.booleanBtnTextPassActive,
+                    ]}
+                  >
+                    Pass
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => setExternalIndicator(false)}
+                  style={({ pressed }) => [
+                    styles.booleanBtn,
+                    externalIndicator === false && styles.booleanBtnFailActive,
+                    pressed && { opacity: 0.9 },
+                  ]}
+                  accessibilityRole="button"
+                >
+                  <MaterialCommunityIcons
+                    name="shield-alert-outline"
+                    size={18}
+                    color={externalIndicator === false ? '#b91c1c' : '#94a3b8'}
+                  />
+                  <Text
+                    style={[
+                      styles.booleanBtnText,
+                      externalIndicator === false && styles.booleanBtnTextFailActive,
+                    ]}
+                  >
+                    Fail
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.verifyFieldLabel}>
+              Photo Evidence<Text style={styles.required}> *</Text>
+            </Text>
+
+            <Pressable
+              ref={(r: any) => {
+                inputRefs.current['daily:photoEvidence'] = r as any;
+              }}
+              collapsable={false}
+              onPress={() => {
+                focusedKeyRef.current = 'daily:photoEvidence';
+                setCameraOpen(true);
+              }}
+              style={({ pressed }) => [
+                styles.photoBox,
+                {
+                  aspectRatio: photoUri ? PHOTO_ASPECT : PHOTO_ASPECT_EMPTY,
+                  maxHeight: 280,
+                },
+                pressed && { opacity: 0.9 },
+              ]}
+              accessibilityRole="button"
+            >
+              {photoUri ? (
+                <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
+              ) : (
+                <View style={styles.photoPlaceholder}>
+                  <MaterialCommunityIcons name="camera-outline" size={30} color="#94a3b8" />
+                  <Text style={styles.photoPlaceholderText}>Tap to Capture Result</Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={styles.verifyFieldLabel}>Notes (Optional)</Text>
+
+            <TextInput
+              ref={(r) => {
+                inputRefs.current['daily:notes'] = r as any;
+              }}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Any issues observed?"
+              placeholderTextColor="#999"
+              style={styles.notesInput}
+              returnKeyType="done"
+              onFocus={() => {
+                focusedKeyRef.current = 'daily:notes';
+                requestScroll('daily:notes', 'focus');
+              }}
+              onBlur={() => {
+                if (focusedKeyRef.current === 'daily:notes') {
+                  focusedKeyRef.current = null;
+                }
+              }}
+            />
+          </View>
+
+          <Pressable
+            onPress={onFinishAndUnload}
+            disabled={!canFinishUnload}
+            style={({ pressed }) => [
+              styles.finishButton,
+              !canFinishUnload && styles.finishButtonDisabled,
+              pressed && canFinishUnload && { opacity: 0.92 },
+            ]}
+            accessibilityRole="button"
+          >
+            <Text style={styles.finishButtonText}>
+              {saving ? 'Finishing…' : 'Finish & Unload'}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
+  const renderDailyOps = () => {
+    return isRunning ? renderDailyOpsRunning() : renderDailyOpsStart();
   };
 
   return (
@@ -829,6 +1529,8 @@ export default function AutoclaveScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      <CameraCaptureModal visible={cameraOpen} onClose={closeCamera} onCaptured={onCapturedPhoto} />
     </>
   );
 }
@@ -894,6 +1596,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
 
+  centerInline: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 28,
+    gap: 8,
+  },
+
   helperText: {
     color: '#666',
     fontWeight: '600',
@@ -906,8 +1615,8 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderWidth: 1.5,
+    borderColor: '#f0b86b',
     borderRadius: 20,
     backgroundColor: '#fff',
     padding: 18,
@@ -940,6 +1649,98 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748b',
     textAlign: 'center',
+  },
+
+  runningHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 16,
+  },
+
+  runningTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+
+  runningClockIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#f0b86b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff7ed',
+  },
+
+  runningTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#334155',
+  },
+
+  runningCycleId: {
+    marginTop: 4,
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '700',
+  },
+
+  startedByWrap: {
+    alignItems: 'flex-end',
+    maxWidth: 120,
+  },
+
+  startedByLabel: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#94a3b8',
+    letterSpacing: 0.4,
+  },
+
+  startedByValue: {
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    marginBottom: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    paddingTop: 14,
+  },
+
+  metricBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+
+  metricLabel: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#94a3b8',
+  },
+
+  metricValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#334155',
+  },
+
+  metricDivider: {
+    width: 1,
+    backgroundColor: '#e5e7eb',
+    marginHorizontal: 8,
   },
 
   fieldBlock: {
@@ -1022,6 +1823,135 @@ const styles = StyleSheet.create({
   },
 
   startButtonText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+  },
+
+  verifySection: {
+    marginTop: 8,
+  },
+
+  verifyTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#334155',
+  },
+
+  verifyDivider: {
+    height: 1,
+    backgroundColor: '#e5e7eb',
+    marginTop: 10,
+    marginBottom: 14,
+  },
+
+  verifyFieldLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#64748b',
+  },
+
+  required: {
+    color: '#B00020',
+  },
+
+  booleanRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  booleanBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    gap: 6,
+    flexDirection: 'row',
+  },
+
+  booleanBtnPassActive: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#22c55e',
+  },
+
+  booleanBtnFailActive: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#ef4444',
+  },
+
+  booleanBtnText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#94a3b8',
+  },
+
+  booleanBtnTextPassActive: {
+    color: '#15803d',
+  },
+
+  booleanBtnTextFailActive: {
+    color: '#b91c1c',
+  },
+
+  photoBox: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    overflow: 'hidden',
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  photoPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+  },
+
+  photoPlaceholderText: {
+    color: '#94a3b8',
+    fontWeight: '700',
+  },
+
+  photoPreview: {
+    width: '100%',
+    height: '100%',
+  },
+
+  notesInput: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    minHeight: 46,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#334155',
+  },
+
+  finishButton: {
+    marginTop: 8,
+    borderRadius: 12,
+    backgroundColor: '#4361ee',
+    minHeight: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  finishButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  finishButtonText: {
     fontSize: 18,
     fontWeight: '800',
     color: '#fff',
