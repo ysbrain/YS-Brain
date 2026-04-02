@@ -3,6 +3,7 @@
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
+import { useUiLock } from '@/src/contexts/UiLockContext';
 import { db } from '@/src/lib/firebase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -12,10 +13,11 @@ import {
   collection,
   doc,
   onSnapshot,
-  serverTimestamp,
-  writeBatch,
+  runTransaction,
+  serverTimestamp
 } from 'firebase/firestore';
 import {
+  deleteObject,
   getDownloadURL,
   getStorage,
   ref as storageRef,
@@ -82,6 +84,16 @@ type DailyOpsCycleDoc = {
 type MeasurableRef = {
   measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void;
 };
+
+type DailyFieldKey =
+  | 'daily:maxTemp'
+  | 'daily:pressure'
+  | 'daily:startTime'
+  | 'daily:unloadTime'
+  | 'daily:internalIndicator'
+  | 'daily:externalIndicator'
+  | 'daily:photoEvidence'
+  | 'daily:notes';
 
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
@@ -217,6 +229,9 @@ export default function AutoclaveScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const { setUiLocked } = useUiLock();
+  const [formErrorField, setFormErrorField] = useState<DailyFieldKey | null>(null);
 
   const [applianceName, setApplianceName] = useState('');
   const [applianceKey, setApplianceKey] = useState('');
@@ -514,7 +529,7 @@ export default function AutoclaveScreen() {
     return pad2(nextNumber);
   }, [lastCycle, currentDate]);
 
-  const cycleId = useMemo(() => {
+  const cycleIdPreview = useMemo(() => {
     const serialPart = serialNumber || 'unknown';
     return `${currentDate}-${serialPart}-${nextCycle}`;
   }, [currentDate, serialNumber, nextCycle]);
@@ -596,6 +611,7 @@ export default function AutoclaveScreen() {
       try {
         const croppedUri = await cropToAspect(photo.uri, photo.width, photo.height);
         setPhotoUri(croppedUri);
+        if (formErrorField === 'daily:photoEvidence') setFormErrorField(null);
       } catch (err) {
         console.error('autoclave photo process error', err);
         Alert.alert('Photo error', 'Failed to process the captured photo.');
@@ -603,7 +619,7 @@ export default function AutoclaveScreen() {
         closeCamera();
       }
     },
-    [closeCamera],
+    [closeCamera, formErrorField],
   );
 
   const onStartMachine = useCallback(async () => {
@@ -627,7 +643,7 @@ export default function AutoclaveScreen() {
       return;
     }
 
-    if (!serialNumber) {
+    if (!serialNumber.trim()) {
       Alert.alert('Cannot start', 'Missing serial number in appliance setup.');
       return;
     }
@@ -637,18 +653,21 @@ export default function AutoclaveScreen() {
     const trimmedStartTime = startTime.trim();
 
     if (!trimmedTemp) {
+      setFormErrorField('daily:maxTemp');
       Alert.alert('Validation', 'Max Temp (°C) is required.');
       requestScroll('daily:maxTemp', 'validation', 0);
       return;
     }
 
     if (!trimmedPressure) {
+      setFormErrorField('daily:pressure');
       Alert.alert('Validation', 'Pressure is required.');
       requestScroll('daily:pressure', 'validation', 0);
       return;
     }
 
     if (!trimmedStartTime) {
+      setFormErrorField('daily:startTime');
       Alert.alert('Validation', 'Start Time is required.');
       requestScroll('daily:startTime', 'validation', 0);
       return;
@@ -656,26 +675,23 @@ export default function AutoclaveScreen() {
 
     const temperatureValue = validatePositiveIntUpTo3Digits(trimmedTemp);
     if (temperatureValue === null) {
-      Alert.alert(
-        'Validation',
-        'Max Temp (°C) must be an integer greater than 0 and up to 3 digits.',
-      );
+      setFormErrorField('daily:maxTemp');
+      Alert.alert('Validation', 'Max Temp (°C) invalid.');
       requestScroll('daily:maxTemp', 'validation', 0);
       return;
     }
 
     const pressureValue = validatePositiveIntUpTo3Digits(trimmedPressure);
     if (pressureValue === null) {
-      Alert.alert(
-        'Validation',
-        'Pressure must be an integer greater than 0 and up to 3 digits.',
-      );
+      setFormErrorField('daily:pressure');
+      Alert.alert('Validation', 'Pressure invalid.');
       requestScroll('daily:pressure', 'validation', 0);
       return;
     }
 
     if (!parseHHMM(trimmedStartTime)) {
-      Alert.alert('Validation', 'Start Time must be a valid time in HH:MM format.');
+      setFormErrorField('daily:startTime');
+      Alert.alert('Validation', 'Start Time must be a valid time.');
       requestScroll('daily:startTime', 'validation', 0);
       return;
     }
@@ -685,50 +701,105 @@ export default function AutoclaveScreen() {
     Keyboard.dismiss();
     setActivePicker(null);
     setSaving(true);
+    setUiLocked(true);
 
     try {
       const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
-      const dailyOpsRef = collection(
-        db,
-        'clinics',
-        clinicId,
-        'rooms',
-        roomId,
-        'appliances',
-        applianceId,
-        'records_DailyOps',
-      );
-      const cycleRef = doc(dailyOpsRef, cycleId);
 
-      const batch = writeBatch(db);
+      const committedCycleId = await runTransaction(db, async (tx) => {
+        const applianceSnap = await tx.get(applianceRef);
 
-      batch.update(applianceRef, {
-        _status: {
-          isRunning: true,
-          currentCycle: cycleId,
-        },
-        updatedAt: serverTimestamp(),
+        if (!applianceSnap.exists()) {
+          throw new Error('Autoclave appliance not found.');
+        }
+
+        const applianceData = (applianceSnap.data() as ApplianceDocShape) ?? {};
+        const latestStatus = applianceData._status ?? {};
+
+        if (latestStatus.isRunning) {
+          throw new Error('This autoclave is already running a cycle.');
+        }
+
+        const latestSetup =
+          applianceData.setup && typeof applianceData.setup === 'object'
+            ? applianceData.setup
+            : {};
+
+        const latestSerialNumber = setupValueToString(latestSetup, 'serial_number', '').trim();
+        if (!latestSerialNumber) {
+          throw new Error('Missing serial number in appliance setup.');
+        }
+
+        const txCurrentDate = formatDateYYYYMMDDCompact(new Date());
+
+        const latestLastCycle =
+          applianceData.lastCycle && typeof applianceData.lastCycle === 'object'
+            ? applianceData.lastCycle
+            : {};
+
+        const latestLastDate =
+          typeof latestLastCycle.dateExecuted === 'string' ? latestLastCycle.dateExecuted : '';
+
+        const latestRawCycleNumber =
+          typeof latestLastCycle.cycleNumber === 'number' &&
+          Number.isFinite(latestLastCycle.cycleNumber)
+            ? latestLastCycle.cycleNumber
+            : 0;
+
+        const nextCycleNumber =
+          latestLastDate === txCurrentDate ? latestRawCycleNumber + 1 : 1;
+
+        const nextCycleId = `${txCurrentDate}-${latestSerialNumber}-${pad2(nextCycleNumber)}`;
+
+        const cycleRef = doc(
+          collection(
+            db,
+            'clinics',
+            clinicId,
+            'rooms',
+            roomId,
+            'appliances',
+            applianceId,
+            'records_DailyOps',
+          ),
+          nextCycleId,
+        );
+
+        const cycleSnap = await tx.get(cycleRef);
+        if (cycleSnap.exists()) {
+          throw new Error('A cycle with this ID already exists. Please try again.');
+        }
+
+        tx.update(applianceRef, {
+          _status: {
+            isRunning: true,
+            currentCycle: nextCycleId,
+          },
+          updatedAt: serverTimestamp(),
+        });
+
+        tx.set(cycleRef, {
+          _isFinished: false,
+          createdAt: serverTimestamp(),
+          settings: {
+            temperature: temperatureValue,
+            pressure: pressureValue,
+          },
+          cycleBeginTime: trimmedStartTime,
+          cycleBeganBy: {
+            userId: user.uid,
+            userName: profile?.name ?? null,
+          },
+        });
+
+        return nextCycleId;
       });
 
-      batch.set(cycleRef, {
-        _isFinished: false,
-        createdAt: serverTimestamp(),
-        settings: {
-          temperature: temperatureValue,
-          pressure: pressureValue,
-        },
-        cycleBeginTime: trimmedStartTime,
-        cycleBeganBy: {
-          userId: user.uid,
-          userName: profile?.name ?? null,
-        },
-      });
-
-      await batch.commit();
+      setFormErrorField(null);
 
       Alert.alert(
         'Started',
-        'Autoclave cycle started successfully.',
+        `Autoclave cycle ${committedCycleId} started successfully.`,
         [
           {
             text: 'OK',
@@ -744,6 +815,7 @@ export default function AutoclaveScreen() {
       Alert.alert('Start failed', e?.message ?? 'Unknown error');
     } finally {
       setSaving(false);
+      setUiLocked(false);
     }
   }, [
     clinicId,
@@ -757,10 +829,10 @@ export default function AutoclaveScreen() {
     pressure,
     startTime,
     saving,
-    cycleId,
     profile?.name,
     requestScroll,
     router,
+    setUiLocked,
   ]);
   
   const onFinishAndUnload = useCallback(async () => {
@@ -803,30 +875,35 @@ export default function AutoclaveScreen() {
     const trimmedNotes = notes.trim();
 
     if (!trimmedUnloadTime) {
+      setFormErrorField('daily:unloadTime');
       Alert.alert('Validation', 'Unload Time is required.');
       requestScroll('daily:unloadTime', 'validation', 0);
       return;
     }
 
     if (!parseHHMM(trimmedUnloadTime)) {
-      Alert.alert('Validation', 'Unload Time must be a valid time in HH:MM format.');
+      setFormErrorField('daily:unloadTime');
+      Alert.alert('Validation', 'Unload Time must be a valid time.');
       requestScroll('daily:unloadTime', 'validation', 0);
       return;
     }
 
     if (internalIndicator === null) {
+      setFormErrorField('daily:internalIndicator');
       Alert.alert('Validation', 'Please select Internal Indicator result.');
       requestScroll('daily:internalIndicator', 'validation', 0);
       return;
     }
 
     if (externalIndicator === null) {
+      setFormErrorField('daily:externalIndicator');
       Alert.alert('Validation', 'Please select External Indicator result.');
       requestScroll('daily:externalIndicator', 'validation', 0);
       return;
     }
 
     if (!photoUri || photoUri.trim().length === 0) {
+      setFormErrorField('daily:photoEvidence');
       Alert.alert('Validation', 'Photo Evidence is required.');
       requestScroll('daily:photoEvidence', 'validation', 0);
       return;
@@ -851,18 +928,25 @@ export default function AutoclaveScreen() {
     Keyboard.dismiss();
     setActivePicker(null);
     setSaving(true);
+    setUiLocked(true);
+
+    let uploadedFileRef: ReturnType<typeof storageRef> | null = null;
+    let finishCommitted = false;
 
     try {
+      // 1) Upload photo first
       const storage = getStorage();
       const blob = await uriToBlob(photoUri);
 
       const photoPath = `clinics/${clinicId}/${roomId}/${applianceKey}/dailyOps/${currentCycle}.jpg`;
-      const fileRef = storageRef(storage, photoPath);
+      uploadedFileRef = storageRef(storage, photoPath);
 
-      await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
-      const photoUrl = await getDownloadURL(fileRef);
+      await uploadBytes(uploadedFileRef, blob, { contentType: 'image/jpeg' });
+      const photoUrl = await getDownloadURL(uploadedFileRef);
 
+      // 2) Then transactionally verify + finish the cycle in Firestore
       const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
+
       const cycleRef = doc(
         db,
         'clinics',
@@ -875,37 +959,83 @@ export default function AutoclaveScreen() {
         currentCycle,
       );
 
-      const batch = writeBatch(db);
+      await runTransaction(db, async (tx) => {
+        const applianceSnap = await tx.get(applianceRef);
+        const cycleSnap = await tx.get(cycleRef);
 
-      batch.update(cycleRef, {
-        _isFinished: true,
-        cycleEndTime: trimmedUnloadTime,
-        cycleEndedBy: {
-          userId: user.uid,
-          userName: profile?.name ?? null,
-        },
-        results: {
-          internalIndicator,
-          externalIndicator,
-          notes: trimmedNotes.length > 0 ? trimmedNotes : null,
-          photoUrl,
-        },
-        updatedAt: serverTimestamp(),
+        if (!applianceSnap.exists()) {
+          throw new Error('Autoclave appliance not found.');
+        }
+
+        if (!cycleSnap.exists()) {
+          throw new Error('Current cycle record not found.');
+        }
+
+        const applianceData = (applianceSnap.data() as ApplianceDocShape) ?? {};
+        const latestStatus = applianceData._status ?? {};
+
+        if (!latestStatus.isRunning) {
+          throw new Error('This autoclave is no longer marked as running.');
+        }
+
+        const latestCurrentCycle =
+          typeof latestStatus.currentCycle === 'string' ? latestStatus.currentCycle : '';
+
+        if (latestCurrentCycle !== currentCycle) {
+          throw new Error('The running cycle has changed. Please reload and try again.');
+        }
+
+        const latestApplianceKey =
+          typeof applianceData.applianceKey === 'string'
+            ? applianceData.applianceKey.trim()
+            : '';
+
+        if (!latestApplianceKey) {
+          throw new Error('Appliance key is missing.');
+        }
+
+        if (latestApplianceKey !== applianceKey.trim()) {
+          throw new Error('Appliance key changed. Please reload and try again.');
+        }
+
+        const cycleData = (cycleSnap.data() as DailyOpsCycleDoc) ?? {};
+
+        if (cycleData._isFinished) {
+          throw new Error('This cycle has already been finished.');
+        }
+
+        tx.update(cycleRef, {
+          _isFinished: true,
+          cycleEndTime: trimmedUnloadTime,
+          cycleEndedBy: {
+            userId: user.uid,
+            userName: profile?.name ?? null,
+          },
+          results: {
+            internalIndicator,
+            externalIndicator,
+            notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+            photoUrl,
+            photoPath,
+          },
+          updatedAt: serverTimestamp(),
+        });
+
+        tx.update(applianceRef, {
+          _status: {
+            isRunning: false,
+            currentCycle: '',
+          },
+          lastCycle: {
+            dateExecuted: cycleDatePart,
+            cycleNumber: cycleNumberPart,
+          },
+          updatedAt: serverTimestamp(),
+        });
       });
 
-      batch.update(applianceRef, {
-        _status: {
-          isRunning: false,
-          currentCycle: '',
-        },
-        lastCycle: {
-          dateExecuted: cycleDatePart,
-          cycleNumber: cycleNumberPart,
-        },
-        updatedAt: serverTimestamp(),
-      });
-
-      await batch.commit();
+      finishCommitted = true;
+      setFormErrorField(null);
 
       Alert.alert(
         'Finished',
@@ -922,9 +1052,20 @@ export default function AutoclaveScreen() {
       );
     } catch (e: any) {
       console.error('finish autoclave cycle error', e);
+
+      // 3) Best-effort cleanup: if upload succeeded but Firestore failed, delete the photo
+      if (!finishCommitted && uploadedFileRef) {
+        try {
+          await deleteObject(uploadedFileRef);
+        } catch (cleanupErr) {
+          console.error('cleanup uploaded autoclave photo error', cleanupErr);
+        }
+      }
+
       Alert.alert('Finish failed', e?.message ?? 'Unknown error');
     } finally {
       setSaving(false);
+      setUiLocked(false);
     }
   }, [
     clinicId,
@@ -947,6 +1088,7 @@ export default function AutoclaveScreen() {
     profile?.name,
     requestScroll,
     router,
+    setUiLocked,
   ]);
 
   const canStartMachine =
@@ -957,8 +1099,9 @@ export default function AutoclaveScreen() {
     !!roomId &&
     !!applianceId &&
     !!user?.uid &&
+    serialNumber.trim().length > 0 &&
     !isRunning;
-  
+
   const canFinishUnload =
     !loading &&
     !cycleDocLoading &&
@@ -969,6 +1112,7 @@ export default function AutoclaveScreen() {
     !!roomId &&
     !!applianceId &&
     !!user?.uid &&
+    applianceKey.trim().length > 0 &&
     isRunning &&
     !!currentCycle;
 
@@ -987,23 +1131,36 @@ export default function AutoclaveScreen() {
         <View style={styles.fieldBlock}>
           <Text style={styles.fieldLabel}>Cycle ID</Text>
           <View style={styles.readonlyField}>
-            <Text style={styles.readonlyValue}>{cycleId}</Text>
+            <Text style={styles.readonlyValue}>{cycleIdPreview}</Text>
           </View>
         </View>
 
         <View style={styles.twoColRow}>
           <View style={[styles.fieldBlock, styles.twoColItem]}>
-            <Text style={styles.fieldLabel}>Max Temp (°C)</Text>
+            <Text
+              style={[
+                styles.fieldLabel,
+                formErrorField === 'daily:maxTemp' && styles.errorLabel,
+              ]}
+            >
+              Max Temp (°C)
+            </Text>
             <TextInput
               ref={(r) => {
                 inputRefs.current['daily:maxTemp'] = r as any;
               }}
               value={maxTemp}
-              onChangeText={setMaxTemp}
+              onChangeText={(t) => {
+                setMaxTemp(t);
+                if (formErrorField === 'daily:maxTemp') setFormErrorField(null);
+              }}
               keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               placeholder="Enter temp"
               placeholderTextColor="#94a3b8"
-              style={styles.textInput}
+              style={[
+                styles.textInput,
+                formErrorField === 'daily:maxTemp' && styles.errorBorder,
+              ]}
               returnKeyType="done"
               maxLength={3}
               onFocus={() => {
@@ -1019,17 +1176,30 @@ export default function AutoclaveScreen() {
           </View>
 
           <View style={[styles.fieldBlock, styles.twoColItem]}>
-            <Text style={styles.fieldLabel}>Pressure</Text>
+            <Text
+              style={[
+                styles.fieldLabel,
+                formErrorField === 'daily:pressure' && styles.errorLabel,
+              ]}
+            >
+              Pressure
+            </Text>
             <TextInput
               ref={(r) => {
                 inputRefs.current['daily:pressure'] = r as any;
               }}
               value={pressure}
-              onChangeText={setPressure}
+              onChangeText={(t) => {
+                setPressure(t);
+                if (formErrorField === 'daily:pressure') setFormErrorField(null);
+              }}
               keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               placeholder="Enter pressure"
               placeholderTextColor="#94a3b8"
-              style={styles.textInput}
+              style={[
+                styles.textInput,
+                formErrorField === 'daily:pressure' && styles.errorBorder,
+              ]}
               returnKeyType="done"
               maxLength={3}
               onFocus={() => {
@@ -1046,7 +1216,14 @@ export default function AutoclaveScreen() {
         </View>
 
         <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>Start Time</Text>
+          <Text
+            style={[
+              styles.fieldLabel,
+              formErrorField === 'daily:startTime' && styles.errorLabel,
+            ]}
+          >
+            Start Time
+          </Text>
 
           <Pressable
             ref={(r: any) => {
@@ -1055,9 +1232,14 @@ export default function AutoclaveScreen() {
             collapsable={false}
             onPress={() => {
               focusedKeyRef.current = 'daily:startTime';
+              if (formErrorField === 'daily:startTime') setFormErrorField(null);
               openPicker('startTime', 'time');
             }}
-            style={({ pressed }) => [styles.timeField, pressed && { opacity: 0.88 }]}
+            style={({ pressed }) => [
+              styles.timeField,
+              formErrorField === 'daily:startTime' && styles.errorBorder,
+              pressed && { opacity: 0.88 },
+            ]}
             accessibilityRole="button"
           >
             <Text style={styles.timeValue}>{startTime}</Text>
@@ -1165,7 +1347,14 @@ export default function AutoclaveScreen() {
         </View>
 
         <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>Unload Time</Text>
+          <Text
+            style={[
+              styles.fieldLabel,
+              formErrorField === 'daily:unloadTime' && styles.errorLabel,
+            ]}
+          >
+            Unload Time
+          </Text>
 
           <Pressable
             ref={(r: any) => {
@@ -1174,9 +1363,14 @@ export default function AutoclaveScreen() {
             collapsable={false}
             onPress={() => {
               focusedKeyRef.current = 'daily:unloadTime';
+              if (formErrorField === 'daily:unloadTime') setFormErrorField(null);
               openPicker('unloadTime', 'time');
             }}
-            style={({ pressed }) => [styles.timeField, pressed && { opacity: 0.88 }]}
+            style={({ pressed }) => [
+              styles.timeField,
+              formErrorField === 'daily:unloadTime' && styles.errorBorder,
+              pressed && { opacity: 0.88 },
+            ]}
             accessibilityRole="button"
           >
             <Text style={styles.timeValue}>{unloadTime}</Text>
@@ -1189,7 +1383,12 @@ export default function AutoclaveScreen() {
           <View style={styles.verifyDivider} />
 
           <View style={styles.fieldBlock}>
-            <Text style={styles.verifyFieldLabel}>
+            <Text
+              style={[
+                styles.verifyFieldLabel,
+                formErrorField === 'daily:internalIndicator' && styles.errorLabel,
+              ]}
+            >
               Internal Indicator<Text style={styles.required}> *</Text>
             </Text>
 
@@ -1201,9 +1400,13 @@ export default function AutoclaveScreen() {
             >
               <View style={styles.booleanRow}>
                 <Pressable
-                  onPress={() => setInternalIndicator(true)}
+                  onPress={() => {
+                    setInternalIndicator(true);
+                    if (formErrorField === 'daily:internalIndicator') setFormErrorField(null);
+                  }}
                   style={({ pressed }) => [
                     styles.booleanBtn,
+                    formErrorField === 'daily:internalIndicator' && styles.errorBorder,
                     internalIndicator === true && styles.booleanBtnPassActive,
                     pressed && { opacity: 0.9 },
                   ]}
@@ -1225,9 +1428,13 @@ export default function AutoclaveScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => setInternalIndicator(false)}
+                  onPress={() => {
+                    setInternalIndicator(false);
+                    if (formErrorField === 'daily:internalIndicator') setFormErrorField(null);
+                  }}
                   style={({ pressed }) => [
                     styles.booleanBtn,
+                    formErrorField === 'daily:internalIndicator' && styles.errorBorder,
                     internalIndicator === false && styles.booleanBtnFailActive,
                     pressed && { opacity: 0.9 },
                   ]}
@@ -1252,7 +1459,12 @@ export default function AutoclaveScreen() {
           </View>
 
           <View style={styles.fieldBlock}>
-            <Text style={styles.verifyFieldLabel}>
+            <Text
+              style={[
+                styles.verifyFieldLabel,
+                formErrorField === 'daily:externalIndicator' && styles.errorLabel,
+              ]}
+            >
               External Indicator<Text style={styles.required}> *</Text>
             </Text>
 
@@ -1264,9 +1476,13 @@ export default function AutoclaveScreen() {
             >
               <View style={styles.booleanRow}>
                 <Pressable
-                  onPress={() => setExternalIndicator(true)}
+                  onPress={() => {
+                    setExternalIndicator(true);
+                    if (formErrorField === 'daily:externalIndicator') setFormErrorField(null);
+                  }}
                   style={({ pressed }) => [
                     styles.booleanBtn,
+                    formErrorField === 'daily:externalIndicator' && styles.errorBorder,
                     externalIndicator === true && styles.booleanBtnPassActive,
                     pressed && { opacity: 0.9 },
                   ]}
@@ -1288,9 +1504,13 @@ export default function AutoclaveScreen() {
                 </Pressable>
 
                 <Pressable
-                  onPress={() => setExternalIndicator(false)}
+                  onPress={() => {
+                    setExternalIndicator(false);
+                    if (formErrorField === 'daily:externalIndicator') setFormErrorField(null);
+                  }}
                   style={({ pressed }) => [
                     styles.booleanBtn,
+                    formErrorField === 'daily:externalIndicator' && styles.errorBorder,
                     externalIndicator === false && styles.booleanBtnFailActive,
                     pressed && { opacity: 0.9 },
                   ]}
@@ -1315,7 +1535,12 @@ export default function AutoclaveScreen() {
           </View>
 
           <View style={styles.fieldBlock}>
-            <Text style={styles.verifyFieldLabel}>
+            <Text
+              style={[
+                styles.verifyFieldLabel,
+                formErrorField === 'daily:photoEvidence' && styles.errorLabel,
+              ]}
+            >
               Photo Evidence<Text style={styles.required}> *</Text>
             </Text>
 
@@ -1326,10 +1551,12 @@ export default function AutoclaveScreen() {
               collapsable={false}
               onPress={() => {
                 focusedKeyRef.current = 'daily:photoEvidence';
+                if (formErrorField === 'daily:photoEvidence') setFormErrorField(null);
                 setCameraOpen(true);
               }}
               style={({ pressed }) => [
                 styles.photoBox,
+                formErrorField === 'daily:photoEvidence' && styles.errorBorder,
                 {
                   aspectRatio: photoUri ? PHOTO_ASPECT : PHOTO_ASPECT_EMPTY,
                   maxHeight: 280,
@@ -2032,5 +2259,14 @@ const styles = StyleSheet.create({
     width: '100%',
     minWidth: 280,
     height: 216,
+  },
+
+  errorLabel: {
+    color: '#B00020',
+  },
+
+  errorBorder: {
+    borderColor: '#B00020',
+    borderWidth: 2,
   },
 });
