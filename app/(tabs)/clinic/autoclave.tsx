@@ -4,25 +4,13 @@ import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
+import { useAutoclaveDailyOpsActions } from '@/src/hooks/useAutoclaveDailyOpsActions';
 import { db } from '@/src/lib/firebase';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  collection,
-  doc,
-  onSnapshot,
-  runTransaction,
-  serverTimestamp
-} from 'firebase/firestore';
-import {
-  deleteObject,
-  getDownloadURL,
-  getStorage,
-  ref as storageRef,
-  uploadBytes,
-} from 'firebase/storage';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -622,474 +610,51 @@ export default function AutoclaveScreen() {
     [closeCamera, formErrorField],
   );
 
-  const onStartMachine = useCallback(async () => {
-    if (!clinicId || !roomId || !applianceId) {
-      Alert.alert('Missing context', 'Clinic, room, or appliance information is missing.');
-      return;
-    }
-
-    if (!user?.uid) {
-      Alert.alert('Not signed in', 'Please sign in before starting the machine.');
-      return;
-    }
-
-    if (loading) {
-      Alert.alert('Please wait', 'Autoclave information is still loading.');
-      return;
-    }
-
-    if (loadError) {
-      Alert.alert('Cannot start', loadError);
-      return;
-    }
-
-    if (!serialNumber.trim()) {
-      Alert.alert('Cannot start', 'Missing serial number in appliance setup.');
-      return;
-    }
-
-    const trimmedTemp = maxTemp.trim();
-    const trimmedPressure = pressure.trim();
-    const trimmedStartTime = startTime.trim();
-
-    if (!trimmedTemp) {
-      setFormErrorField('daily:maxTemp');
-      Alert.alert('Validation', 'Max Temp (°C) is required.');
-      requestScroll('daily:maxTemp', 'validation', 0);
-      return;
-    }
-
-    if (!trimmedPressure) {
-      setFormErrorField('daily:pressure');
-      Alert.alert('Validation', 'Pressure is required.');
-      requestScroll('daily:pressure', 'validation', 0);
-      return;
-    }
-
-    if (!trimmedStartTime) {
-      setFormErrorField('daily:startTime');
-      Alert.alert('Validation', 'Start Time is required.');
-      requestScroll('daily:startTime', 'validation', 0);
-      return;
-    }
-
-    const temperatureValue = validatePositiveIntUpTo3Digits(trimmedTemp);
-    if (temperatureValue === null) {
-      setFormErrorField('daily:maxTemp');
-      Alert.alert('Validation', 'Max Temp (°C) invalid.');
-      requestScroll('daily:maxTemp', 'validation', 0);
-      return;
-    }
-
-    const pressureValue = validatePositiveIntUpTo3Digits(trimmedPressure);
-    if (pressureValue === null) {
-      setFormErrorField('daily:pressure');
-      Alert.alert('Validation', 'Pressure invalid.');
-      requestScroll('daily:pressure', 'validation', 0);
-      return;
-    }
-
-    if (!parseHHMM(trimmedStartTime)) {
-      setFormErrorField('daily:startTime');
-      Alert.alert('Validation', 'Start Time must be a valid time.');
-      requestScroll('daily:startTime', 'validation', 0);
-      return;
-    }
-
-    if (saving) return;
-
-    Keyboard.dismiss();
-    setActivePicker(null);
-    setSaving(true);
-    setUiLocked(true);
-
-    try {
-      const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
-
-      const committedCycleId = await runTransaction(db, async (tx) => {
-        const applianceSnap = await tx.get(applianceRef);
-
-        if (!applianceSnap.exists()) {
-          throw new Error('Autoclave appliance not found.');
-        }
-
-        const applianceData = (applianceSnap.data() as ApplianceDocShape) ?? {};
-        const latestStatus = applianceData._status ?? {};
-
-        if (latestStatus.isRunning) {
-          throw new Error('This autoclave is already running a cycle.');
-        }
-
-        const latestSetup =
-          applianceData.setup && typeof applianceData.setup === 'object'
-            ? applianceData.setup
-            : {};
-
-        const latestSerialNumber = setupValueToString(latestSetup, 'serial_number', '').trim();
-        if (!latestSerialNumber) {
-          throw new Error('Missing serial number in appliance setup.');
-        }
-
-        const txCurrentDate = formatDateYYYYMMDDCompact(new Date());
-
-        const latestLastCycle =
-          applianceData.lastCycle && typeof applianceData.lastCycle === 'object'
-            ? applianceData.lastCycle
-            : {};
-
-        const latestLastDate =
-          typeof latestLastCycle.dateExecuted === 'string' ? latestLastCycle.dateExecuted : '';
-
-        const latestRawCycleNumber =
-          typeof latestLastCycle.cycleNumber === 'number' &&
-          Number.isFinite(latestLastCycle.cycleNumber)
-            ? latestLastCycle.cycleNumber
-            : 0;
-
-        const nextCycleNumber =
-          latestLastDate === txCurrentDate ? latestRawCycleNumber + 1 : 1;
-
-        const nextCycleId = `${txCurrentDate}-${latestSerialNumber}-${pad2(nextCycleNumber)}`;
-
-        const cycleRef = doc(
-          collection(
-            db,
-            'clinics',
-            clinicId,
-            'rooms',
-            roomId,
-            'appliances',
-            applianceId,
-            'records_DailyOps',
-          ),
-          nextCycleId,
-        );
-
-        const cycleSnap = await tx.get(cycleRef);
-        if (cycleSnap.exists()) {
-          throw new Error('A cycle with this ID already exists. Please try again.');
-        }
-
-        tx.update(applianceRef, {
-          _status: {
-            isRunning: true,
-            currentCycle: nextCycleId,
-          },
-          updatedAt: serverTimestamp(),
-        });
-
-        tx.set(cycleRef, {
-          _isFinished: false,
-          createdAt: serverTimestamp(),
-          settings: {
-            temperature: temperatureValue,
-            pressure: pressureValue,
-          },
-          cycleBeginTime: trimmedStartTime,
-          cycleBeganBy: {
-            userId: user.uid,
-            userName: profile?.name ?? null,
-          },
-        });
-
-        return nextCycleId;
-      });
-
-      setFormErrorField(null);
-
-      Alert.alert(
-        'Started',
-        `Autoclave cycle ${committedCycleId} started successfully.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.back();
-            },
-          },
-        ],
-        { cancelable: false },
-      );
-    } catch (e: any) {
-      console.error('start autoclave error', e);
-      Alert.alert('Start failed', e?.message ?? 'Unknown error');
-    } finally {
-      setSaving(false);
-      setUiLocked(false);
-    }
-  }, [
+  const { onStartMachine, onFinishAndUnload } = useAutoclaveDailyOpsActions({
     clinicId,
     roomId,
     applianceId,
-    user?.uid,
+
+    userUid: user?.uid ?? null,
+    userName: profile?.name ?? null,
+
     loading,
     loadError,
+    saving,
+    setSaving,
+    setUiLocked,
+
+    isRunning,
+    currentCycle,
+    cycleDocLoading,
+    cycleDocError,
+
     serialNumber,
+    applianceKey,
+
     maxTemp,
     pressure,
     startTime,
-    saving,
-    profile?.name,
-    requestScroll,
-    router,
-    setUiLocked,
-  ]);
-  
-  const onFinishAndUnload = useCallback(async () => {
-    if (!clinicId || !roomId || !applianceId) {
-      Alert.alert('Missing context', 'Clinic, room, or appliance information is missing.');
-      return;
-    }
 
-    if (!user?.uid) {
-      Alert.alert('Not signed in', 'Please sign in before finishing the cycle.');
-      return;
-    }
-
-    if (loading || cycleDocLoading) {
-      Alert.alert('Please wait', 'Cycle information is still loading.');
-      return;
-    }
-
-    if (loadError) {
-      Alert.alert('Cannot finish', loadError);
-      return;
-    }
-
-    if (cycleDocError) {
-      Alert.alert('Cannot finish', cycleDocError);
-      return;
-    }
-
-    if (!isRunning || !currentCycle) {
-      Alert.alert('Cannot finish', 'No running cycle was found.');
-      return;
-    }
-
-    if (!applianceKey.trim()) {
-      Alert.alert('Cannot finish', 'Appliance key is missing.');
-      return;
-    }
-
-    const trimmedUnloadTime = unloadTime.trim();
-    const trimmedNotes = notes.trim();
-
-    if (!trimmedUnloadTime) {
-      setFormErrorField('daily:unloadTime');
-      Alert.alert('Validation', 'Unload Time is required.');
-      requestScroll('daily:unloadTime', 'validation', 0);
-      return;
-    }
-
-    if (!parseHHMM(trimmedUnloadTime)) {
-      setFormErrorField('daily:unloadTime');
-      Alert.alert('Validation', 'Unload Time must be a valid time.');
-      requestScroll('daily:unloadTime', 'validation', 0);
-      return;
-    }
-
-    if (internalIndicator === null) {
-      setFormErrorField('daily:internalIndicator');
-      Alert.alert('Validation', 'Please select Internal Indicator result.');
-      requestScroll('daily:internalIndicator', 'validation', 0);
-      return;
-    }
-
-    if (externalIndicator === null) {
-      setFormErrorField('daily:externalIndicator');
-      Alert.alert('Validation', 'Please select External Indicator result.');
-      requestScroll('daily:externalIndicator', 'validation', 0);
-      return;
-    }
-
-    if (!photoUri || photoUri.trim().length === 0) {
-      setFormErrorField('daily:photoEvidence');
-      Alert.alert('Validation', 'Photo Evidence is required.');
-      requestScroll('daily:photoEvidence', 'validation', 0);
-      return;
-    }
-
-    const cycleParts = currentCycle.split('-');
-    if (cycleParts.length < 3) {
-      Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
-      return;
-    }
-
-    const cycleDatePart = cycleParts[0];
-    const cycleNumberPart = Number(cycleParts[cycleParts.length - 1]);
-
-    if (!/^\d{8}$/.test(cycleDatePart) || !Number.isFinite(cycleNumberPart)) {
-      Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
-      return;
-    }
-
-    if (saving) return;
-
-    Keyboard.dismiss();
-    setActivePicker(null);
-    setSaving(true);
-    setUiLocked(true);
-
-    let uploadedFileRef: ReturnType<typeof storageRef> | null = null;
-    let finishCommitted = false;
-
-    try {
-      // 1) Upload photo first
-      const storage = getStorage();
-      const blob = await uriToBlob(photoUri);
-
-      const photoPath = `clinics/${clinicId}/${roomId}/${applianceKey}/dailyOps/${currentCycle}.jpg`;
-      uploadedFileRef = storageRef(storage, photoPath);
-
-      await uploadBytes(uploadedFileRef, blob, { contentType: 'image/jpeg' });
-      const photoUrl = await getDownloadURL(uploadedFileRef);
-
-      // 2) Then transactionally verify + finish the cycle in Firestore
-      const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
-
-      const cycleRef = doc(
-        db,
-        'clinics',
-        clinicId,
-        'rooms',
-        roomId,
-        'appliances',
-        applianceId,
-        'records_DailyOps',
-        currentCycle,
-      );
-
-      await runTransaction(db, async (tx) => {
-        const applianceSnap = await tx.get(applianceRef);
-        const cycleSnap = await tx.get(cycleRef);
-
-        if (!applianceSnap.exists()) {
-          throw new Error('Autoclave appliance not found.');
-        }
-
-        if (!cycleSnap.exists()) {
-          throw new Error('Current cycle record not found.');
-        }
-
-        const applianceData = (applianceSnap.data() as ApplianceDocShape) ?? {};
-        const latestStatus = applianceData._status ?? {};
-
-        if (!latestStatus.isRunning) {
-          throw new Error('This autoclave is no longer marked as running.');
-        }
-
-        const latestCurrentCycle =
-          typeof latestStatus.currentCycle === 'string' ? latestStatus.currentCycle : '';
-
-        if (latestCurrentCycle !== currentCycle) {
-          throw new Error('The running cycle has changed. Please reload and try again.');
-        }
-
-        const latestApplianceKey =
-          typeof applianceData.applianceKey === 'string'
-            ? applianceData.applianceKey.trim()
-            : '';
-
-        if (!latestApplianceKey) {
-          throw new Error('Appliance key is missing.');
-        }
-
-        if (latestApplianceKey !== applianceKey.trim()) {
-          throw new Error('Appliance key changed. Please reload and try again.');
-        }
-
-        const cycleData = (cycleSnap.data() as DailyOpsCycleDoc) ?? {};
-
-        if (cycleData._isFinished) {
-          throw new Error('This cycle has already been finished.');
-        }
-
-        tx.update(cycleRef, {
-          _isFinished: true,
-          cycleEndTime: trimmedUnloadTime,
-          cycleEndedBy: {
-            userId: user.uid,
-            userName: profile?.name ?? null,
-          },
-          results: {
-            internalIndicator,
-            externalIndicator,
-            notes: trimmedNotes.length > 0 ? trimmedNotes : null,
-            photoUrl,
-            photoPath,
-          },
-          updatedAt: serverTimestamp(),
-        });
-
-        tx.update(applianceRef, {
-          _status: {
-            isRunning: false,
-            currentCycle: '',
-          },
-          lastCycle: {
-            dateExecuted: cycleDatePart,
-            cycleNumber: cycleNumberPart,
-          },
-          updatedAt: serverTimestamp(),
-        });
-      });
-
-      finishCommitted = true;
-      setFormErrorField(null);
-
-      Alert.alert(
-        'Finished',
-        'Cycle finished and unloaded successfully.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.back();
-            },
-          },
-        ],
-        { cancelable: false },
-      );
-    } catch (e: any) {
-      console.error('finish autoclave cycle error', e);
-
-      // 3) Best-effort cleanup: if upload succeeded but Firestore failed, delete the photo
-      if (!finishCommitted && uploadedFileRef) {
-        try {
-          await deleteObject(uploadedFileRef);
-        } catch (cleanupErr) {
-          console.error('cleanup uploaded autoclave photo error', cleanupErr);
-        }
-      }
-
-      Alert.alert('Finish failed', e?.message ?? 'Unknown error');
-    } finally {
-      setSaving(false);
-      setUiLocked(false);
-    }
-  }, [
-    clinicId,
-    roomId,
-    applianceId,
-    user?.uid,
-    loading,
-    cycleDocLoading,
-    loadError,
-    cycleDocError,
-    isRunning,
-    currentCycle,
-    applianceKey,
     unloadTime,
     internalIndicator,
     externalIndicator,
     photoUri,
     notes,
-    saving,
-    profile?.name,
+
+    setFormErrorField,
+    setActivePicker,
+
     requestScroll,
-    router,
-    setUiLocked,
-  ]);
+    routerBack: () => router.back(),
+
+    parseHHMM,
+    validatePositiveIntUpTo3Digits,
+    uriToBlob,
+    setupValueToString,
+    formatDateYYYYMMDDCompact,
+    pad2,
+  });
 
   const canStartMachine =
     !loading &&
@@ -1101,6 +666,10 @@ export default function AutoclaveScreen() {
     !!user?.uid &&
     serialNumber.trim().length > 0 &&
     !isRunning;
+
+  const hasValidCurrentCycleId =
+    !!currentCycle &&
+    /^\d{8}-.+-\d+$/.test(currentCycle);
 
   const canFinishUnload =
     !loading &&
@@ -1114,7 +683,7 @@ export default function AutoclaveScreen() {
     !!user?.uid &&
     applianceKey.trim().length > 0 &&
     isRunning &&
-    !!currentCycle;
+    hasValidCurrentCycleId;
 
   const renderDailyOpsStart = () => {
     return (
