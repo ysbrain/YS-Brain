@@ -4,13 +4,14 @@ import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
-import { useAutoclaveDailyOpsActions } from '@/src/hooks/useAutoclaveDailyOpsActions';
-import { db } from '@/src/lib/firebase';
+import type { SetupStoredItem } from '@/src/hooks/autoclave/types';
+import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
+import { useAutoclaveDailyOpsActions } from '@/src/hooks/autoclave/useAutoclaveDailyOpsActions';
+import { useAutoclaveDailyOpsCycle } from '@/src/hooks/autoclave/useAutoclaveDailyOpsCycle';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -31,42 +32,6 @@ import {
 
 type TabKey = 'dailyOps' | 'helix' | 'spore';
 type PickerField = 'startTime' | 'unloadTime';
-
-type SetupStoredValue = string | number;
-type SetupStoredItem = {
-  field?: string;
-  value?: SetupStoredValue;
-};
-
-type ApplianceDocShape = {
-  applianceKey?: string;
-  applianceName?: string;
-  typeKey?: string;
-  typeName?: string;
-  setup?: Record<string, SetupStoredItem | undefined>;
-  lastCycle?: {
-    cycleNumber?: number;
-    dateExecuted?: string;
-  };
-  _status?: {
-    isRunning?: boolean;
-    currentCycle?: string;
-  };
-};
-
-type DailyOpsCycleDoc = {
-  _isFinished?: boolean;
-  createdAt?: unknown;  
-  settings?: {
-    temperature?: number;
-    pressure?: number;
-  };
-  cycleBeginTime?: string;
-  cycleBeganBy?: {
-    userId?: string;
-    userName?: string | null;
-  };
-};
 
 // Something measurable for auto-scroll
 type MeasurableRef = {
@@ -214,29 +179,42 @@ export default function AutoclaveScreen() {
 
   const [activeTab, setActiveTab] = useState<TabKey>('dailyOps');
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const { setUiLocked } = useUiLock();
   const [formErrorField, setFormErrorField] = useState<DailyFieldKey | null>(null);
 
-  const [applianceName, setApplianceName] = useState('');
-  const [applianceKey, setApplianceKey] = useState('');
-  const [setup, setSetup] = useState<Record<string, SetupStoredItem | undefined>>({});
-  const [lastCycle, setLastCycle] = useState<{ cycleNumber?: number; dateExecuted?: string }>({});
-  const [isRunning, setIsRunning] = useState(false);
-  const [currentCycle, setCurrentCycle] = useState('');
+  const {
+    loading,
+    loadError,
+    applianceName,
+    applianceKey,
+    setup,
+    lastCycle,
+    isRunning,
+    currentCycle,
+  } = useAutoclaveAppliance({
+    clinicId,
+    roomId,
+    applianceId,
+  });
+
+  const {
+    cycleDocLoading,
+    cycleDocError,
+    cycleDoc,
+  } = useAutoclaveDailyOpsCycle({
+    clinicId,
+    roomId,
+    applianceId,
+    isRunning,
+    currentCycle,
+  });
 
   // Start page state
   const [maxTemp, setMaxTemp] = useState('');
   const [pressure, setPressure] = useState('');
   const [startTime, setStartTime] = useState(formatTimeHHMM(new Date()));
-
-  // Running page state
-  const [cycleDocLoading, setCycleDocLoading] = useState(false);
-  const [cycleDocError, setCycleDocError] = useState<string | null>(null);
-  const [cycleDoc, setCycleDoc] = useState<DailyOpsCycleDoc | null>(null);
 
   const [unloadTime, setUnloadTime] = useState(formatTimeHHMM(new Date()));
   const [internalIndicator, setInternalIndicator] = useState<boolean | null>(null);
@@ -359,6 +337,20 @@ export default function AutoclaveScreen() {
     requestAnimationFrame(() => requestScroll(key, 'pickerOpen', 0));
   }, [activePicker, requestScroll]);
 
+  useEffect(() => {
+    setMaxTemp((prev) =>
+      prev.trim().length > 0
+        ? prev
+        : setupValueToNumberString(setup, 'default_temp_c', ''),
+    );
+
+    setPressure((prev) =>
+      prev.trim().length > 0
+        ? prev
+        : setupValueToNumberString(setup, 'default_pressure', ''),
+    );
+  }, [setup]);
+
   // Reset start-page editable defaults when appliance changes
   useEffect(() => {
     setMaxTemp('');
@@ -374,131 +366,6 @@ export default function AutoclaveScreen() {
     setPhotoUri(null);
     setNotes('');
   }, [currentCycle]);
-
-  // Appliance doc subscription
-  useEffect(() => {
-    if (!clinicId || !roomId || !applianceId) {
-      setLoadError('Missing clinic, room, or appliance information.');
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setLoadError(null);
-
-    const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
-
-    const unsub = onSnapshot(
-      applianceRef,
-      (snap) => {
-        if (!snap.exists()) {
-          setLoadError('Autoclave appliance not found.');
-          setLoading(false);
-          return;
-        }
-
-        const data = (snap.data() as ApplianceDocShape) ?? {};
-
-        setApplianceName(
-          typeof data.applianceName === 'string' && data.applianceName.trim().length > 0
-            ? data.applianceName
-            : 'Autoclave',
-        );
-
-        setApplianceKey(
-          typeof data.applianceKey === 'string' && data.applianceKey.trim().length > 0
-            ? data.applianceKey
-            : '',
-        );
-
-        const nextSetup =
-          data.setup && typeof data.setup === 'object'
-            ? data.setup
-            : ({} as Record<string, SetupStoredItem | undefined>);
-        setSetup(nextSetup);
-
-        const nextLastCycle =
-          data.lastCycle && typeof data.lastCycle === 'object'
-            ? data.lastCycle
-            : { cycleNumber: undefined, dateExecuted: undefined };
-        setLastCycle(nextLastCycle);
-
-        const nextStatus = data._status ?? {};
-        setIsRunning(Boolean(nextStatus.isRunning));
-        setCurrentCycle(typeof nextStatus.currentCycle === 'string' ? nextStatus.currentCycle : '');
-
-        setMaxTemp((prev) =>
-          prev.trim().length > 0
-            ? prev
-            : setupValueToNumberString(nextSetup, 'default_temp_c', ''),
-        );
-
-        setPressure((prev) =>
-          prev.trim().length > 0
-            ? prev
-            : setupValueToNumberString(nextSetup, 'default_pressure', ''),
-        );
-
-        setLoading(false);
-      },
-      (err) => {
-        console.error('autoclave appliance snapshot error', err);
-        setLoadError('Failed to load autoclave appliance.');
-        setLoading(false);
-      },
-    );
-
-    return () => unsub();
-  }, [clinicId, roomId, applianceId]);
-
-  // Current running cycle subscription
-  useEffect(() => {
-    if (!clinicId || !roomId || !applianceId || !isRunning || !currentCycle) {
-      setCycleDoc(null);
-      setCycleDocError(null);
-      setCycleDocLoading(false);
-      return;
-    }
-
-    setCycleDocLoading(true);
-    setCycleDocError(null);
-
-    const cycleRef = doc(
-      db,
-      'clinics',
-      clinicId,
-      'rooms',
-      roomId,
-      'appliances',
-      applianceId,
-      'records_DailyOps',
-      currentCycle,
-    );
-
-    const unsub = onSnapshot(
-      cycleRef,
-      (snap) => {
-        if (!snap.exists()) {
-          setCycleDoc(null);
-          setCycleDocError('Current cycle record not found.');
-          setCycleDocLoading(false);
-          return;
-        }
-
-        setCycleDoc((snap.data() as DailyOpsCycleDoc) ?? {});
-        setCycleDocError(null);
-        setCycleDocLoading(false);
-      },
-      (err) => {
-        console.error('autoclave cycle snapshot error', err);
-        setCycleDoc(null);
-        setCycleDocError('Failed to load current cycle.');
-        setCycleDocLoading(false);
-      },
-    );
-
-    return () => unsub();
-  }, [clinicId, roomId, applianceId, isRunning, currentCycle]);
 
   const serialNumber = useMemo(() => {
     return setupValueToString(setup, 'serial_number', '').trim();

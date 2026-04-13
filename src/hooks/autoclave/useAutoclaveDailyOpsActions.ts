@@ -15,43 +15,11 @@ import { useCallback } from 'react';
 import { Alert, Keyboard } from 'react-native';
 
 import { db } from '@/src/lib/firebase';
-
-type SetupStoredValue = string | number;
-
-type SetupStoredItem = {
-  field?: string;
-  value?: SetupStoredValue;
-};
-
-type ApplianceDocShape = {
-  applianceKey?: string;
-  applianceName?: string;
-  typeKey?: string;
-  typeName?: string;
-  setup?: Record<string, SetupStoredItem | undefined>;
-  lastCycle?: {
-    cycleNumber?: number;
-    dateExecuted?: string;
-  };
-  _status?: {
-    isRunning?: boolean;
-    currentCycle?: string;
-  };
-};
-
-type DailyOpsCycleDoc = {
-  _isFinished?: boolean;
-  createdAt?: unknown;
-  settings?: {
-    temperature?: number;
-    pressure?: number;
-  };
-  cycleBeginTime?: string;
-  cycleBeganBy?: {
-    userId?: string;
-    userName?: string | null;
-  };
-};
+import type {
+  ApplianceDocShape,
+  DailyOpsCycleDoc,
+  SetupStoredItem,
+} from './types';
 
 type DailyFieldKey =
   | 'daily:maxTemp'
