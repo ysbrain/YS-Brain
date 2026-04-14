@@ -4,6 +4,7 @@ import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
+import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
@@ -19,10 +20,9 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
-  Dimensions,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -53,11 +53,6 @@ type ApplianceDocShape = {
 };
 
 type RecordValue = string | boolean | null;
-
-// Something "measurable" (TextInput and View/Pressable support measureInWindow)
-type MeasurableRef = {
-  measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void;
-};
 
 function pad2(n: number) {
   return String(n).padStart(2, '0');
@@ -194,112 +189,27 @@ export default function ClinicRecordScreen() {
   const overlayText = isDark ? '#fff' : '#111';
   const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
 
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollYRef = useRef(0);
-
-  const inputRefs = useRef<Record<string, MeasurableRef | null>>({});
-  const focusedKeyRef = useRef<string | null>(null);
-  const keyboardHeightRef = useRef(0);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  // ----- Scroll behavior -----
   const FOOTER_BASE_HEIGHT = 84;
-  const SAFE_GAP = 12;
-  const FOCUS_ANCHOR_RATIO = 0.4;
-
-  const SCROLL_DEBOUNCE_MS = 16;
-  const SCROLL_COOLDOWN_MS = 120;
-
-  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingScrollKeyRef = useRef<string | null>(null);
-  const lastScrollAtRef = useRef(0);
-  const scrollReqIdRef = useRef(0);
-
   const IOS_PICKER_HEIGHT = 216;
   const IOS_PICKER_HEADER_HEIGHT = 44;
   const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12;
 
-  const pickerOverlayHeight = Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
-  const bottomObstruction = Math.max(keyboardHeight, pickerOverlayHeight);
-  const contentBottomPadding = 24 + FOOTER_BASE_HEIGHT + SAFE_GAP + bottomObstruction;
+  const pickerOverlayHeight =
+    Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
 
-  const requestScroll = useCallback(
-    (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
-      pendingScrollKeyRef.current = key;
-
-      if (pendingScrollTimerRef.current) {
-        clearTimeout(pendingScrollTimerRef.current);
-        pendingScrollTimerRef.current = null;
-      }
-
-      pendingScrollTimerRef.current = setTimeout(() => {
-        const latestKey = pendingScrollKeyRef.current;
-        if (!latestKey) return;
-
-        const now = Date.now();
-        const elapsed = now - lastScrollAtRef.current;
-        const bypassCooldown = reason === 'validation';
-
-        if (!bypassCooldown && elapsed < SCROLL_COOLDOWN_MS) {
-          const remaining = SCROLL_COOLDOWN_MS - elapsed;
-          requestScroll(latestKey, reason, remaining);
-          return;
-        }
-
-        lastScrollAtRef.current = now;
-        const reqId = ++scrollReqIdRef.current;
-
-        requestAnimationFrame(() => {
-          const input = inputRefs.current[latestKey];
-          if (!input?.measureInWindow) return;
-
-          input.measureInWindow((_x, y, _w, _h) => {
-            if (reqId !== scrollReqIdRef.current) return;
-
-            const windowH = Dimensions.get('window').height;
-            const targetY = windowH * FOCUS_ANCHOR_RATIO;
-            if (y <= targetY) return;
-
-            const delta = y - targetY;
-            const nextY = Math.max(0, scrollYRef.current + delta);
-            scrollRef.current?.scrollTo({ y: nextY, animated: true });
-          });
-        });
-      }, delayMs);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      const h = e.endCoordinates?.height ?? 0;
-      keyboardHeightRef.current = h;
-      setKeyboardHeight(h);
-
-      const key = focusedKeyRef.current;
-      if (key) requestScroll(key, 'keyboardShow', 50);
-    });
-
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      keyboardHeightRef.current = 0;
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-      if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
-    };
-  }, [requestScroll]);
-
-  useEffect(() => {
-    if (!activePicker) return;
-    const key = `record:${activePicker.field}`;
-    requestAnimationFrame(() => requestScroll(key, 'pickerOpen', 0));
-  }, [activePicker, requestScroll]);
+  const {
+    scrollRef,
+    registerFieldRef,
+    onFieldFocus,
+    onFieldBlur,
+    handleScroll,
+    requestScroll,
+    contentBottomPadding,
+  } = useKeyboardAwareFieldScroll({
+    activeOverlayFieldKey: activePicker ? `record:${activePicker.field}` : null,
+    overlayHeight: pickerOverlayHeight,
+    baseBottomPadding: 24 + FOOTER_BASE_HEIGHT,
+  });
 
   const activePickerValue = useMemo(() => {
     if (!activePicker) return new Date();
@@ -710,9 +620,7 @@ export default function ClinicRecordScreen() {
           contentContainerStyle={[styles.content, { paddingBottom: contentBottomPadding }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          onScroll={(e) => {
-            scrollYRef.current = e.nativeEvent.contentOffset.y;
-          }}
+          onScroll={handleScroll}
           scrollEventThrottle={16}
         >
           {/* Appliance details */}
@@ -770,12 +678,10 @@ export default function ClinicRecordScreen() {
 
                     {item.type === 'date' ? (
                       <Pressable
-                        ref={(r: any) => {
-                          inputRefs.current[key] = r as any;
-                        }}
+                        ref={registerFieldRef(key)}
                         collapsable={false}
                         onPress={() => {
-                          focusedKeyRef.current = key;
+                          onFieldFocus(key);
                           openPicker(item.field, 'date');
                         }}
                         style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
@@ -788,12 +694,10 @@ export default function ClinicRecordScreen() {
                       </Pressable>
                     ) : item.type === 'time' ? (
                       <Pressable
-                        ref={(r: any) => {
-                          inputRefs.current[key] = r as any;
-                        }}
+                        ref={registerFieldRef(key)}
                         collapsable={false}
                         onPress={() => {
-                          focusedKeyRef.current = key;
+                          onFieldFocus(key);
                           openPicker(item.field, 'time');
                         }}
                         style={({ pressed }) => [styles.dateInput, pressed && { opacity: 0.85 }]}
@@ -806,9 +710,7 @@ export default function ClinicRecordScreen() {
                       </Pressable>
                     ) : item.type === 'boolean' ? (
                       <View
-                        ref={(r: any) => {
-                          inputRefs.current[key] = r as any;
-                        }}
+                        ref={registerFieldRef(key)}
                         collapsable={false}
                       >
                         <View style={styles.booleanRow}>
@@ -857,12 +759,10 @@ export default function ClinicRecordScreen() {
 
                         return (
                           <Pressable
-                            ref={(r: any) => {
-                              inputRefs.current[key] = r as any;
-                            }}
+                            ref={registerFieldRef(key)}
                             collapsable={false}
                             onPress={() => {
-                              focusedKeyRef.current = key;
+                              onFieldFocus(key);
                               setActivePhotoField(item.field);
                               setCameraOpen(true);
                             }}
@@ -886,9 +786,7 @@ export default function ClinicRecordScreen() {
                       })()
                     ) : (
                       <TextInput
-                        ref={(r) => {
-                          inputRefs.current[key] = r as any;
-                        }}
+                        ref={registerFieldRef(key)}
                         value={stringValue}
                         onChangeText={(t) => onChangeField(item.field, t)}
                         placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
@@ -904,15 +802,8 @@ export default function ClinicRecordScreen() {
                         returnKeyType="done"
                         autoCapitalize="none"
                         autoCorrect={false}
-                        onFocus={() => {
-                          focusedKeyRef.current = key;
-                          requestScroll(key, 'focus');
-                        }}
-                        onBlur={() => {
-                          if (focusedKeyRef.current === key) {
-                            focusedKeyRef.current = null;
-                          }
-                        }}
+                        onFocus={() => onFieldFocus(key)}
+                        onBlur={() => onFieldBlur(key)}
                       />
                     )}
                   </View>

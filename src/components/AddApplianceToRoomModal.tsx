@@ -2,6 +2,8 @@
 
 import BottomSheetShell from '@/src/components/BottomSheetShell';
 import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
+import { useUiLock } from '@/src/contexts/UiLockContext';
+import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
@@ -21,7 +23,6 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -31,7 +32,7 @@ import {
   Text,
   TextInput,
   View,
-  useColorScheme,
+  useColorScheme
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -55,11 +56,6 @@ type Props = {
   selectedModule: ModuleItem | null;
   onBack: () => void;
   onCloseAll: () => void;
-};
-
-// Something "measurable" (TextInput and View both support measureInWindow)
-type MeasurableRef = {
-  measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void;
 };
 
 type FieldKey = 'applianceName' | `setup:${string}`;
@@ -155,6 +151,8 @@ export default function AddApplianceToRoomModal({
   const [moduleRecordFields, setModuleRecordFields] = useState<any[] | undefined>(undefined);
   const [saving, setSaving] = useState(false);
 
+  const { setUiLocked } = useUiLock();
+
   const applianceKey = useMemo(() => toFirestoreSafeKey(applianceName), [applianceName]);
 
   const [formError, setFormError] = useState<FormError | null>(null);
@@ -162,10 +160,6 @@ export default function AddApplianceToRoomModal({
     () => (formError ? getFormErrorMessage(formError) : null),
     [formError],
   );
-
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollYRef = useRef(0);
-  const inputRefs = useRef<Record<string, MeasurableRef | null>>({});
 
   // Store values keyed by field name (assumes fields are unique)
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -205,22 +199,9 @@ export default function AddApplianceToRoomModal({
   const applianceNameInputRef = useRef<TextInput>(null);
 
   const FOOTER_HEIGHT = 72;
-  const FOCUS_ANCHOR_RATIO = 0.4;
-
   const insets = useSafeAreaInsets();
   const footerInset = insets.bottom;
   const footerHeight = FOOTER_HEIGHT + footerInset;
-
-  const focusedKeyRef = useRef<string | null>(null);
-  const keyboardHeightRef = useRef(0);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  const SCROLL_DEBOUNCE_MS = 16;
-  const SCROLL_COOLDOWN_MS = 120;
-  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingScrollKeyRef = useRef<string | null>(null);
-  const lastScrollAtRef = useRef(0);
-  const scrollReqIdRef = useRef(0);
 
   const IOS_PICKER_HEIGHT = 216;
   const IOS_PICKER_HEADER_HEIGHT = 44;
@@ -228,67 +209,24 @@ export default function AddApplianceToRoomModal({
 
   const dateOverlayHeight =
     Platform.OS === 'ios' && activeDateField ? IOS_PICKER_TOTAL : 0;
-
-  const bottomObstruction = Math.max(keyboardHeight, dateOverlayHeight);
+  
+  const {
+    scrollRef,
+    registerFieldRef,
+    onFieldFocus,
+    onFieldBlur,
+    handleScroll,
+    requestScroll,
+    contentBottomPadding,
+  } = useKeyboardAwareFieldScroll({
+    activeOverlayFieldKey: activeDateField ? (`setup:${activeDateField}` as FieldKey) : null,
+    overlayHeight: dateOverlayHeight,
+    baseBottomPadding: footerHeight + 16,
+  });
 
   const icon = useMemo(
     () => getApplianceIcon(selectedModule?.id ?? ''),
     [selectedModule?.id],
-  );
-
-  const requestScroll = useCallback(
-    (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
-      pendingScrollKeyRef.current = key;
-
-      if (pendingScrollTimerRef.current) {
-        clearTimeout(pendingScrollTimerRef.current);
-        pendingScrollTimerRef.current = null;
-      }
-
-      pendingScrollTimerRef.current = setTimeout(() => {
-        const latestKey = pendingScrollKeyRef.current;
-        if (!latestKey) return;
-
-        const now = Date.now();
-        const elapsed = now - lastScrollAtRef.current;
-        const bypassCooldown = reason === 'validation';
-
-        if (!bypassCooldown && elapsed < SCROLL_COOLDOWN_MS) {
-          const remaining = SCROLL_COOLDOWN_MS - elapsed;
-          requestScroll(latestKey, reason, remaining);
-          return;
-        }
-
-        lastScrollAtRef.current = now;
-        
-        /*
-        if (__DEV__) {
-          // eslint-disable-next-line no-console
-          console.log('[scroll]', { reason, key: latestKey, elapsed });
-        }
-        */
-
-        const reqId = ++scrollReqIdRef.current;
-        requestAnimationFrame(() => {
-          const input = inputRefs.current[latestKey];
-          if (!input?.measureInWindow) return;
-
-          input.measureInWindow((_x, y, _w, h) => {
-            if (reqId !== scrollReqIdRef.current) return;
-
-            const windowH = Dimensions.get('window').height;
-            const targetY = windowH * FOCUS_ANCHOR_RATIO;
-
-            if (y <= targetY) return;
-
-            const delta = y - targetY;
-            const nextY = Math.max(0, scrollYRef.current + delta);
-            scrollRef.current?.scrollTo({ y: nextY, animated: true });
-          });
-        });
-      }, delayMs);
-    },
-    [],
   );
 
   const focusApplianceName = useCallback(() => {
@@ -418,37 +356,6 @@ export default function AddApplianceToRoomModal({
 
     return () => unsub();
   }, [visible, selectedModule?.id]);
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      const h = e.endCoordinates?.height ?? 0;
-      keyboardHeightRef.current = h;
-      setKeyboardHeight(h);
-
-      const key = focusedKeyRef.current;
-      if (key) requestScroll(key, 'keyboardShow', 50);
-    });
-
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      keyboardHeightRef.current = 0;
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-      if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
-    };
-  }, [requestScroll]);
-
-  useEffect(() => {
-    if (!activeDateField) return;
-    const key = `setup:${activeDateField}` as FieldKey;
-    requestAnimationFrame(() => requestScroll(key, 'dateOpen', 0));
-  }, [activeDateField, requestScroll]);
 
   const validateAndBuildSetup = useCallback(() => {
     const cfg = setupConfig ?? [];
@@ -584,6 +491,7 @@ export default function AddApplianceToRoomModal({
 
     try {
       setSaving(true);
+      setUiLocked(true);
 
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
@@ -604,10 +512,9 @@ export default function AddApplianceToRoomModal({
 
       // Build custom document ID: <typeKey>_<randomId>
       const safeTypeKey = toFirestoreSafeKey(selectedModule.id, { fallback: 'appliance' });
-      const randomPart = doc(appliancesColRef).id; // Firestore-style random ID
+      const randomPart = doc(appliancesColRef).id;
       const applianceDocId = `${safeTypeKey}_${randomPart}`;
 
-      // Create a stable custom doc ref outside the transaction
       const newApplianceRef = doc(appliancesColRef, applianceDocId);
 
       await runTransaction(db, async (tx) => {
@@ -635,11 +542,11 @@ export default function AddApplianceToRoomModal({
         { cancelable: true },
       );
     } catch (e: any) {
-      // eslint-disable-next-line no-console
       console.error('Add appliance error:', e);
 
       if (isFormAppError(e)) {
         setFormError({ code: e.code, fieldKey: e.fieldKey, meta: e.meta });
+
         if (e.fieldKey) {
           requestScroll(e.fieldKey, 'validation', 0);
           if (e.fieldKey === 'applianceName') focusApplianceName();
@@ -650,6 +557,7 @@ export default function AddApplianceToRoomModal({
       setFormError({ code: 'UNKNOWN' });
     } finally {
       setSaving(false);
+      setUiLocked(false);
     }
   }, [
     selectedModule,
@@ -665,6 +573,7 @@ export default function AddApplianceToRoomModal({
     onCloseAll,
     requestScroll,
     focusApplianceName,
+    setUiLocked,
   ]);
 
   const showSetupSection = loadingConfig || (setupConfig?.length ?? 0) > 0;
@@ -694,13 +603,11 @@ export default function AddApplianceToRoomModal({
           style={styles.scroll}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: footerHeight + 16 + bottomObstruction },
+            { paddingBottom: contentBottomPadding },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          onScroll={(e) => {
-            scrollYRef.current = e.nativeEvent.contentOffset.y;
-          }}
+          onScroll={handleScroll}
           scrollEventThrottle={16}
         >
           {!selectedModule ? (
@@ -764,7 +671,7 @@ export default function AddApplianceToRoomModal({
               <TextInput
                 ref={(r) => {
                   applianceNameInputRef.current = r;
-                  inputRefs.current['applianceName'] = r as any;
+                  registerFieldRef('applianceName')(r as any);
                 }}
                 value={applianceName}
                 onChangeText={(t) => {
@@ -778,15 +685,8 @@ export default function AddApplianceToRoomModal({
                   formError?.fieldKey === 'applianceName' && styles.errorBorder,
                 ]}
                 returnKeyType="done"
-                onFocus={() => {
-                  focusedKeyRef.current = 'applianceName';
-                  requestScroll('applianceName', 'focus');
-                }}
-                onBlur={() => {
-                  if (focusedKeyRef.current === 'applianceName') {
-                    focusedKeyRef.current = null;
-                  }
-                }}
+                onFocus={() => onFieldFocus('applianceName')}
+                onBlur={() => onFieldBlur('applianceName')}
               />
 
               {errorText && (
@@ -822,12 +722,10 @@ export default function AddApplianceToRoomModal({
 
                             {item.type === 'date' ? (
                               <Pressable
-                                ref={(r: any) => {
-                                  inputRefs.current[k] = r as any;
-                                }}
+                                ref={registerFieldRef(k)}
                                 collapsable={false}
                                 onPress={() => {
-                                  focusedKeyRef.current = k;
+                                  onFieldFocus(k);
                                   onPickDate(item.field);
                                 }}
                                 style={({ pressed }) => [
@@ -848,9 +746,7 @@ export default function AddApplianceToRoomModal({
                               </Pressable>
                             ) : (
                               <TextInput
-                                ref={(r) => {
-                                  inputRefs.current[k] = r as any;
-                                }}
+                                ref={registerFieldRef(k)}
                                 value={value}
                                 onChangeText={(t) => onChangeConfig(item.field, t)}
                                 placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
@@ -867,15 +763,8 @@ export default function AddApplianceToRoomModal({
                                     : 'default'
                                 }
                                 returnKeyType="done"
-                                onFocus={() => {
-                                  focusedKeyRef.current = k;
-                                  requestScroll(k, 'focus');
-                                }}
-                                onBlur={() => {
-                                  if (focusedKeyRef.current === k) {
-                                    focusedKeyRef.current = null;
-                                  }
-                                }}
+                                onFocus={() => onFieldFocus(k)}
+                                onBlur={() => onFieldBlur(k)}
                               />
                             )}
                           </View>

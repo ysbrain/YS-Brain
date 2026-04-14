@@ -1,6 +1,7 @@
+import { useUiLock } from '@/src/contexts/UiLockContext';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
-import { Modal, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 type BottomSheetShellProps = {
   visible: boolean;
@@ -37,51 +38,87 @@ export default function BottomSheetShell({
   sheetStyle,
   bodyStyle,
 }: BottomSheetShellProps) {
+  const { uiLocked } = useUiLock();
+  
   return (
     <Modal
       visible={visible}
-      animationType="slide"
       transparent
-      statusBarTranslucent
-      onRequestClose={onClose}
+      animationType="slide"
+      onRequestClose={() => {
+        if (!uiLocked) onClose();
+      }}
     >
-      {/* Backdrop */}
-      <Pressable style={styles.backdrop} onPress={onClose} accessible={false} />
+      <View style={styles.modalRoot}>
+        {/* Backdrop */}
+        <Pressable
+          style={styles.backdrop}
+          onPress={() => {
+            if (!uiLocked) onClose();
+          }}
+        />
 
-      {/* Sheet */}
-      <View
-        style={[
-          styles.sheet,
-          height != null ? { height } : { maxHeight },
-          sheetStyle,
-        ]}
-      >
-        {/* Header */}
-        <View style={styles.sheetHeader}>
-          <Text style={styles.sheetTitle}>{title}</Text>
+        {/* Sheet */}
+        <View
+          style={[
+            styles.sheet,
+            height ? { height } : null,
+            !height ? { maxHeight } : null,
+            sheetStyle,
+          ]}
+        >
+          <View style={styles.sheetHeader}>
+            <Text style={styles.sheetTitle}>{title}</Text>
 
-          <Pressable
-            onPress={onClose}
-            style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Close"
-          >
-            <MaterialCommunityIcons name="close" size={22} color="#111" />
-          </Pressable>
+            <Pressable
+              onPress={onClose}
+              disabled={uiLocked}
+              style={({ pressed }) => [
+                styles.closeBtn,
+                uiLocked && styles.closeBtnDisabled,
+                pressed && !uiLocked && { opacity: 0.85 },
+              ]}
+              accessibilityRole="button"
+            >
+              <MaterialCommunityIcons name="close" size={20} color="#111" />
+            </Pressable>
+          </View>
+
+          {topSlot}
+
+          <View style={[styles.body, bodyStyle]}>
+            {children}
+          </View>
+
+          {/* Local lock overlay INSIDE the modal layer */}
+          {uiLocked && (
+            <View style={styles.localBlockingOverlay} pointerEvents="auto">
+              <View style={styles.localBlockingCard}>
+                <ActivityIndicator size="large" color="#111" />
+                <Text style={styles.localBlockingTitle}>Saving record…</Text>
+                <Text style={styles.localBlockingText}>
+                  Please wait. Uploading may take a few seconds.
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
-
-        {/* Optional top slot */}
-        {topSlot}
-
-        {/* Body (flex container). Your modal decides what goes inside (ScrollView, FlatList, footer, etc.) */}
-        <View style={[styles.body, bodyStyle]}>{children}</View>
       </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)' },
+  modalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+
   sheet: {
     position: 'absolute',
     left: 0,
@@ -94,6 +131,7 @@ const styles = StyleSheet.create({
     borderColor: '#111',
     overflow: 'hidden',
   },
+
   sheetHeader: {
     paddingHorizontal: 16,
     paddingVertical: 14,
@@ -103,14 +141,61 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  sheetTitle: { fontSize: 16, fontWeight: '900' },
+
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
   closeBtn: {
     borderWidth: 1,
     borderColor: '#111',
     borderRadius: 12,
     padding: 8,
   },
+
+  closeBtnDisabled: {
+    opacity: 0.5,
+  },
+
   body: {
     flex: 1,
+  },
+
+  localBlockingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 99999,
+    elevation: 99999,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  localBlockingCard: {
+    minWidth: 220,
+    maxWidth: 300,
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+
+  localBlockingTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#111',
+  },
+
+  localBlockingText: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#444',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
