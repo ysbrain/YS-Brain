@@ -20,15 +20,15 @@ import type { SetupStoredItem } from '@/src/hooks/autoclave/types';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
 import { useAutoclaveDailyOpsActions } from '@/src/hooks/autoclave/useAutoclaveDailyOpsActions';
 import { useAutoclaveDailyOpsCycle } from '@/src/hooks/autoclave/useAutoclaveDailyOpsCycle';
+import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -41,11 +41,6 @@ import {
 } from 'react-native';
 
 type PickerField = 'startTime' | 'unloadTime';
-
-// Something measurable for auto-scroll
-type MeasurableRef = {
-  measureInWindow: (cb: (x: number, y: number, w: number, h: number) => void) => void;
-};
 
 type DailyFieldKey =
   | 'daily:maxTemp'
@@ -246,105 +241,25 @@ export default function AutoclaveScreen() {
   const overlayText = isDark ? '#fff' : '#111';
   const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
 
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollYRef = useRef(0);
-  const inputRefs = useRef<Record<string, MeasurableRef | null>>({});
-  const focusedKeyRef = useRef<string | null>(null);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  // ----- Scroll behavior -----
-  const SAFE_GAP = 12;
-  const FOCUS_ANCHOR_RATIO = 0.4;
-  const SCROLL_DEBOUNCE_MS = 16;
-  const SCROLL_COOLDOWN_MS = 120;
-  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingScrollKeyRef = useRef<string | null>(null);
-  const lastScrollAtRef = useRef(0);
-  const scrollReqIdRef = useRef(0);
-
   const IOS_PICKER_HEIGHT = 216;
   const IOS_PICKER_HEADER_HEIGHT = 44;
   const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12;
-  const pickerOverlayHeight = Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
-  const bottomObstruction = Math.max(keyboardHeight, pickerOverlayHeight);
-  const contentBottomPadding = 24 + SAFE_GAP + bottomObstruction;
 
-  const requestScroll = useCallback(
-    (key: string, reason: string, delayMs = SCROLL_DEBOUNCE_MS) => {
-      pendingScrollKeyRef.current = key;
+  const pickerOverlayHeight =
+    Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
 
-      if (pendingScrollTimerRef.current) {
-        clearTimeout(pendingScrollTimerRef.current);
-        pendingScrollTimerRef.current = null;
-      }
-
-      pendingScrollTimerRef.current = setTimeout(() => {
-        const latestKey = pendingScrollKeyRef.current;
-        if (!latestKey) return;
-
-        const now = Date.now();
-        const elapsed = now - lastScrollAtRef.current;
-        const bypassCooldown = reason === 'validation';
-
-        if (!bypassCooldown && elapsed < SCROLL_COOLDOWN_MS) {
-          const remaining = SCROLL_COOLDOWN_MS - elapsed;
-          requestScroll(latestKey, reason, remaining);
-          return;
-        }
-
-        lastScrollAtRef.current = now;
-        const reqId = ++scrollReqIdRef.current;
-
-        requestAnimationFrame(() => {
-          const input = inputRefs.current[latestKey];
-          if (!input?.measureInWindow) return;
-
-          input.measureInWindow((_x, y, _w, _h) => {
-            if (reqId !== scrollReqIdRef.current) return;
-
-            const windowH = Dimensions.get('window').height;
-            const targetY = windowH * FOCUS_ANCHOR_RATIO;
-
-            if (y <= targetY) return;
-
-            const delta = y - targetY;
-            const nextY = Math.max(0, scrollYRef.current + delta);
-            scrollRef.current?.scrollTo({ y: nextY, animated: true });
-          });
-        });
-      }, delayMs);
-    },
-    [],
-  );
-
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      const h = e.endCoordinates?.height ?? 0;
-      setKeyboardHeight(h);
-
-      const key = focusedKeyRef.current;
-      if (key) requestScroll(key, 'keyboardShow', 50);
-    });
-
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-      if (pendingScrollTimerRef.current) clearTimeout(pendingScrollTimerRef.current);
-    };
-  }, [requestScroll]);
-
-  useEffect(() => {
-    if (!activePicker) return;
-    const key = `daily:${activePicker.field}`;
-    requestAnimationFrame(() => requestScroll(key, 'pickerOpen', 0));
-  }, [activePicker, requestScroll]);
+  const {
+    scrollRef,
+    registerFieldRef,
+    onFieldFocus,
+    onFieldBlur,
+    handleScroll,
+    requestScroll,
+    contentBottomPadding,
+  } = useKeyboardAwareFieldScroll({
+    activeOverlayFieldKey: activePicker ? `daily:${activePicker.field}` : null,
+    overlayHeight: pickerOverlayHeight,
+  });
 
   useEffect(() => {
     setMaxTemp((prev) =>
@@ -581,9 +496,7 @@ export default function AutoclaveScreen() {
         <View style={styles.twoColRow}>
           <View style={styles.twoColItem}>
             <AutoclaveTextField
-              ref={(r) => {
-                inputRefs.current['daily:maxTemp'] = r as any;
-              }}
+              ref={registerFieldRef('daily:maxTemp')}
               label="Max Temp (°C)"
               value={maxTemp}
               onChangeText={(t) => {
@@ -594,23 +507,14 @@ export default function AutoclaveScreen() {
               error={formErrorField === 'daily:maxTemp'}
               keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               maxLength={3}
-              onFocus={() => {
-                focusedKeyRef.current = 'daily:maxTemp';
-                requestScroll('daily:maxTemp', 'focus');
-              }}
-              onBlur={() => {
-                if (focusedKeyRef.current === 'daily:maxTemp') {
-                  focusedKeyRef.current = null;
-                }
-              }}
+              onFocus={() => onFieldFocus('daily:maxTemp')}
+              onBlur={() => onFieldBlur('daily:maxTemp')}
             />
           </View>
 
           <View style={styles.twoColItem}>
             <AutoclaveTextField
-              ref={(r) => {
-                inputRefs.current['daily:pressure'] = r as any;
-              }}
+              ref={registerFieldRef('daily:pressure')}
               label="Pressure"
               value={pressure}
               onChangeText={(t) => {
@@ -621,28 +525,19 @@ export default function AutoclaveScreen() {
               error={formErrorField === 'daily:pressure'}
               keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               maxLength={3}
-              onFocus={() => {
-                focusedKeyRef.current = 'daily:pressure';
-                requestScroll('daily:pressure', 'focus');
-              }}
-              onBlur={() => {
-                if (focusedKeyRef.current === 'daily:pressure') {
-                  focusedKeyRef.current = null;
-                }
-              }}
+              onFocus={() => onFieldFocus('daily:pressure')}
+              onBlur={() => onFieldBlur('daily:pressure')}
             />
           </View>
         </View>
 
         <AutoclaveTimeField
-          ref={(r: any) => {
-            inputRefs.current['daily:startTime'] = r as any;
-          }}
+          ref={registerFieldRef('daily:startTime')}
           label="Start Time"
           value={startTime}
           error={formErrorField === 'daily:startTime'}
           onPress={() => {
-            focusedKeyRef.current = 'daily:startTime';
+            onFieldFocus('daily:startTime');
             if (formErrorField === 'daily:startTime') setFormErrorField(null);
             openPicker('startTime', 'time');
           }}
@@ -749,14 +644,12 @@ export default function AutoclaveScreen() {
         </View>
 
         <AutoclaveTimeField
-          ref={(r: any) => {
-            inputRefs.current['daily:unloadTime'] = r as any;
-          }}
+          ref={registerFieldRef('daily:unloadTime')}
           label="Unload Time"
           value={unloadTime}
           error={formErrorField === 'daily:unloadTime'}
           onPress={() => {
-            focusedKeyRef.current = 'daily:unloadTime';
+            onFieldFocus('daily:unloadTime');
             if (formErrorField === 'daily:unloadTime') setFormErrorField(null);
             openPicker('unloadTime', 'time');
           }}
@@ -768,9 +661,7 @@ export default function AutoclaveScreen() {
           <View style={styles.verifyDivider} />
 
           <AutoclavePassFailField
-            ref={(r: any) => {
-              inputRefs.current['daily:internalIndicator'] = r as any;
-            }}
+            ref={registerFieldRef('daily:internalIndicator')}
             label="Internal Indicator"
             value={internalIndicator}
             error={formErrorField === 'daily:internalIndicator'}
@@ -783,9 +674,7 @@ export default function AutoclaveScreen() {
           />
 
           <AutoclavePassFailField
-            ref={(r: any) => {
-              inputRefs.current['daily:externalIndicator'] = r as any;
-            }}
+            ref={registerFieldRef('daily:externalIndicator')}
             label="External Indicator"
             value={externalIndicator}
             error={formErrorField === 'daily:externalIndicator'}
@@ -798,14 +687,12 @@ export default function AutoclaveScreen() {
           />
 
           <AutoclavePhotoField
-            ref={(r: any) => {
-              inputRefs.current['daily:photoEvidence'] = r as any;
-            }}
+            ref={registerFieldRef('daily:photoEvidence')}
             label="Photo Evidence"
             photoUri={photoUri}
             error={formErrorField === 'daily:photoEvidence'}
             onPress={() => {
-              focusedKeyRef.current = 'daily:photoEvidence';
+              onFieldFocus('daily:photoEvidence');
               if (formErrorField === 'daily:photoEvidence') {
                 setFormErrorField(null);
               }
@@ -816,21 +703,12 @@ export default function AutoclaveScreen() {
           />
 
           <AutoclaveNotesField
-            ref={(r) => {
-              inputRefs.current['daily:notes'] = r as any;
-            }}
+            ref={registerFieldRef('daily:notes')}
             label="Notes (Optional)"
             value={notes}
             onChangeText={setNotes}
-            onFocus={() => {
-              focusedKeyRef.current = 'daily:notes';
-              requestScroll('daily:notes', 'focus');
-            }}
-            onBlur={() => {
-              if (focusedKeyRef.current === 'daily:notes') {
-                focusedKeyRef.current = null;
-              }
-            }}
+            onFocus={() => onFieldFocus('daily:notes')}
+            onBlur={() => onFieldBlur('daily:notes')}
           />
 
           <Pressable
@@ -886,9 +764,7 @@ export default function AutoclaveScreen() {
             contentContainerStyle={[styles.scrollContent, { paddingBottom: contentBottomPadding }]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            onScroll={(e) => {
-              scrollYRef.current = e.nativeEvent.contentOffset.y;
-            }}
+            onScroll={handleScroll}
             scrollEventThrottle={16}
           >
             {activeTab === 'dailyOps' && renderDailyOps()}
