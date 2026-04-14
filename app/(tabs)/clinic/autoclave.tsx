@@ -1,6 +1,18 @@
 // app/(tabs)/clinic/autoclave.tsx
 
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
+import {
+  AutoclaveTabBar,
+  type AutoclaveTabKey,
+} from '@/src/components/autoclave/AutoclaveTabBar';
+import {
+  AutoclaveNotesField,
+  AutoclavePassFailField,
+  AutoclavePhotoField,
+  AutoclaveReadonlyField,
+  AutoclaveTextField,
+  AutoclaveTimeField,
+} from '@/src/components/autoclave/DailyOpsFields';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
@@ -17,7 +29,6 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -25,12 +36,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   useColorScheme,
-  View,
+  View
 } from 'react-native';
 
-type TabKey = 'dailyOps' | 'helix' | 'spore';
 type PickerField = 'startTime' | 'unloadTime';
 
 // Something measurable for auto-scroll
@@ -177,7 +186,7 @@ export default function AutoclaveScreen() {
   const roomId = normalizeParam(params.roomId);
   const applianceId = normalizeParam(params.applianceId);
 
-  const [activeTab, setActiveTab] = useState<TabKey>('dailyOps');
+  const [activeTab, setActiveTab] = useState<AutoclaveTabKey>('dailyOps');
 
   const [saving, setSaving] = useState(false);
 
@@ -564,40 +573,26 @@ export default function AutoclaveScreen() {
           <Text style={styles.heroSubtitle}>Set parameters and begin sterilization.</Text>
         </View>
 
-        <View style={styles.fieldBlock}>
-          <Text style={styles.fieldLabel}>Cycle ID</Text>
-          <View style={styles.readonlyField}>
-            <Text style={styles.readonlyValue}>{cycleIdPreview}</Text>
-          </View>
-        </View>
+        <AutoclaveReadonlyField
+          label="Cycle ID"
+          value={cycleIdPreview}
+        />
 
         <View style={styles.twoColRow}>
-          <View style={[styles.fieldBlock, styles.twoColItem]}>
-            <Text
-              style={[
-                styles.fieldLabel,
-                formErrorField === 'daily:maxTemp' && styles.errorLabel,
-              ]}
-            >
-              Max Temp (°C)
-            </Text>
-            <TextInput
+          <View style={styles.twoColItem}>
+            <AutoclaveTextField
               ref={(r) => {
                 inputRefs.current['daily:maxTemp'] = r as any;
               }}
+              label="Max Temp (°C)"
               value={maxTemp}
               onChangeText={(t) => {
                 setMaxTemp(t);
                 if (formErrorField === 'daily:maxTemp') setFormErrorField(null);
               }}
-              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               placeholder="Enter temp"
-              placeholderTextColor="#94a3b8"
-              style={[
-                styles.textInput,
-                formErrorField === 'daily:maxTemp' && styles.errorBorder,
-              ]}
-              returnKeyType="done"
+              error={formErrorField === 'daily:maxTemp'}
+              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               maxLength={3}
               onFocus={() => {
                 focusedKeyRef.current = 'daily:maxTemp';
@@ -611,32 +606,20 @@ export default function AutoclaveScreen() {
             />
           </View>
 
-          <View style={[styles.fieldBlock, styles.twoColItem]}>
-            <Text
-              style={[
-                styles.fieldLabel,
-                formErrorField === 'daily:pressure' && styles.errorLabel,
-              ]}
-            >
-              Pressure
-            </Text>
-            <TextInput
+          <View style={styles.twoColItem}>
+            <AutoclaveTextField
               ref={(r) => {
                 inputRefs.current['daily:pressure'] = r as any;
               }}
+              label="Pressure"
               value={pressure}
               onChangeText={(t) => {
                 setPressure(t);
                 if (formErrorField === 'daily:pressure') setFormErrorField(null);
               }}
-              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               placeholder="Enter pressure"
-              placeholderTextColor="#94a3b8"
-              style={[
-                styles.textInput,
-                formErrorField === 'daily:pressure' && styles.errorBorder,
-              ]}
-              returnKeyType="done"
+              error={formErrorField === 'daily:pressure'}
+              keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
               maxLength={3}
               onFocus={() => {
                 focusedKeyRef.current = 'daily:pressure';
@@ -651,36 +634,19 @@ export default function AutoclaveScreen() {
           </View>
         </View>
 
-        <View style={styles.fieldBlock}>
-          <Text
-            style={[
-              styles.fieldLabel,
-              formErrorField === 'daily:startTime' && styles.errorLabel,
-            ]}
-          >
-            Start Time
-          </Text>
-
-          <Pressable
-            ref={(r: any) => {
-              inputRefs.current['daily:startTime'] = r as any;
-            }}
-            collapsable={false}
-            onPress={() => {
-              focusedKeyRef.current = 'daily:startTime';
-              if (formErrorField === 'daily:startTime') setFormErrorField(null);
-              openPicker('startTime', 'time');
-            }}
-            style={({ pressed }) => [
-              styles.timeField,
-              formErrorField === 'daily:startTime' && styles.errorBorder,
-              pressed && { opacity: 0.88 },
-            ]}
-            accessibilityRole="button"
-          >
-            <Text style={styles.timeValue}>{startTime}</Text>
-          </Pressable>
-        </View>
+        <AutoclaveTimeField
+          ref={(r: any) => {
+            inputRefs.current['daily:startTime'] = r as any;
+          }}
+          label="Start Time"
+          value={startTime}
+          error={formErrorField === 'daily:startTime'}
+          onPress={() => {
+            focusedKeyRef.current = 'daily:startTime';
+            if (formErrorField === 'daily:startTime') setFormErrorField(null);
+            openPicker('startTime', 'time');
+          }}
+        />
 
         <Pressable
           onPress={onStartMachine}
@@ -782,260 +748,90 @@ export default function AutoclaveScreen() {
           </View>
         </View>
 
-        <View style={styles.fieldBlock}>
-          <Text
-            style={[
-              styles.fieldLabel,
-              formErrorField === 'daily:unloadTime' && styles.errorLabel,
-            ]}
-          >
-            Unload Time
-          </Text>
-
-          <Pressable
-            ref={(r: any) => {
-              inputRefs.current['daily:unloadTime'] = r as any;
-            }}
-            collapsable={false}
-            onPress={() => {
-              focusedKeyRef.current = 'daily:unloadTime';
-              if (formErrorField === 'daily:unloadTime') setFormErrorField(null);
-              openPicker('unloadTime', 'time');
-            }}
-            style={({ pressed }) => [
-              styles.timeField,
-              formErrorField === 'daily:unloadTime' && styles.errorBorder,
-              pressed && { opacity: 0.88 },
-            ]}
-            accessibilityRole="button"
-          >
-            <Text style={styles.timeValue}>{unloadTime}</Text>
-          </Pressable>
-        </View>
+        <AutoclaveTimeField
+          ref={(r: any) => {
+            inputRefs.current['daily:unloadTime'] = r as any;
+          }}
+          label="Unload Time"
+          value={unloadTime}
+          error={formErrorField === 'daily:unloadTime'}
+          onPress={() => {
+            focusedKeyRef.current = 'daily:unloadTime';
+            if (formErrorField === 'daily:unloadTime') setFormErrorField(null);
+            openPicker('unloadTime', 'time');
+          }}
+        />
 
         <View style={styles.verifySection}>
           <Text style={styles.verifyTitle}>Verification Check</Text>
 
           <View style={styles.verifyDivider} />
 
-          <View style={styles.fieldBlock}>
-            <Text
-              style={[
-                styles.verifyFieldLabel,
-                formErrorField === 'daily:internalIndicator' && styles.errorLabel,
-              ]}
-            >
-              Internal Indicator<Text style={styles.required}> *</Text>
-            </Text>
+          <AutoclavePassFailField
+            ref={(r: any) => {
+              inputRefs.current['daily:internalIndicator'] = r as any;
+            }}
+            label="Internal Indicator"
+            value={internalIndicator}
+            error={formErrorField === 'daily:internalIndicator'}
+            onChange={(value) => {
+              setInternalIndicator(value);
+              if (formErrorField === 'daily:internalIndicator') {
+                setFormErrorField(null);
+              }
+            }}
+          />
 
-            <View
-              ref={(r: any) => {
-                inputRefs.current['daily:internalIndicator'] = r as any;
-              }}
-              collapsable={false}
-            >
-              <View style={styles.booleanRow}>
-                <Pressable
-                  onPress={() => {
-                    setInternalIndicator(true);
-                    if (formErrorField === 'daily:internalIndicator') setFormErrorField(null);
-                  }}
-                  style={({ pressed }) => [
-                    styles.booleanBtn,
-                    formErrorField === 'daily:internalIndicator' && styles.errorBorder,
-                    internalIndicator === true && styles.booleanBtnPassActive,
-                    pressed && { opacity: 0.9 },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <MaterialCommunityIcons
-                    name="shield-check-outline"
-                    size={18}
-                    color={internalIndicator === true ? '#15803d' : '#94a3b8'}
-                  />
-                  <Text
-                    style={[
-                      styles.booleanBtnText,
-                      internalIndicator === true && styles.booleanBtnTextPassActive,
-                    ]}
-                  >
-                    Pass
-                  </Text>
-                </Pressable>
+          <AutoclavePassFailField
+            ref={(r: any) => {
+              inputRefs.current['daily:externalIndicator'] = r as any;
+            }}
+            label="External Indicator"
+            value={externalIndicator}
+            error={formErrorField === 'daily:externalIndicator'}
+            onChange={(value) => {
+              setExternalIndicator(value);
+              if (formErrorField === 'daily:externalIndicator') {
+                setFormErrorField(null);
+              }
+            }}
+          />
 
-                <Pressable
-                  onPress={() => {
-                    setInternalIndicator(false);
-                    if (formErrorField === 'daily:internalIndicator') setFormErrorField(null);
-                  }}
-                  style={({ pressed }) => [
-                    styles.booleanBtn,
-                    formErrorField === 'daily:internalIndicator' && styles.errorBorder,
-                    internalIndicator === false && styles.booleanBtnFailActive,
-                    pressed && { opacity: 0.9 },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <MaterialCommunityIcons
-                    name="shield-alert-outline"
-                    size={18}
-                    color={internalIndicator === false ? '#b91c1c' : '#94a3b8'}
-                  />
-                  <Text
-                    style={[
-                      styles.booleanBtnText,
-                      internalIndicator === false && styles.booleanBtnTextFailActive,
-                    ]}
-                  >
-                    Fail
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
+          <AutoclavePhotoField
+            ref={(r: any) => {
+              inputRefs.current['daily:photoEvidence'] = r as any;
+            }}
+            label="Photo Evidence"
+            photoUri={photoUri}
+            error={formErrorField === 'daily:photoEvidence'}
+            onPress={() => {
+              focusedKeyRef.current = 'daily:photoEvidence';
+              if (formErrorField === 'daily:photoEvidence') {
+                setFormErrorField(null);
+              }
+              setCameraOpen(true);
+            }}
+            aspectRatioFilled={PHOTO_ASPECT}
+            aspectRatioEmpty={PHOTO_ASPECT_EMPTY}
+          />
 
-          <View style={styles.fieldBlock}>
-            <Text
-              style={[
-                styles.verifyFieldLabel,
-                formErrorField === 'daily:externalIndicator' && styles.errorLabel,
-              ]}
-            >
-              External Indicator<Text style={styles.required}> *</Text>
-            </Text>
-
-            <View
-              ref={(r: any) => {
-                inputRefs.current['daily:externalIndicator'] = r as any;
-              }}
-              collapsable={false}
-            >
-              <View style={styles.booleanRow}>
-                <Pressable
-                  onPress={() => {
-                    setExternalIndicator(true);
-                    if (formErrorField === 'daily:externalIndicator') setFormErrorField(null);
-                  }}
-                  style={({ pressed }) => [
-                    styles.booleanBtn,
-                    formErrorField === 'daily:externalIndicator' && styles.errorBorder,
-                    externalIndicator === true && styles.booleanBtnPassActive,
-                    pressed && { opacity: 0.9 },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <MaterialCommunityIcons
-                    name="shield-check-outline"
-                    size={18}
-                    color={externalIndicator === true ? '#15803d' : '#94a3b8'}
-                  />
-                  <Text
-                    style={[
-                      styles.booleanBtnText,
-                      externalIndicator === true && styles.booleanBtnTextPassActive,
-                    ]}
-                  >
-                    Pass
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => {
-                    setExternalIndicator(false);
-                    if (formErrorField === 'daily:externalIndicator') setFormErrorField(null);
-                  }}
-                  style={({ pressed }) => [
-                    styles.booleanBtn,
-                    formErrorField === 'daily:externalIndicator' && styles.errorBorder,
-                    externalIndicator === false && styles.booleanBtnFailActive,
-                    pressed && { opacity: 0.9 },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <MaterialCommunityIcons
-                    name="shield-alert-outline"
-                    size={18}
-                    color={externalIndicator === false ? '#b91c1c' : '#94a3b8'}
-                  />
-                  <Text
-                    style={[
-                      styles.booleanBtnText,
-                      externalIndicator === false && styles.booleanBtnTextFailActive,
-                    ]}
-                  >
-                    Fail
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.fieldBlock}>
-            <Text
-              style={[
-                styles.verifyFieldLabel,
-                formErrorField === 'daily:photoEvidence' && styles.errorLabel,
-              ]}
-            >
-              Photo Evidence<Text style={styles.required}> *</Text>
-            </Text>
-
-            <Pressable
-              ref={(r: any) => {
-                inputRefs.current['daily:photoEvidence'] = r as any;
-              }}
-              collapsable={false}
-              onPress={() => {
-                focusedKeyRef.current = 'daily:photoEvidence';
-                if (formErrorField === 'daily:photoEvidence') setFormErrorField(null);
-                setCameraOpen(true);
-              }}
-              style={({ pressed }) => [
-                styles.photoBox,
-                formErrorField === 'daily:photoEvidence' && styles.errorBorder,
-                {
-                  aspectRatio: photoUri ? PHOTO_ASPECT : PHOTO_ASPECT_EMPTY,
-                  maxHeight: 280,
-                },
-                pressed && { opacity: 0.9 },
-              ]}
-              accessibilityRole="button"
-            >
-              {photoUri ? (
-                <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
-              ) : (
-                <View style={styles.photoPlaceholder}>
-                  <MaterialCommunityIcons name="camera-outline" size={30} color="#94a3b8" />
-                  <Text style={styles.photoPlaceholderText}>Tap to Capture Result</Text>
-                </View>
-              )}
-            </Pressable>
-          </View>
-
-          <View style={styles.fieldBlock}>
-            <Text style={styles.verifyFieldLabel}>Notes (Optional)</Text>
-
-            <TextInput
-              ref={(r) => {
-                inputRefs.current['daily:notes'] = r as any;
-              }}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Any issues observed?"
-              placeholderTextColor="#999"
-              style={styles.notesInput}
-              returnKeyType="done"
-              onFocus={() => {
-                focusedKeyRef.current = 'daily:notes';
-                requestScroll('daily:notes', 'focus');
-              }}
-              onBlur={() => {
-                if (focusedKeyRef.current === 'daily:notes') {
-                  focusedKeyRef.current = null;
-                }
-              }}
-            />
-          </View>
+          <AutoclaveNotesField
+            ref={(r) => {
+              inputRefs.current['daily:notes'] = r as any;
+            }}
+            label="Notes (Optional)"
+            value={notes}
+            onChangeText={setNotes}
+            onFocus={() => {
+              focusedKeyRef.current = 'daily:notes';
+              requestScroll('daily:notes', 'focus');
+            }}
+            onBlur={() => {
+              if (focusedKeyRef.current === 'daily:notes') {
+                focusedKeyRef.current = null;
+              }
+            }}
+          />
 
           <Pressable
             onPress={onFinishAndUnload}
@@ -1068,53 +864,11 @@ export default function AutoclaveScreen() {
         style={styles.screen}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.tabBar}>
-          <Pressable
-            onPress={() => setActiveTab('dailyOps')}
-            style={[styles.tabButton, activeTab === 'dailyOps' && styles.tabButtonActive]}
-          >
-            <MaterialCommunityIcons
-              name="play-outline"
-              size={20}
-              color={activeTab === 'dailyOps' ? '#2c7a7b' : '#64748b'}
-            />
-            <Text style={[styles.tabText, activeTab === 'dailyOps' && styles.tabTextActive]}>
-              Daily Ops
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setActiveTab('helix')}
-            style={[styles.tabButton, activeTab === 'helix' && styles.tabButtonActive]}
-          >
-            <MaterialCommunityIcons
-              name="timer-sand"
-              size={20}
-              color={activeTab === 'helix' ? '#2c7a7b' : '#64748b'}
-            />
-            <Text style={[styles.tabText, activeTab === 'helix' && styles.tabTextActive]}>
-              Helix
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setActiveTab('spore')}
-            style={[
-              styles.tabButton,
-              styles.tabButtonLast,
-              activeTab === 'spore' && styles.tabButtonActive,
-            ]}
-          >
-            <MaterialCommunityIcons
-              name="test-tube"
-              size={20}
-              color={activeTab === 'spore' ? '#2c7a7b' : '#64748b'}
-            />
-            <Text style={[styles.tabText, activeTab === 'spore' && styles.tabTextActive]}>
-              Spore
-            </Text>
-          </Pressable>
-        </View>
+        <AutoclaveTabBar
+          activeTab={activeTab}
+          onChangeTab={setActiveTab}
+          disabled={saving}
+        />
 
         {loading ? (
           <View style={styles.centerWrap}>
@@ -1202,43 +956,6 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#f3f4f6',
-  },
-
-  tabBar: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#111',
-    backgroundColor: '#fff',
-  },
-
-  tabButton: {
-    flex: 1,
-    minHeight: 54,
-    borderRightWidth: 1,
-    borderRightColor: '#111',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#fff',
-  },
-
-  tabButtonLast: {
-    borderRightWidth: 0,
-  },
-
-  tabButtonActive: {
-    backgroundColor: '#f8fafc',
-  },
-
-  tabText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748b',
-  },
-
-  tabTextActive: {
-    color: '#2c7a7b',
   },
 
   scroll: {
@@ -1406,34 +1123,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
 
-  fieldBlock: {
-    gap: 8,
-    marginBottom: 16,
-  },
-
-  fieldLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748b',
-  },
-
-  readonlyField: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    minHeight: 56,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-
-  readonlyValue: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#475569',
-    textAlign: 'center',
-  },
-
   twoColRow: {
     flexDirection: 'row',
     gap: 12,
@@ -1441,35 +1130,6 @@ const styles = StyleSheet.create({
 
   twoColItem: {
     flex: 1,
-  },
-
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    minHeight: 52,
-    paddingHorizontal: 14,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#334155',
-  },
-
-  timeField: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    minHeight: 52,
-    justifyContent: 'center',
-    paddingHorizontal: 14,
-  },
-
-  timeValue: {
-    fontSize: 24,
-    fontWeight: '500',
-    color: '#475569',
-    textAlign: 'center',
   },
 
   startButton: {
@@ -1506,99 +1166,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#e5e7eb',
     marginTop: 10,
     marginBottom: 14,
-  },
-
-  verifyFieldLabel: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#64748b',
-  },
-
-  required: {
-    color: '#B00020',
-  },
-
-  booleanRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-
-  booleanBtn: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    gap: 6,
-    flexDirection: 'row',
-  },
-
-  booleanBtnPassActive: {
-    backgroundColor: '#dcfce7',
-    borderColor: '#22c55e',
-  },
-
-  booleanBtnFailActive: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-  },
-
-  booleanBtnText: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#94a3b8',
-  },
-
-  booleanBtnTextPassActive: {
-    color: '#15803d',
-  },
-
-  booleanBtnTextFailActive: {
-    color: '#b91c1c',
-  },
-
-  photoBox: {
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: '#cbd5e1',
-    borderRadius: 12,
-    backgroundColor: '#f8fafc',
-    overflow: 'hidden',
-    width: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  photoPlaceholder: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-  },
-
-  photoPlaceholderText: {
-    color: '#94a3b8',
-    fontWeight: '700',
-  },
-
-  photoPreview: {
-    width: '100%',
-    height: '100%',
-  },
-
-  notesInput: {
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    minHeight: 46,
-    paddingHorizontal: 14,
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#334155',
   },
 
   finishButton: {
@@ -1695,14 +1262,5 @@ const styles = StyleSheet.create({
     width: '100%',
     minWidth: 280,
     height: 216,
-  },
-
-  errorLabel: {
-    color: '#B00020',
-  },
-
-  errorBorder: {
-    borderColor: '#B00020',
-    borderWidth: 2,
   },
 });
