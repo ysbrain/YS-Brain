@@ -1,28 +1,25 @@
+import UiLockOverlayCard from '@/src/components/ui-lock/UiLockOverlayCard';
+import { uiLockOverlayStyles } from '@/src/components/ui-lock/uiLockOverlayStyles';
 import { useUiLock } from '@/src/contexts/UiLockContext';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import React from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+} from 'react-native';
 
 type BottomSheetShellProps = {
   visible: boolean;
   title: string;
   onClose: () => void;
-
-  /**
-   * Size control:
-   * - Use height (e.g. '88%') when you want a fixed sheet height.
-   * - Use maxHeight (e.g. '80%') when you want it to grow with content.
-   */
   height?: ViewStyle['height'];
   maxHeight?: ViewStyle['maxHeight'];
-
-  /** Optional content between header and body (e.g. "Add to Room" row) */
   topSlot?: React.ReactNode;
-
-  /** Main content */
   children: React.ReactNode;
-
-  /** Optional style overrides */
   sheetStyle?: ViewStyle;
   bodyStyle?: ViewStyle;
 };
@@ -39,7 +36,7 @@ export default function BottomSheetShell({
   bodyStyle,
 }: BottomSheetShellProps) {
   const { uiLocked } = useUiLock();
-  
+
   return (
     <Modal
       visible={visible}
@@ -50,7 +47,6 @@ export default function BottomSheetShell({
       }}
     >
       <View style={styles.modalRoot}>
-        {/* Backdrop */}
         <Pressable
           style={styles.backdrop}
           onPress={() => {
@@ -58,7 +54,6 @@ export default function BottomSheetShell({
           }}
         />
 
-        {/* Sheet */}
         <View
           style={[
             styles.sheet,
@@ -90,16 +85,9 @@ export default function BottomSheetShell({
             {children}
           </View>
 
-          {/* Local lock overlay INSIDE the modal layer */}
           {uiLocked && (
-            <View style={styles.localBlockingOverlay} pointerEvents="auto">
-              <View style={styles.localBlockingCard}>
-                <ActivityIndicator size="large" color="#111" />
-                <Text style={styles.localBlockingTitle}>Saving record…</Text>
-                <Text style={styles.localBlockingText}>
-                  Please wait. Uploading may take a few seconds.
-                </Text>
-              </View>
+            <View style={uiLockOverlayStyles.overlayContainer} pointerEvents="auto">
+              <UiLockOverlayCard />
             </View>
           )}
         </View>
@@ -160,42 +148,5 @@ const styles = StyleSheet.create({
 
   body: {
     flex: 1,
-  },
-
-  localBlockingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 99999,
-    elevation: 99999,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  localBlockingCard: {
-    minWidth: 220,
-    maxWidth: 300,
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 18,
-    backgroundColor: '#fff',
-    paddingHorizontal: 18,
-    paddingVertical: 20,
-    alignItems: 'center',
-  },
-
-  localBlockingTitle: {
-    marginTop: 12,
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#111',
-  },
-
-  localBlockingText: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#444',
-    textAlign: 'center',
-    lineHeight: 18,
   },
 });
