@@ -35,7 +35,9 @@ export default function BottomSheetShell({
   sheetStyle,
   bodyStyle,
 }: BottomSheetShellProps) {
-  const { uiLocked } = useUiLock();
+  const { uiLocked, uiLockScope } = useUiLock();
+
+  const modalLocked = uiLocked && uiLockScope === 'modal';
 
   return (
     <Modal
@@ -43,14 +45,14 @@ export default function BottomSheetShell({
       transparent
       animationType="slide"
       onRequestClose={() => {
-        if (!uiLocked) onClose();
+        if (!modalLocked) onClose();
       }}
     >
       <View style={styles.modalRoot}>
         <Pressable
           style={styles.backdrop}
           onPress={() => {
-            if (!uiLocked) onClose();
+            if (!modalLocked) onClose();
           }}
         />
 
@@ -67,11 +69,11 @@ export default function BottomSheetShell({
 
             <Pressable
               onPress={onClose}
-              disabled={uiLocked}
+              disabled={modalLocked}
               style={({ pressed }) => [
                 styles.closeBtn,
-                uiLocked && styles.closeBtnDisabled,
-                pressed && !uiLocked && { opacity: 0.85 },
+                modalLocked && styles.closeBtnDisabled,
+                pressed && !modalLocked && { opacity: 0.85 },
               ]}
               accessibilityRole="button"
             >
@@ -85,7 +87,7 @@ export default function BottomSheetShell({
             {children}
           </View>
 
-          {uiLocked && (
+          {modalLocked && (
             <View style={uiLockOverlayStyles.overlayContainer} pointerEvents="auto">
               <UiLockOverlayCard />
             </View>

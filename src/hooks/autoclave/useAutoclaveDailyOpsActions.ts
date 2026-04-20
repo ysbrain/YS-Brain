@@ -1,3 +1,5 @@
+// src/hooks/autoclave/useAutoclaveDailyOpsActions.ts
+
 import {
   collection,
   doc,
@@ -48,6 +50,12 @@ type SetupValueToStringFn = (
 type FormatDateYYYYMMDDCompactFn = (date: Date) => string;
 type Pad2Fn = (value: number) => string;
 
+type UiLockScope = 'global' | 'modal';
+type SetUiLockedFn = (
+  locked: boolean,
+  options?: { scope?: UiLockScope },
+) => void;
+
 type UseAutoclaveDailyOpsActionsParams = {
   clinicId?: string | null;
   roomId?: string | null;
@@ -60,7 +68,7 @@ type UseAutoclaveDailyOpsActionsParams = {
   loadError: string | null;
   saving: boolean;
   setSaving: (value: boolean) => void;
-  setUiLocked: (value: boolean) => void;
+  setUiLocked: SetUiLockedFn;
 
   isRunning: boolean;
   currentCycle: string;
@@ -211,7 +219,7 @@ export function useAutoclaveDailyOpsActions({
     Keyboard.dismiss();
     setActivePicker(null);
     setSaving(true);
-    setUiLocked(true);
+    setUiLocked(true, { scope: 'global' });
 
     try {
       const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
@@ -453,7 +461,7 @@ export function useAutoclaveDailyOpsActions({
     Keyboard.dismiss();
     setActivePicker(null);
     setSaving(true);
-    setUiLocked(true);
+    setUiLocked(true, { scope: 'global' });
 
     let uploadedFileRef: ReturnType<typeof storageRef> | null = null;
     let finishCommitted = false;

@@ -508,7 +508,7 @@ export default function ClinicRecordScreen() {
     }
 
     setSaving(true);
-    setUiLocked(true);
+    setUiLocked(true, { scope: 'global' });
 
     try {
       const storage = getStorage();

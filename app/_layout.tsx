@@ -1,6 +1,6 @@
 // app/_layout.tsx
 
-import GlobalUiLockOverlay from '@/src/components/GlobalUiLockOverlay';
+import GlobalUiLockOverlay from '@/src/components/ui-lock/GlobalUiLockOverlay';
 import { AuthProvider } from '@/src/contexts/AuthContext';
 import { UiLockProvider } from '@/src/contexts/UiLockContext';
 import { Stack } from 'expo-router';

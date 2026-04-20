@@ -491,7 +491,7 @@ export default function AddApplianceToRoomModal({
 
     try {
       setSaving(true);
-      setUiLocked(true);
+      setUiLocked(true, { scope: 'modal' });
 
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
       const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
