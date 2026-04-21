@@ -1,3 +1,5 @@
+// src/components/autoclave/AutoclaveTabBar.tsx
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

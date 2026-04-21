@@ -20,6 +20,7 @@ import type { SetupStoredItem } from '@/src/hooks/autoclave/types';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
 import { useAutoclaveDailyOpsActions } from '@/src/hooks/autoclave/useAutoclaveDailyOpsActions';
 import { useAutoclaveDailyOpsCycle } from '@/src/hooks/autoclave/useAutoclaveDailyOpsCycle';
+import { sanitizeIdPart } from '@/src/hooks/autoclave/utils';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -69,6 +70,36 @@ function formatDateYYYYMMDDCompact(d: Date): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yyyy}${mm}${dd}`;
+}
+
+function useTodayKey(): string {
+  const [todayKey, setTodayKey] = useState(() =>
+    formatDateYYYYMMDDCompact(new Date())
+  );
+
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const sync = () => {
+      setTodayKey(formatDateYYYYMMDDCompact(new Date()));
+    };
+
+    const now = new Date();
+    const delayToNextMinute =
+      (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+
+    const timeoutId = setTimeout(() => {
+      sync();
+      intervalId = setInterval(sync, 60_000);
+    }, delayToNextMinute);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, []);
+
+  return todayKey;
 }
 
 function formatTimeHHMM(d: Date): string {
@@ -295,7 +326,7 @@ export default function AutoclaveScreen() {
     return setupValueToString(setup, 'serial_number', '').trim();
   }, [setup]);
 
-  const currentDate = useMemo(() => formatDateYYYYMMDDCompact(new Date()), []);
+  const currentDate = useTodayKey();
 
   const nextCycle = useMemo(() => {
     const lastDate = typeof lastCycle?.dateExecuted === 'string' ? lastCycle.dateExecuted : '';
@@ -309,8 +340,8 @@ export default function AutoclaveScreen() {
   }, [lastCycle, currentDate]);
 
   const cycleIdPreview = useMemo(() => {
-    const serialPart = serialNumber || 'unknown';
-    return `${currentDate}-${serialPart}-${nextCycle}`;
+    const safeSerial = sanitizeIdPart(serialNumber, 'unknown');
+    return `${currentDate}-${safeSerial}-${nextCycle}`;
   }, [currentDate, serialNumber, nextCycle]);
 
   const activePickerValue = useMemo(() => {
@@ -489,7 +520,7 @@ export default function AutoclaveScreen() {
         </View>
 
         <AutoclaveReadonlyField
-          label="Cycle ID"
+          label="Next Cycle ID"
           value={cycleIdPreview}
         />
 

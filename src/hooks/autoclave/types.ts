@@ -1,3 +1,5 @@
+// src/hooks/autoclave/types.ts
+
 export type SetupStoredValue = string | number;
 
 export type SetupStoredItem = {

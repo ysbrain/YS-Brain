@@ -22,6 +22,7 @@ import type {
   DailyOpsCycleDoc,
   SetupStoredItem,
 } from './types';
+import { sanitizeIdPart } from './utils';
 
 type DailyFieldKey =
   | 'daily:maxTemp'
@@ -242,7 +243,7 @@ export function useAutoclaveDailyOpsActions({
           applianceData.setup && typeof applianceData.setup === 'object'
             ? applianceData.setup
             : {};
-
+        
         const latestSerialNumber = setupValueToString(
           latestSetup,
           'serial_number',
@@ -252,6 +253,8 @@ export function useAutoclaveDailyOpsActions({
         if (!latestSerialNumber) {
           throw new Error('Missing serial number in appliance setup.');
         }
+
+        const safeSerialNumber = sanitizeIdPart(latestSerialNumber, 'unknown');
 
         const txCurrentDate = formatDateYYYYMMDDCompact(new Date());
 
@@ -273,8 +276,8 @@ export function useAutoclaveDailyOpsActions({
 
         const nextCycleNumber =
           latestLastDate === txCurrentDate ? latestRawCycleNumber + 1 : 1;
-
-        const nextCycleId = `${txCurrentDate}-${latestSerialNumber}-${pad2(nextCycleNumber)}`;
+        
+        const nextCycleId = `${txCurrentDate}-${safeSerialNumber}-${pad2(nextCycleNumber)}`;
 
         const cycleRef = doc(
           collection(
@@ -470,7 +473,9 @@ export function useAutoclaveDailyOpsActions({
       const storage = getStorage();
       const blob = await uriToBlob(photoUri);
 
-      const photoPath = `clinics/${clinicId}/${roomId}/${applianceKey}/dailyOps/${currentCycle}.jpg`;
+      const safeCurrentCycle = sanitizeIdPart(currentCycle, 'cycle');
+
+      const photoPath = `clinics/${clinicId}/${roomId}/${applianceKey}/dailyOps/${safeCurrentCycle}.jpg`;
       uploadedFileRef = storageRef(storage, photoPath);
 
       await uploadBytes(uploadedFileRef, blob, { contentType: 'image/jpeg' });
