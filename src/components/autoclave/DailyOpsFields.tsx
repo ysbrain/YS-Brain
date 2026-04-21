@@ -311,7 +311,9 @@ export const AutoclaveNotesField = forwardRef<TextInput, NotesFieldProps>(
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor="#999"
+          placeholderTextColor="#999"          
+          multiline
+          textAlignVertical="top"
           style={styles.notesInput}
           returnKeyType="done"
           onFocus={onFocus}
@@ -477,8 +479,9 @@ const styles = StyleSheet.create({
     borderColor: '#cbd5e1',
     borderRadius: 10,
     backgroundColor: '#fff',
-    minHeight: 46,
+    minHeight: 96,
     paddingHorizontal: 14,
+    paddingVertical: 12,
     fontSize: 15,
     fontWeight: '500',
     color: '#334155',

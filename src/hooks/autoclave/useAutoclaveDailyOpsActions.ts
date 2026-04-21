@@ -22,7 +22,7 @@ import type {
   DailyOpsCycleDoc,
   SetupStoredItem,
 } from './types';
-import { sanitizeIdPart } from './utils';
+import { getStrictSerialIdPart, sanitizeIdPart } from './utils';
 
 type DailyFieldKey =
   | 'daily:maxTemp'
@@ -167,6 +167,16 @@ export function useAutoclaveDailyOpsActions({
       return;
     }
 
+    const strictInputSerialIdPart = getStrictSerialIdPart(serialNumber);
+
+    if (!strictInputSerialIdPart) {
+      Alert.alert(
+        'Cannot start',
+        'Serial number contains unsupported characters. Please update appliance setup.',
+      );
+      return;
+    }
+
     const trimmedTemp = maxTemp.trim();
     const trimmedPressure = pressure.trim();
     const trimmedStartTime = startTime.trim();
@@ -254,7 +264,13 @@ export function useAutoclaveDailyOpsActions({
           throw new Error('Missing serial number in appliance setup.');
         }
 
-        const safeSerialNumber = sanitizeIdPart(latestSerialNumber, 'unknown');
+        const safeSerialNumber = getStrictSerialIdPart(latestSerialNumber);
+
+        if (!safeSerialNumber) {
+          throw new Error(
+            'Serial number contains unsupported characters. Please update appliance setup.',
+          );
+        }
 
         const txCurrentDate = formatDateYYYYMMDDCompact(new Date());
 

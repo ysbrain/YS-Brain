@@ -26,6 +26,7 @@ export type ApplianceDocShape = {
 export type DailyOpsCycleDoc = {
   _isFinished?: boolean;
   createdAt?: unknown;
+  updatedAt?: unknown;
   settings?: {
     temperature?: number;
     pressure?: number;
@@ -34,5 +35,17 @@ export type DailyOpsCycleDoc = {
   cycleBeganBy?: {
     userId?: string;
     userName?: string | null;
+  };
+  cycleEndTime?: string;
+  cycleEndedBy?: {
+    userId?: string;
+    userName?: string | null;
+  };
+  results?: {
+    internalIndicator?: boolean;
+    externalIndicator?: boolean;
+    notes?: string | null;
+    photoUrl?: string;
+    photoPath?: string;
   };
 };

@@ -20,7 +20,7 @@ import type { SetupStoredItem } from '@/src/hooks/autoclave/types';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
 import { useAutoclaveDailyOpsActions } from '@/src/hooks/autoclave/useAutoclaveDailyOpsActions';
 import { useAutoclaveDailyOpsCycle } from '@/src/hooks/autoclave/useAutoclaveDailyOpsCycle';
-import { sanitizeIdPart } from '@/src/hooks/autoclave/utils';
+import { getStrictSerialIdPart } from '@/src/hooks/autoclave/utils';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -326,6 +326,12 @@ export default function AutoclaveScreen() {
     return setupValueToString(setup, 'serial_number', '').trim();
   }, [setup]);
 
+  const strictSerialIdPart = useMemo(() => {
+    return getStrictSerialIdPart(serialNumber);
+  }, [serialNumber]);
+
+  const hasValidSerialNumber = !!strictSerialIdPart;
+
   const currentDate = useTodayKey();
 
   const nextCycle = useMemo(() => {
@@ -340,9 +346,9 @@ export default function AutoclaveScreen() {
   }, [lastCycle, currentDate]);
 
   const cycleIdPreview = useMemo(() => {
-    const safeSerial = sanitizeIdPart(serialNumber, 'unknown');
-    return `${currentDate}-${safeSerial}-${nextCycle}`;
-  }, [currentDate, serialNumber, nextCycle]);
+    const serialPart = strictSerialIdPart ?? 'INVALID_SERIAL';
+    return `${currentDate}-${serialPart}-${nextCycle}`;
+  }, [currentDate, strictSerialIdPart, nextCycle]);
 
   const activePickerValue = useMemo(() => {
     if (!activePicker) return new Date();
@@ -486,7 +492,7 @@ export default function AutoclaveScreen() {
     !!roomId &&
     !!applianceId &&
     !!user?.uid &&
-    serialNumber.trim().length > 0 &&
+    hasValidSerialNumber &&
     !isRunning;
 
   const hasValidCurrentCycleId =
