@@ -442,7 +442,7 @@ export default function AutoclaveScreen() {
           <View style={styles.twoColItem}>
             <AutoclaveTextField
               ref={registerFieldRef('daily:maxTemp')}
-              label="Max Temp (┬░C)"
+              label="Max Temp (°C)"
               value={maxTemp}
               onChangeText={(t) => {
                 setMaxTemp(t);
@@ -526,7 +526,7 @@ export default function AutoclaveScreen() {
 
     const temperatureText =
       typeof cycleDoc?.settings?.temperature === 'number'
-        ? `${cycleDoc.settings.temperature}┬░C`
+        ? `${cycleDoc.settings.temperature}°C`
         : '--';
 
     const pressureText =

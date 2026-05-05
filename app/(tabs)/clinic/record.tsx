@@ -4,13 +4,24 @@ import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
+import {
+  formatDateYYYYMMDDSlash,
+  formatTimeHHMM,
+  pad2,
+  parseHHMM,
+  parseYYYYMMDDSlash,
+} from '@/src/hooks/autoclave/dateTimeUtils';
+import {
+  cropToAspect,
+  uriToBlob,
+} from '@/src/hooks/autoclave/photoUtils';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
+import { normalizeParam } from '@/src/utils/routeParams';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   addDoc,
@@ -54,93 +65,19 @@ type ApplianceDocShape = {
 
 type RecordValue = string | boolean | null;
 
-function pad2(n: number) {
-  return String(n).padStart(2, '0');
-}
-
-function formatDateYYYYMMDD(d: Date) {
-  return `${d.getFullYear()}/${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}`;
-}
-
-function parseYYYYMMDD(s: string): Date | null {
-  const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(s);
-  if (!m) return null;
-  const y = Number(m[1]);
-  const mm = Number(m[2]) - 1;
-  const dd = Number(m[3]);
-  const d = new Date(y, mm, dd);
-  if (d.getFullYear() !== y || d.getMonth() !== mm || d.getDate() !== dd) return null;
-  return d;
-}
-
-function formatTimeHHMM(d: Date) {
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
-function parseHHMM(s: string): Date | null {
-  const m = /^(\d{2}):(\d{2})$/.exec(s);
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
-  const d = new Date();
-  d.setHours(hh, mm, 0, 0);
-  return d;
-}
-
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
 
-function formatReadableTimestamp(d = new Date()) {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const hh = String(d.getHours()).padStart(2, '0');
-  const min = String(d.getMinutes()).padStart(2, '0');
-  const ss = String(d.getSeconds()).padStart(2, '0');
-  const ms = String(d.getMilliseconds()).padStart(3, '0');
+function formatReadableTimestamp(date = new Date()) {
+  const yyyy = date.getFullYear();
+  const mm = pad2(date.getMonth() + 1);
+  const dd = pad2(date.getDate());
+  const hh = pad2(date.getHours());
+  const min = pad2(date.getMinutes());
+  const ss = pad2(date.getSeconds());
+  const ms = String(date.getMilliseconds()).padStart(3, '0');
 
   return `${yyyy}-${mm}-${dd}_${hh}-${min}-${ss}-${ms}`;
-}
-
-function normalizeParam(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) return value[0] ?? '';
-  return value ?? '';
-}
-
-async function uriToBlob(uri: string): Promise<Blob> {
-  const res = await fetch(uri);
-  return await res.blob();
-}
-
-async function cropToAspect(uri: string, width: number, height: number): Promise<string> {
-  let cropW = width;
-  let cropH = height;
-  let originX = 0;
-  let originY = 0;
-
-  const currentRatio = width / height;
-
-  if (currentRatio > PHOTO_ASPECT) {
-    // too wide → crop width
-    cropW = Math.round(height * PHOTO_ASPECT);
-    originX = Math.round((width - cropW) / 2);
-  } else if (currentRatio < PHOTO_ASPECT) {
-    // too tall → crop height
-    cropH = Math.round(width / PHOTO_ASPECT);
-    originY = Math.round((height - cropH) / 2);
-  }
-
-  const ctx = ImageManipulator.manipulate(uri);
-  ctx.crop({ originX, originY, width: cropW, height: cropH });
-
-  const rendered = await ctx.renderAsync();
-  const result = await rendered.saveAsync({
-    compress: 0.85,
-    format: SaveFormat.JPEG,
-  });
-
-  return result.uri;
 }
 
 export default function ClinicRecordScreen() {
@@ -215,7 +152,7 @@ export default function ClinicRecordScreen() {
     if (!activePicker) return new Date();
     const raw = recordValues[activePicker.field];
     const s = typeof raw === 'string' ? raw : '';
-    if (activePicker.mode === 'date') return parseYYYYMMDD(s) ?? new Date();
+    if (activePicker.mode === 'date') return parseYYYYMMDDSlash(s) ?? new Date();
     return parseHHMM(s) ?? new Date();
   }, [activePicker, recordValues]);
 
@@ -244,7 +181,7 @@ export default function ClinicRecordScreen() {
       Keyboard.dismiss();
       const raw = recordValues[field];
       const s = typeof raw === 'string' ? raw : '';
-      const initial = mode === 'date' ? parseYYYYMMDD(s) ?? new Date() : parseHHMM(s) ?? new Date();
+      const initial = mode === 'date' ? parseYYYYMMDDSlash(s) ?? new Date() : parseHHMM(s) ?? new Date();
       setPickerDraft(initial);
       setActivePicker({ field, mode });
     },
@@ -266,7 +203,7 @@ export default function ClinicRecordScreen() {
         return;
       }
 
-      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDD(date));
+      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDDSlash(date));
       else onChangeField(activePicker.field, formatTimeHHMM(date));
 
       setActivePicker(null);
@@ -277,7 +214,7 @@ export default function ClinicRecordScreen() {
   const closePicker = useCallback(() => setActivePicker(null), []);
   const commitPicker = useCallback(() => {
     if (activePicker) {
-      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDD(pickerDraft));
+      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDDSlash(pickerDraft));
       else onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
     }
     setActivePicker(null);
@@ -296,7 +233,13 @@ export default function ClinicRecordScreen() {
       }
 
       try {
-        const croppedUri = await cropToAspect(photo.uri, photo.width, photo.height);
+        const croppedUri = await cropToAspect({
+          uri: photo.uri,
+          width: photo.width,
+          height: photo.height,
+          aspectRatio: PHOTO_ASPECT,
+        });
+
         onChangeField(activePhotoField, croppedUri);
       } catch (err) {
         console.error('photo process error', err);
@@ -468,7 +411,7 @@ export default function ClinicRecordScreen() {
         const s = typeof raw === 'string' ? raw.trim() : '';
         if (s.length === 0) {
           value = null;
-        } else if (!parseYYYYMMDD(s)) {
+        } else if (!parseYYYYMMDDSlash(s)) {
           markInvalid(`${item.field} must be a valid date (YYYY/MM/DD)`);
           value = null;
         } else {

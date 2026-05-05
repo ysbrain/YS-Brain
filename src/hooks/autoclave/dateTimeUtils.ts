@@ -33,3 +33,29 @@ export function parseHHMM(value: string): Date | null {
 
   return date;
 }
+
+export function formatDateYYYYMMDDSlash(date: Date): string {
+  return `${date.getFullYear()}/${pad2(date.getMonth() + 1)}/${pad2(date.getDate())}`;
+}
+
+export function parseYYYYMMDDSlash(value: string): Date | null {
+  const match = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(value);
+
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const day = Number(match[3]);
+
+  const date = new Date(year, monthIndex, day);
+
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== monthIndex ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return date;
+}
