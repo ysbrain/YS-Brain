@@ -1,4 +1,4 @@
-// app/(tabs)/clinic/autoclave.tsx
+﻿// app/(tabs)/clinic/autoclave.tsx
 
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import {

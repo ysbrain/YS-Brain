@@ -49,3 +49,13 @@ export type DailyOpsCycleDoc = {
     photoPath?: string;
   };
 };
+
+export type DailyOpsFieldKey =
+  | 'daily:maxTemp'
+  | 'daily:pressure'
+  | 'daily:startTime'
+  | 'daily:unloadTime'
+  | 'daily:internalIndicator'
+  | 'daily:externalIndicator'
+  | 'daily:photoEvidence'
+  | 'daily:notes';

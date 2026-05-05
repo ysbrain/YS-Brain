@@ -20,19 +20,10 @@ import { db } from '@/src/lib/firebase';
 import type {
   ApplianceDocShape,
   DailyOpsCycleDoc,
+  DailyOpsFieldKey,
   SetupStoredItem,
 } from './types';
 import { getStrictSerialIdPart, sanitizeIdPart } from './utils';
-
-type DailyFieldKey =
-  | 'daily:maxTemp'
-  | 'daily:pressure'
-  | 'daily:startTime'
-  | 'daily:unloadTime'
-  | 'daily:internalIndicator'
-  | 'daily:externalIndicator'
-  | 'daily:photoEvidence'
-  | 'daily:notes';
 
 type RequestScrollFn = (
   key: string,
@@ -89,7 +80,7 @@ type UseAutoclaveDailyOpsActionsParams = {
   photoUri: string | null;
   notes: string;
 
-  setFormErrorField: (field: DailyFieldKey | null) => void;
+  setFormErrorField: (field: DailyOpsFieldKey | null) => void;
   setActivePicker: (
     value: { field: 'startTime' | 'unloadTime'; mode: 'time' } | null,
   ) => void;
