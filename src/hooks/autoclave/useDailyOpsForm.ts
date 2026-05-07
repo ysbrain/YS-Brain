@@ -2,15 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
-export type DailyFieldKey =
-  | 'daily:maxTemp'
-  | 'daily:pressure'
-  | 'daily:startTime'
-  | 'daily:unloadTime'
-  | 'daily:internalIndicator'
-  | 'daily:externalIndicator'
-  | 'daily:photoEvidence'
-  | 'daily:notes';
+import type { DailyOpsFieldKey } from '@/src/hooks/autoclave/types';
+import { formatTimeHHMM } from '@/src/utils/dateTime';
 
 type UseDailyOpsFormParams = {
   applianceId?: string | null;
@@ -19,54 +12,52 @@ type UseDailyOpsFormParams = {
   defaultPressure: string;
 };
 
-function pad2(n: number): string {
-  return String(n).padStart(2, '0');
-}
-
-function formatTimeHHMM(d: Date): string {
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-}
-
 export function useDailyOpsForm({
   applianceId,
   currentCycle,
   defaultMaxTemp,
   defaultPressure,
 }: UseDailyOpsFormParams) {
-  const [formErrorField, setFormErrorField] = useState<DailyFieldKey | null>(null);
+  const [formErrorField, setFormErrorField] = useState<DailyOpsFieldKey | null>(null);
 
   const [maxTemp, setMaxTemp] = useState('');
   const [pressure, setPressure] = useState('');
-  const [startTime, setStartTime] = useState(formatTimeHHMM(new Date()));
 
+  const [startTime, setStartTime] = useState(formatTimeHHMM(new Date()));
   const [unloadTime, setUnloadTime] = useState(formatTimeHHMM(new Date()));
+
   const [internalIndicator, setInternalIndicator] = useState<boolean | null>(null);
   const [externalIndicator, setExternalIndicator] = useState<boolean | null>(null);
+
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
 
-  // Mirrors current autoclave.tsx behavior:
-  // backfill setup defaults only if user has not already typed something.
+  // Reset start-page editable fields when the appliance changes.
   useEffect(() => {
-    setMaxTemp((prev) =>
-      prev.trim().length > 0 ? prev : defaultMaxTemp,
-    );
-    setPressure((prev) =>
-      prev.trim().length > 0 ? prev : defaultPressure,
-    );
-  }, [defaultMaxTemp, defaultPressure]);
-
-  // Mirrors current autoclave.tsx behavior:
-  // reset start-page editable defaults when appliance changes.
-  useEffect(() => {
+    setFormErrorField(null);
     setMaxTemp('');
     setPressure('');
     setStartTime(formatTimeHHMM(new Date()));
   }, [applianceId]);
 
-  // Mirrors current autoclave.tsx behavior:
-  // reset running-page form state when cycle changes.
+  // Backfill setup defaults only if user has not already typed something.
+  //
+  // Including applianceId here ensures that if the user switches appliance
+  // and the new appliance happens to have the same default values,
+  // the fields can still be repopulated after the reset above.
   useEffect(() => {
+    setMaxTemp((prev) =>
+      prev.trim().length > 0 ? prev : defaultMaxTemp,
+    );
+
+    setPressure((prev) =>
+      prev.trim().length > 0 ? prev : defaultPressure,
+    );
+  }, [applianceId, defaultMaxTemp, defaultPressure]);
+
+  // Reset running-page form state when the running cycle changes.
+  useEffect(() => {
+    setFormErrorField(null);
     setUnloadTime(formatTimeHHMM(new Date()));
     setInternalIndicator(null);
     setExternalIndicator(null);
@@ -80,19 +71,25 @@ export function useDailyOpsForm({
 
     maxTemp,
     setMaxTemp,
+
     pressure,
     setPressure,
+
     startTime,
     setStartTime,
 
     unloadTime,
     setUnloadTime,
+
     internalIndicator,
     setInternalIndicator,
+
     externalIndicator,
     setExternalIndicator,
+
     photoUri,
     setPhotoUri,
+
     notes,
     setNotes,
   };

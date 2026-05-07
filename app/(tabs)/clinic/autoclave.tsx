@@ -15,10 +15,10 @@ import {
   setupValueToString,
   validatePositiveIntUpTo3Digits,
 } from '@/src/hooks/autoclave/setupUtils';
-import type { DailyOpsFieldKey } from '@/src/hooks/autoclave/types';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
 import { useAutoclaveDailyOpsActions } from '@/src/hooks/autoclave/useAutoclaveDailyOpsActions';
 import { useAutoclaveDailyOpsCycle } from '@/src/hooks/autoclave/useAutoclaveDailyOpsCycle';
+import { useDailyOpsForm } from '@/src/hooks/autoclave/useDailyOpsForm';
 import { getStrictSerialIdPart } from '@/src/hooks/autoclave/utils';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import {
@@ -113,7 +113,6 @@ export default function AutoclaveScreen() {
   const [saving, setSaving] = useState(false);
 
   const { setUiLocked } = useUiLock();
-  const [formErrorField, setFormErrorField] = useState<DailyOpsFieldKey | null>(null);
 
   const {
     loading,
@@ -142,16 +141,47 @@ export default function AutoclaveScreen() {
     currentCycle,
   });
 
-  // Start page state
-  const [maxTemp, setMaxTemp] = useState('');
-  const [pressure, setPressure] = useState('');
-  const [startTime, setStartTime] = useState(formatTimeHHMM(new Date()));
+  const defaultMaxTemp = useMemo(() => {
+    return setupValueToNumberString(setup, 'default_temp_c', '');
+  }, [setup]);
 
-  const [unloadTime, setUnloadTime] = useState(formatTimeHHMM(new Date()));
-  const [internalIndicator, setInternalIndicator] = useState<boolean | null>(null);
-  const [externalIndicator, setExternalIndicator] = useState<boolean | null>(null);
-  const [photoUri, setPhotoUri] = useState<string | null>(null);
-  const [notes, setNotes] = useState('');
+  const defaultPressure = useMemo(() => {
+    return setupValueToNumberString(setup, 'default_pressure', '');
+  }, [setup]);
+
+  const {
+    formErrorField,
+    setFormErrorField,
+
+    maxTemp,
+    setMaxTemp,
+
+    pressure,
+    setPressure,
+
+    startTime,
+    setStartTime,
+
+    unloadTime,
+    setUnloadTime,
+
+    internalIndicator,
+    setInternalIndicator,
+
+    externalIndicator,
+    setExternalIndicator,
+
+    photoUri,
+    setPhotoUri,
+
+    notes,
+    setNotes,
+  } = useDailyOpsForm({
+    applianceId,
+    currentCycle,
+    defaultMaxTemp,
+    defaultPressure,
+  });
 
   const [cameraOpen, setCameraOpen] = useState(false);
 
@@ -187,36 +217,6 @@ export default function AutoclaveScreen() {
     activeOverlayFieldKey: activePicker ? `daily:${activePicker.field}` : null,
     overlayHeight: pickerOverlayHeight,
   });
-
-  useEffect(() => {
-    setMaxTemp((prev) =>
-      prev.trim().length > 0
-        ? prev
-        : setupValueToNumberString(setup, 'default_temp_c', ''),
-    );
-
-    setPressure((prev) =>
-      prev.trim().length > 0
-        ? prev
-        : setupValueToNumberString(setup, 'default_pressure', ''),
-    );
-  }, [setup]);
-
-  // Reset start-page editable defaults when appliance changes
-  useEffect(() => {
-    setMaxTemp('');
-    setPressure('');
-    setStartTime(formatTimeHHMM(new Date()));
-  }, [applianceId]);
-
-  // Reset running-page form state when cycle changes
-  useEffect(() => {
-    setUnloadTime(formatTimeHHMM(new Date()));
-    setInternalIndicator(null);
-    setExternalIndicator(null);
-    setPhotoUri(null);
-    setNotes('');
-  }, [currentCycle]);
 
   const serialNumber = useMemo(() => {
     return setupValueToString(setup, 'serial_number', '').trim();
