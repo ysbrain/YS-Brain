@@ -4,21 +4,21 @@ import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
-import {
-  formatDateYYYYMMDDSlash,
-  formatTimeHHMM,
-  pad2,
-  parseHHMM,
-  parseYYYYMMDDSlash,
-} from '@/src/hooks/autoclave/dateTimeUtils';
-import {
-  cropToAspect,
-  uriToBlob,
-} from '@/src/hooks/autoclave/photoUtils';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
+import {
+  formatDateYYYYMMDDSlash,
+  formatReadableTimestamp,
+  formatTimeHHMM,
+  parseHHMM,
+  parseYYYYMMDDSlash
+} from '@/src/utils/dateTime';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
+import {
+  cropToAspect,
+  uriToBlob,
+} from '@/src/utils/photo';
 import { normalizeParam } from '@/src/utils/routeParams';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -67,18 +67,6 @@ type RecordValue = string | boolean | null;
 
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
-
-function formatReadableTimestamp(date = new Date()) {
-  const yyyy = date.getFullYear();
-  const mm = pad2(date.getMonth() + 1);
-  const dd = pad2(date.getDate());
-  const hh = pad2(date.getHours());
-  const min = pad2(date.getMinutes());
-  const ss = pad2(date.getSeconds());
-  const ms = String(date.getMilliseconds()).padStart(3, '0');
-
-  return `${yyyy}-${mm}-${dd}_${hh}-${min}-${ss}-${ms}`;
-}
 
 export default function ClinicRecordScreen() {
   const router = useRouter();

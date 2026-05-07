@@ -1,4 +1,4 @@
-// src/hooks/autoclave/photoUtils.ts
+// src/utils/photo.ts
 
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 
