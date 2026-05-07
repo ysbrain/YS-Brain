@@ -71,4 +71,3 @@ export function formatReadableTimestamp(date = new Date()): string {
 
   return `${yyyy}-${mm}-${dd}_${hh}-${min}-${ss}-${ms}`;
 }
-

@@ -1,3 +1,5 @@
+// src/components/autoclave/DailyOpsFields.tsx
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { forwardRef } from 'react';
 import {

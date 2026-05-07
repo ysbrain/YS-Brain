@@ -1,5 +1,6 @@
-// src/components/autoclave/tabs/DailyOpsTab.tsx
+// src/components/autoclave/DailyOpsTab.tsx
 
+import { ActionBlockerList, type ActionBlocker } from '@/src/components/autoclave/ActionBlockerList';
 import {
   AutoclaveNotesField,
   AutoclavePassFailField,
@@ -8,8 +9,10 @@ import {
   AutoclaveTextField,
   AutoclaveTimeField,
 } from '@/src/components/autoclave/DailyOpsFields';
-import type { DailyOpsCycleDoc } from '@/src/hooks/autoclave/types';
-import type { DailyFieldKey } from '@/src/hooks/autoclave/useDailyOpsForm';
+import type {
+  DailyOpsCycleDoc,
+  DailyOpsFieldKey,
+} from '@/src/hooks/autoclave/types';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
@@ -29,88 +32,105 @@ type PickerField = 'startTime' | 'unloadTime';
 type DailyOpsTabProps = {
   isRunning: boolean;
 
-  // start-mode preview data
   cycleIdPreview: string;
 
-  // running-mode cycle data
   currentCycle: string;
   cycleDocLoading: boolean;
   cycleDocError: string | null;
   cycleDoc: DailyOpsCycleDoc | null;
 
-  // form state
-  formErrorField: DailyFieldKey | null;
-  setFormErrorField: (field: DailyFieldKey | null) => void;
+  formErrorField: DailyOpsFieldKey | null;
+  setFormErrorField: (field: DailyOpsFieldKey | null) => void;
 
   maxTemp: string;
   setMaxTemp: (value: string) => void;
+
   pressure: string;
   setPressure: (value: string) => void;
-  startTime: string;
 
+  startTime: string;
   unloadTime: string;
-  setUnloadTime?: (value: string) => void;
+
   internalIndicator: boolean | null;
   setInternalIndicator: (value: boolean | null) => void;
+
   externalIndicator: boolean | null;
   setExternalIndicator: (value: boolean | null) => void;
+
   photoUri: string | null;
+
   notes: string;
   setNotes: (value: string) => void;
 
-  // interaction / focus helpers
-  registerFieldRef: (key: string) => (ref: any) => void;
-  onFieldFocus: (key: string) => void;
-  onFieldBlur: (key: string) => void;
+  registerFieldRef: (key: DailyOpsFieldKey) => (ref: any) => void;
+  onFieldFocus: (key: DailyOpsFieldKey) => void;
+  onFieldBlur: (key: DailyOpsFieldKey) => void;
 
-  // screen-level handlers still owned by parent
   openPicker: (field: PickerField, mode: 'time') => void;
   onOpenCamera: () => void;
 
-  // actions
   onStartMachine: () => void;
   onFinishAndUnload: () => void;
-  canStartMachine: boolean;
-  canFinishUnload: boolean;
-  saving: boolean;
 
-  // optional UX message for invalid serial preview / disabled start
-  serialValidationMessage?: string | null;
+  canPressStartMachine: boolean;
+  canPressFinishUnload: boolean;
+
+  startBlockers: ActionBlocker[];
+  finishBlockers: ActionBlocker[];
+
+  saving: boolean;
 };
 
 export function DailyOpsTab({
   isRunning,
+
   cycleIdPreview,
+
   currentCycle,
   cycleDocLoading,
   cycleDocError,
   cycleDoc,
+
   formErrorField,
   setFormErrorField,
+
   maxTemp,
   setMaxTemp,
+
   pressure,
   setPressure,
+
   startTime,
   unloadTime,
+
   internalIndicator,
   setInternalIndicator,
+
   externalIndicator,
   setExternalIndicator,
+
   photoUri,
+
   notes,
   setNotes,
+
   registerFieldRef,
   onFieldFocus,
   onFieldBlur,
+
   openPicker,
   onOpenCamera,
+
   onStartMachine,
   onFinishAndUnload,
-  canStartMachine,
-  canFinishUnload,
+
+  canPressStartMachine,
+  canPressFinishUnload,
+
+  startBlockers,
+  finishBlockers,
+
   saving,
-  serialValidationMessage,
 }: DailyOpsTabProps) {
   const renderStart = () => {
     return (
@@ -119,17 +139,17 @@ export function DailyOpsTab({
           <View style={styles.heroIconCircle}>
             <MaterialCommunityIcons name="play-outline" size={44} color="#4361ee" />
           </View>
+
           <Text style={styles.heroTitle}>Start New Cycle</Text>
           <Text style={styles.heroSubtitle}>
             Set parameters and begin sterilization.
           </Text>
         </View>
 
-        <AutoclaveReadonlyField label="Next Cycle ID" value={cycleIdPreview} />
-
-        {serialValidationMessage ? (
-          <Text style={styles.errorText}>{serialValidationMessage}</Text>
-        ) : null}
+        <AutoclaveReadonlyField
+          label="Next Cycle ID"
+          value={cycleIdPreview}
+        />
 
         <View style={styles.twoColRow}>
           <View style={styles.twoColItem}>
@@ -176,20 +196,27 @@ export function DailyOpsTab({
           error={formErrorField === 'daily:startTime'}
           onPress={() => {
             onFieldFocus('daily:startTime');
-            if (formErrorField === 'daily:startTime') setFormErrorField(null);
+
+            if (formErrorField === 'daily:startTime') {
+              setFormErrorField(null);
+            }
+
             openPicker('startTime', 'time');
           }}
         />
 
+        <ActionBlockerList blockers={startBlockers} />
+
         <Pressable
           onPress={onStartMachine}
-          disabled={!canStartMachine}
+          disabled={!canPressStartMachine}
           style={({ pressed }) => [
             styles.startButton,
-            !canStartMachine && styles.startButtonDisabled,
-            pressed && canStartMachine && { opacity: 0.92 },
+            !canPressStartMachine && styles.startButtonDisabled,
+            pressed && canPressStartMachine && { opacity: 0.92 },
           ]}
           accessibilityRole="button"
+          accessibilityState={{ disabled: !canPressStartMachine }}
         >
           <Text style={styles.startButtonText}>
             {saving ? 'Starting…' : 'Start Machine'}
@@ -244,12 +271,9 @@ export function DailyOpsTab({
         <View style={styles.runningHeader}>
           <View style={styles.runningTitleRow}>
             <View style={styles.runningClockIcon}>
-              <MaterialCommunityIcons
-                name="clock-outline"
-                size={22}
-                color="#ea580c"
-              />
+              <MaterialCommunityIcons name="clock-outline" size={22} color="#ea580c" />
             </View>
+
             <View style={{ flex: 1 }}>
               <Text style={styles.runningTitle}>Cycle In Progress</Text>
               <Text style={styles.runningCycleId}>Cycle {currentCycle}</Text>
@@ -292,7 +316,11 @@ export function DailyOpsTab({
           error={formErrorField === 'daily:unloadTime'}
           onPress={() => {
             onFieldFocus('daily:unloadTime');
-            if (formErrorField === 'daily:unloadTime') setFormErrorField(null);
+
+            if (formErrorField === 'daily:unloadTime') {
+              setFormErrorField(null);
+            }
+
             openPicker('unloadTime', 'time');
           }}
         />
@@ -308,6 +336,7 @@ export function DailyOpsTab({
             error={formErrorField === 'daily:internalIndicator'}
             onChange={(value) => {
               setInternalIndicator(value);
+
               if (formErrorField === 'daily:internalIndicator') {
                 setFormErrorField(null);
               }
@@ -321,6 +350,7 @@ export function DailyOpsTab({
             error={formErrorField === 'daily:externalIndicator'}
             onChange={(value) => {
               setExternalIndicator(value);
+
               if (formErrorField === 'daily:externalIndicator') {
                 setFormErrorField(null);
               }
@@ -334,9 +364,11 @@ export function DailyOpsTab({
             error={formErrorField === 'daily:photoEvidence'}
             onPress={() => {
               onFieldFocus('daily:photoEvidence');
+
               if (formErrorField === 'daily:photoEvidence') {
                 setFormErrorField(null);
               }
+
               onOpenCamera();
             }}
             aspectRatioFilled={PHOTO_ASPECT}
@@ -352,15 +384,18 @@ export function DailyOpsTab({
             onBlur={() => onFieldBlur('daily:notes')}
           />
 
+          <ActionBlockerList blockers={finishBlockers} />
+
           <Pressable
             onPress={onFinishAndUnload}
-            disabled={!canFinishUnload}
+            disabled={!canPressFinishUnload}
             style={({ pressed }) => [
               styles.finishButton,
-              !canFinishUnload && styles.finishButtonDisabled,
-              pressed && canFinishUnload && { opacity: 0.92 },
+              !canPressFinishUnload && styles.finishButtonDisabled,
+              pressed && canPressFinishUnload && { opacity: 0.92 },
             ]}
             accessibilityRole="button"
+            accessibilityState={{ disabled: !canPressFinishUnload }}
           >
             <Text style={styles.finishButtonText}>
               {saving ? 'Finishing…' : 'Finish & Unload'}
