@@ -14,7 +14,7 @@ import {
   uploadBytes,
 } from 'firebase/storage';
 import { useCallback } from 'react';
-import { Alert, Keyboard } from 'react-native';
+import { Alert, Keyboard, TextInput } from 'react-native';
 
 import { db } from '@/src/lib/firebase';
 import type {
@@ -95,6 +95,16 @@ type UseAutoclaveDailyOpsActionsParams = {
   pad2: Pad2Fn;
 };
 
+function blurActiveInputAndDismissKeyboard() {
+  const focusedInput = TextInput.State.currentlyFocusedInput?.();
+
+  if (focusedInput && typeof focusedInput.blur === 'function') {
+    focusedInput.blur();
+  }
+
+  Keyboard.dismiss();
+}
+
 export function useAutoclaveDailyOpsActions({
   clinicId,
   roomId,
@@ -131,7 +141,31 @@ export function useAutoclaveDailyOpsActions({
   formatDateYYYYMMDDCompact,
   pad2,
 }: UseAutoclaveDailyOpsActionsParams) {
+  const showValidationAlert = useCallback(
+    (field: DailyOpsFieldKey, message: string) => {
+      setFormErrorField(field);
+
+      Alert.alert(
+        'Validation',
+        message,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              requestScroll(field, 'validation', 50);
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [setFormErrorField, requestScroll],
+  );
+
   const onStartMachine = useCallback(async () => {
+    blurActiveInputAndDismissKeyboard();
+    setActivePicker(null);
+
     if (!clinicId || !roomId || !applianceId) {
       Alert.alert('Missing context', 'Clinic, room, or appliance information is missing.');
       return;
@@ -172,53 +206,39 @@ export function useAutoclaveDailyOpsActions({
     const trimmedStartTime = startTime.trim();
 
     if (!trimmedTemp) {
-      setFormErrorField('daily:maxTemp');
-      Alert.alert('Validation', 'Max Temp (°C) is required.');
-      requestScroll('daily:maxTemp', 'validation', 0);
+      showValidationAlert('daily:maxTemp', 'Max Temp (°C) is required.');
       return;
     }
 
     if (!trimmedPressure) {
-      setFormErrorField('daily:pressure');
-      Alert.alert('Validation', 'Pressure is required.');
-      requestScroll('daily:pressure', 'validation', 0);
+      showValidationAlert('daily:pressure', 'Pressure is required.');
       return;
     }
 
     if (!trimmedStartTime) {
-      setFormErrorField('daily:startTime');
-      Alert.alert('Validation', 'Start Time is required.');
-      requestScroll('daily:startTime', 'validation', 0);
+      showValidationAlert('daily:startTime', 'Start Time is required.');
       return;
     }
 
     const temperatureValue = validatePositiveIntUpTo3Digits(trimmedTemp);
     if (temperatureValue === null) {
-      setFormErrorField('daily:maxTemp');
-      Alert.alert('Validation', 'Max Temp (°C) invalid.');
-      requestScroll('daily:maxTemp', 'validation', 0);
+      showValidationAlert('daily:maxTemp', 'Max Temp (°C) invalid.');
       return;
     }
 
     const pressureValue = validatePositiveIntUpTo3Digits(trimmedPressure);
     if (pressureValue === null) {
-      setFormErrorField('daily:pressure');
-      Alert.alert('Validation', 'Pressure invalid.');
-      requestScroll('daily:pressure', 'validation', 0);
+      showValidationAlert('daily:pressure', 'Pressure invalid.');
       return;
     }
 
     if (!parseHHMM(trimmedStartTime)) {
-      setFormErrorField('daily:startTime');
-      Alert.alert('Validation', 'Start Time must be a valid time.');
-      requestScroll('daily:startTime', 'validation', 0);
+      showValidationAlert('daily:startTime', 'Start Time must be a valid time.');
       return;
     }
 
     if (saving) return;
 
-    Keyboard.dismiss();
-    setActivePicker(null);
     setSaving(true);
     setUiLocked(true, { scope: 'global' });
 
@@ -366,16 +386,19 @@ export function useAutoclaveDailyOpsActions({
     setFormErrorField,
     setSaving,
     setUiLocked,
-    requestScroll,
     parseHHMM,
     validatePositiveIntUpTo3Digits,
     setupValueToString,
     formatDateYYYYMMDDCompact,
     pad2,
     routerBack,
+    showValidationAlert,
   ]);
 
   const onFinishAndUnload = useCallback(async () => {
+    blurActiveInputAndDismissKeyboard();
+    setActivePicker(null);
+
     if (!clinicId || !roomId || !applianceId) {
       Alert.alert('Missing context', 'Clinic, room, or appliance information is missing.');
       return;
@@ -415,37 +438,33 @@ export function useAutoclaveDailyOpsActions({
     const trimmedNotes = notes.trim();
 
     if (!trimmedUnloadTime) {
-      setFormErrorField('daily:unloadTime');
-      Alert.alert('Validation', 'Unload Time is required.');
-      requestScroll('daily:unloadTime', 'validation', 0);
+      showValidationAlert('daily:unloadTime', 'Unload Time is required.');
       return;
     }
 
     if (!parseHHMM(trimmedUnloadTime)) {
-      setFormErrorField('daily:unloadTime');
-      Alert.alert('Validation', 'Unload Time must be a valid time.');
-      requestScroll('daily:unloadTime', 'validation', 0);
+      showValidationAlert('daily:unloadTime', 'Unload Time must be a valid time.');
       return;
     }
 
-    if (internalIndicator === null) {
-      setFormErrorField('daily:internalIndicator');
-      Alert.alert('Validation', 'Please select Internal Indicator result.');
-      requestScroll('daily:internalIndicator', 'validation', 0);
+    if (internalIndicator === null) {      
+      showValidationAlert(
+        'daily:internalIndicator',
+        'Please select Internal Indicator result.',
+      );
       return;
     }
 
-    if (externalIndicator === null) {
-      setFormErrorField('daily:externalIndicator');
-      Alert.alert('Validation', 'Please select External Indicator result.');
-      requestScroll('daily:externalIndicator', 'validation', 0);
+    if (externalIndicator === null) {      
+      showValidationAlert(
+        'daily:externalIndicator',
+        'Please select External Indicator result.',
+      );
       return;
     }
 
     if (!photoUri || photoUri.trim().length === 0) {
-      setFormErrorField('daily:photoEvidence');
-      Alert.alert('Validation', 'Photo Evidence is required.');
-      requestScroll('daily:photoEvidence', 'validation', 0);
+      showValidationAlert('daily:photoEvidence', 'Photo Evidence is required.');
       return;
     }
 
@@ -637,10 +656,10 @@ export function useAutoclaveDailyOpsActions({
     setFormErrorField,
     setSaving,
     setUiLocked,
-    requestScroll,
     parseHHMM,
     uriToBlob,
     routerBack,
+    showValidationAlert,
   ]);
 
   return {

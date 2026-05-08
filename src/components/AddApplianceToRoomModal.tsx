@@ -136,6 +136,16 @@ function parseYYYYMMDD(s: string): Date | null {
   return d;
 }
 
+function blurActiveInputAndDismissKeyboard() {
+  const focusedInput = TextInput.State.currentlyFocusedInput?.();
+
+  if (focusedInput && typeof focusedInput.blur === 'function') {
+    focusedInput.blur();
+  }
+
+  Keyboard.dismiss();
+}
+
 export default function AddApplianceToRoomModal({
   visible,
   clinicId,
@@ -229,12 +239,19 @@ export default function AddApplianceToRoomModal({
     [selectedModule?.id],
   );
 
-  const focusApplianceName = useCallback(() => {
+  const scrollToApplianceNameError = useCallback(() => {
     requestAnimationFrame(() => {
-      applianceNameInputRef.current?.focus();
       requestScroll('applianceName', 'validation', 0);
     });
   }, [requestScroll]);
+
+  const scrollToFieldError = useCallback(
+    (fieldKey: FieldKey) => {
+      requestAnimationFrame(() => {
+        requestScroll(fieldKey, 'validation', 50);
+      });
+    }, [requestScroll],
+  );
 
   const onChangeConfig = useCallback(
     (field: string, value: string) => {
@@ -448,7 +465,9 @@ export default function AddApplianceToRoomModal({
     return { ok: true as const, setup };
   }, [setupConfig, configValues]);
 
-  const onAddToRoom = useCallback(async () => {
+  const onAddToRoom = useCallback(async () => {    
+    blurActiveInputAndDismissKeyboard();
+    setActiveDateField(null);
     setFormError(null);
 
     if (!selectedModule?.id) {
@@ -461,7 +480,7 @@ export default function AddApplianceToRoomModal({
 
     if (!applianceKey) {
       setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
-      focusApplianceName();
+      scrollToApplianceNameError();
       return;
     }
 
@@ -472,8 +491,12 @@ export default function AddApplianceToRoomModal({
         const v = (configValues[item.field] ?? '').trim();
         if (!v) {
           const fk = `setup:${item.field}` as FieldKey;
-          setFormError({ code: 'MISSING_FIELD', fieldKey: fk, meta: { field: item.field } });
-          requestScroll(fk, 'validation', 0);
+          setFormError({
+            code: 'MISSING_FIELD',
+            fieldKey: fk,
+            meta: { field: item.field },
+          });
+          scrollToFieldError(fk);
           return;
         }
       }
@@ -482,10 +505,11 @@ export default function AddApplianceToRoomModal({
     const res = validateAndBuildSetup();
     if (!res.ok) {
       setFormError(res.error);
+
       if (res.error.fieldKey) {
-        requestScroll(res.error.fieldKey, 'validation', 0);
-        if (res.error.fieldKey === 'applianceName') focusApplianceName();
+        scrollToFieldError(res.error.fieldKey);
       }
+
       return;
     }
 
@@ -506,7 +530,7 @@ export default function AddApplianceToRoomModal({
 
       if (!collisionSnap.empty) {
         setFormError({ code: 'NAME_COLLISION', fieldKey: 'applianceName' });
-        focusApplianceName();
+        scrollToApplianceNameError();
         return;
       }
 
@@ -548,9 +572,9 @@ export default function AddApplianceToRoomModal({
         setFormError({ code: e.code, fieldKey: e.fieldKey, meta: e.meta });
 
         if (e.fieldKey) {
-          requestScroll(e.fieldKey, 'validation', 0);
-          if (e.fieldKey === 'applianceName') focusApplianceName();
+          scrollToFieldError(e.fieldKey);
         }
+
         return;
       }
 
@@ -571,8 +595,8 @@ export default function AddApplianceToRoomModal({
     moduleRecordFields,
     roomName,
     onCloseAll,
-    requestScroll,
-    focusApplianceName,
+    scrollToFieldError,
+    scrollToApplianceNameError,
     setUiLocked,
   ]);
 

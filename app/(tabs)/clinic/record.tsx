@@ -68,6 +68,16 @@ type RecordValue = string | boolean | null;
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
 
+function blurActiveInputAndDismissKeyboard() {
+  const focusedInput = TextInput.State.currentlyFocusedInput?.();
+
+  if (focusedInput && typeof focusedInput.blur === 'function') {
+    focusedInput.blur();
+  }
+
+  Keyboard.dismiss();
+}
+
 export default function ClinicRecordScreen() {
   const router = useRouter();
   const profile = useProfile();
@@ -326,7 +336,31 @@ export default function ClinicRecordScreen() {
     return () => unsub();
   }, [clinicId, roomId, applianceId]);
 
+  const showValidationAlert = useCallback(
+    (message: string, field?: string | null) => {
+      Alert.alert(
+        'Fix these issues',
+        message,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              if (field) {
+                requestScroll(`record:${field}`, 'validation', 50);
+              }
+            },
+          },
+        ],
+        { cancelable: true },
+      );
+    },
+    [requestScroll],
+  );
+
   const onSaveRecord = useCallback(async () => {
+    blurActiveInputAndDismissKeyboard();
+    setActivePicker(null);
+
     if (!clinicId || !roomId || !applianceId) {
       Alert.alert('Missing context', 'Clinic/Room/Appliance not available.');
       return;
@@ -358,9 +392,6 @@ export default function ClinicRecordScreen() {
     }
 
     if (saving) return;
-
-    Keyboard.dismiss();
-    setActivePicker(null);
 
     type RecordValueItem = {
       field: string;
@@ -431,10 +462,7 @@ export default function ClinicRecordScreen() {
     }
 
     if (errors.length) {
-      Alert.alert('Fix these issues', errors.join('\n'));
-      if (firstInvalidField) {
-        requestScroll(`record:${firstInvalidField}`, 'validation', 0);
-      }
+      showValidationAlert(errors.join('\n'), firstInvalidField);
       return;
     }
 
@@ -538,8 +566,8 @@ export default function ClinicRecordScreen() {
     user?.uid,
     profile?.name,
     router,
-    requestScroll,
     setUiLocked,
+    showValidationAlert,
   ]);
 
   return (
