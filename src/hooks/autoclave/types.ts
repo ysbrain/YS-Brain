@@ -59,3 +59,10 @@ export type DailyOpsFieldKey =
   | 'daily:externalIndicator'
   | 'daily:photoEvidence'
   | 'daily:notes';
+
+export type DailyOpsPickerField = 'startTime' | 'unloadTime';
+
+export type DailyOpsActivePicker = {
+  field: DailyOpsPickerField;
+  mode: 'time';
+} | null;

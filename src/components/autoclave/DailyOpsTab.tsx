@@ -27,6 +27,11 @@ import {
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
 
+
+function sanitizeThreeDigitNumberInput(value: string): string {
+  return value.replace(/\D/g, '').slice(0, 3);
+}
+
 type PickerField = 'startTime' | 'unloadTime';
 
 type DailyOpsTabProps = {
@@ -158,8 +163,11 @@ export function DailyOpsTab({
               label="Max Temp (°C)"
               value={maxTemp}
               onChangeText={(t) => {
-                setMaxTemp(t);
-                if (formErrorField === 'daily:maxTemp') setFormErrorField(null);
+                setMaxTemp(sanitizeThreeDigitNumberInput(t));
+
+                if (formErrorField === 'daily:maxTemp') {
+                  setFormErrorField(null);
+                }
               }}
               placeholder="Enter temp"
               error={formErrorField === 'daily:maxTemp'}
@@ -176,8 +184,11 @@ export function DailyOpsTab({
               label="Pressure"
               value={pressure}
               onChangeText={(t) => {
-                setPressure(t);
-                if (formErrorField === 'daily:pressure') setFormErrorField(null);
+                setPressure(sanitizeThreeDigitNumberInput(t));
+
+                if (formErrorField === 'daily:pressure') {
+                  setFormErrorField(null);
+                }
               }}
               placeholder="Enter pressure"
               error={formErrorField === 'daily:pressure'}

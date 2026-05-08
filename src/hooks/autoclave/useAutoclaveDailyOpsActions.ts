@@ -19,6 +19,7 @@ import { Alert, Keyboard } from 'react-native';
 import { db } from '@/src/lib/firebase';
 import type {
   ApplianceDocShape,
+  DailyOpsActivePicker,
   DailyOpsCycleDoc,
   DailyOpsFieldKey,
   SetupStoredItem,
@@ -81,9 +82,7 @@ type UseAutoclaveDailyOpsActionsParams = {
   notes: string;
 
   setFormErrorField: (field: DailyOpsFieldKey | null) => void;
-  setActivePicker: (
-    value: { field: 'startTime' | 'unloadTime'; mode: 'time' } | null,
-  ) => void;
+  setActivePicker: (value: DailyOpsActivePicker) => void;
 
   requestScroll: RequestScrollFn;
   routerBack: () => void;
@@ -306,10 +305,8 @@ export function useAutoclaveDailyOpsActions({
         }
 
         tx.update(applianceRef, {
-          _status: {
-            isRunning: true,
-            currentCycle: nextCycleId,
-          },
+          '_status.isRunning': true,
+          '_status.currentCycle': nextCycleId,
           updatedAt: serverTimestamp(),
         });
 
@@ -480,9 +477,17 @@ export function useAutoclaveDailyOpsActions({
       const storage = getStorage();
       const blob = await uriToBlob(photoUri);
 
+      const safeClinicId = sanitizeIdPart(clinicId, '');
+      const safeRoomId = sanitizeIdPart(roomId, '');
+      const safeApplianceKey = sanitizeIdPart(applianceKey, '');
       const safeCurrentCycle = sanitizeIdPart(currentCycle, 'cycle');
 
-      const photoPath = `clinics/${clinicId}/${roomId}/${applianceKey}/dailyOps/${safeCurrentCycle}.jpg`;
+      if (!safeClinicId || !safeRoomId || !safeApplianceKey) {
+        throw new Error('Storage path contains invalid clinic, room, or appliance information.');
+      }
+
+      const photoPath = `clinics/${safeClinicId}/${safeRoomId}/${safeApplianceKey}/dailyOps/${safeCurrentCycle}.jpg`;
+
       uploadedFileRef = storageRef(storage, photoPath);
 
       await uploadBytes(uploadedFileRef, blob, { contentType: 'image/jpeg' });
@@ -567,10 +572,8 @@ export function useAutoclaveDailyOpsActions({
         });
 
         tx.update(applianceRef, {
-          _status: {
-            isRunning: false,
-            currentCycle: '',
-          },
+          '_status.isRunning': false,
+          '_status.currentCycle': '',
           lastCycle: {
             dateExecuted: cycleDatePart,
             cycleNumber: cycleNumberPart,
