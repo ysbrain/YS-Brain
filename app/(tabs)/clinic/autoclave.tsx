@@ -5,7 +5,7 @@ import {
   AutoclaveTabBar,
   type AutoclaveTabKey,
 } from '@/src/components/autoclave/AutoclaveTabBar';
-import { DailyOpsTab } from '@/src/components/autoclave/DailyOpsTab';
+import { DailyOpsView } from '@/src/components/autoclave/DailyOpsView';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
@@ -364,39 +364,13 @@ export default function AutoclaveScreen() {
             scrollEventThrottle={16}
           >
             {activeTab === 'dailyOps' && (
-              <DailyOpsTab
-                isRunning={dailyOps.isRunning}
-                cycleIdPreview={dailyOps.cycleIdPreview}
-                currentCycle={dailyOps.currentCycle}
-                cycleDocLoading={dailyOps.cycleDocLoading}
-                cycleDocError={dailyOps.cycleDocError}
-                cycleDoc={dailyOps.cycleDoc}
-                formErrorField={dailyOps.formErrorField}
-                setFormErrorField={dailyOps.setFormErrorField}
-                maxTemp={dailyOps.maxTemp}
-                setMaxTemp={dailyOps.setMaxTemp}
-                pressure={dailyOps.pressure}
-                setPressure={dailyOps.setPressure}
-                startTime={dailyOps.startTime}
-                unloadTime={dailyOps.unloadTime}
-                internalIndicator={dailyOps.internalIndicator}
-                setInternalIndicator={dailyOps.setInternalIndicator}
-                externalIndicator={dailyOps.externalIndicator}
-                setExternalIndicator={dailyOps.setExternalIndicator}
-                photoUri={dailyOps.photoUri}
-                notes={dailyOps.notes}
-                setNotes={dailyOps.setNotes}
+              <DailyOpsView
+                controller={dailyOps}
                 registerFieldRef={registerFieldRef}
                 onFieldFocus={onFieldFocus}
                 onFieldBlur={onFieldBlur}
                 openPicker={openPicker}
                 onOpenCamera={openCamera}
-                onStartMachine={dailyOps.onStartMachine}
-                onFinishAndUnload={dailyOps.onFinishAndUnload}
-                canPressStartMachine={dailyOps.canPressStartMachine}
-                canPressFinishUnload={dailyOps.canPressFinishUnload}
-                startBlockers={dailyOps.startBlockers}
-                finishBlockers={dailyOps.finishBlockers}
                 saving={saving}
               />
             )}

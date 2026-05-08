@@ -401,3 +401,5 @@ export function useDailyOpsController({
     finishBlockers,
   };
 }
+
+export type DailyOpsController = ReturnType<typeof useDailyOpsController>;

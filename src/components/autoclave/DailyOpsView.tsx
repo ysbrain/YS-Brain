@@ -1,6 +1,6 @@
 // src/components/autoclave/DailyOpsTab.tsx
 
-import { ActionBlockerList, type ActionBlocker } from '@/src/components/autoclave/ActionBlockerList';
+import { ActionBlockerList } from '@/src/components/autoclave/ActionBlockerList';
 import {
   AutoclaveNotesField,
   AutoclavePassFailField,
@@ -9,10 +9,8 @@ import {
   AutoclaveTextField,
   AutoclaveTimeField,
 } from '@/src/components/autoclave/DailyOpsFields';
-import type {
-  DailyOpsCycleDoc,
-  DailyOpsFieldKey,
-} from '@/src/hooks/autoclave/types';
+import type { DailyOpsFieldKey } from '@/src/hooks/autoclave/types';
+import type { DailyOpsController } from '@/src/hooks/autoclave/useDailyOpsController';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 import {
@@ -34,38 +32,8 @@ function sanitizeThreeDigitNumberInput(value: string): string {
 
 type PickerField = 'startTime' | 'unloadTime';
 
-type DailyOpsTabProps = {
-  isRunning: boolean;
-
-  cycleIdPreview: string;
-
-  currentCycle: string;
-  cycleDocLoading: boolean;
-  cycleDocError: string | null;
-  cycleDoc: DailyOpsCycleDoc | null;
-
-  formErrorField: DailyOpsFieldKey | null;
-  setFormErrorField: (field: DailyOpsFieldKey | null) => void;
-
-  maxTemp: string;
-  setMaxTemp: (value: string) => void;
-
-  pressure: string;
-  setPressure: (value: string) => void;
-
-  startTime: string;
-  unloadTime: string;
-
-  internalIndicator: boolean | null;
-  setInternalIndicator: (value: boolean | null) => void;
-
-  externalIndicator: boolean | null;
-  setExternalIndicator: (value: boolean | null) => void;
-
-  photoUri: string | null;
-
-  notes: string;
-  setNotes: (value: string) => void;
+type DailyOpsViewProps = {
+  controller: DailyOpsController;
 
   registerFieldRef: (key: DailyOpsFieldKey) => (ref: any) => void;
   onFieldFocus: (key: DailyOpsFieldKey) => void;
@@ -74,69 +42,58 @@ type DailyOpsTabProps = {
   openPicker: (field: PickerField, mode: 'time') => void;
   onOpenCamera: () => void;
 
-  onStartMachine: () => void;
-  onFinishAndUnload: () => void;
-
-  canPressStartMachine: boolean;
-  canPressFinishUnload: boolean;
-
-  startBlockers: ActionBlocker[];
-  finishBlockers: ActionBlocker[];
-
   saving: boolean;
 };
 
-export function DailyOpsTab({
-  isRunning,
-
-  cycleIdPreview,
-
-  currentCycle,
-  cycleDocLoading,
-  cycleDocError,
-  cycleDoc,
-
-  formErrorField,
-  setFormErrorField,
-
-  maxTemp,
-  setMaxTemp,
-
-  pressure,
-  setPressure,
-
-  startTime,
-  unloadTime,
-
-  internalIndicator,
-  setInternalIndicator,
-
-  externalIndicator,
-  setExternalIndicator,
-
-  photoUri,
-
-  notes,
-  setNotes,
-
+export function DailyOpsView({
+  controller,
   registerFieldRef,
   onFieldFocus,
   onFieldBlur,
-
   openPicker,
   onOpenCamera,
-
-  onStartMachine,
-  onFinishAndUnload,
-
-  canPressStartMachine,
-  canPressFinishUnload,
-
-  startBlockers,
-  finishBlockers,
-
   saving,
-}: DailyOpsTabProps) {
+}: DailyOpsViewProps) {
+  const {
+    isRunning,
+    cycleIdPreview,
+    currentCycle,
+
+    cycleDocLoading,
+    cycleDocError,
+    cycleDoc,
+
+    formErrorField,
+    setFormErrorField,
+
+    maxTemp,
+    setMaxTemp,
+    pressure,
+    setPressure,
+
+    startTime,
+    unloadTime,
+
+    internalIndicator,
+    setInternalIndicator,
+    externalIndicator,
+    setExternalIndicator,
+
+    photoUri,
+
+    notes,
+    setNotes,
+
+    onStartMachine,
+    onFinishAndUnload,
+
+    canPressStartMachine,
+    canPressFinishUnload,
+
+    startBlockers,
+    finishBlockers,
+  } = controller;
+
   const renderStart = () => {
     return (
       <View style={styles.card}>
