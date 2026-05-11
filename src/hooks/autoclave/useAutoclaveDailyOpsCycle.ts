@@ -6,6 +6,8 @@ import { useEffect, useState } from 'react';
 import { db } from '@/src/lib/firebase';
 import type { DailyOpsCycleDoc } from './types';
 
+import { AUTOCLAVE_RECORD_COLLECTIONS } from '@/src/constants/autoclave';
+
 type UseAutoclaveDailyOpsCycleParams = {
   clinicId?: string | null;
   roomId?: string | null;
@@ -50,7 +52,7 @@ export function useAutoclaveDailyOpsCycle({
       roomId,
       'appliances',
       applianceId,
-      'records_DailyOps',
+      AUTOCLAVE_RECORD_COLLECTIONS.dailyOps,
       currentCycle,
     );
 

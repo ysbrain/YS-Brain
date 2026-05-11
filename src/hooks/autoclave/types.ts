@@ -1,5 +1,7 @@
 // src/hooks/autoclave/types.ts
 
+import { DAILY_OPS_FIELD_KEYS } from "@/src/constants/autoclave";
+
 export type SetupStoredValue = string | number;
 
 export type SetupStoredItem = {
@@ -51,14 +53,7 @@ export type DailyOpsCycleDoc = {
 };
 
 export type DailyOpsFieldKey =
-  | 'daily:maxTemp'
-  | 'daily:pressure'
-  | 'daily:startTime'
-  | 'daily:unloadTime'
-  | 'daily:internalIndicator'
-  | 'daily:externalIndicator'
-  | 'daily:photoEvidence'
-  | 'daily:notes';
+  (typeof DAILY_OPS_FIELD_KEYS)[keyof typeof DAILY_OPS_FIELD_KEYS];
 
 export type DailyOpsPickerField = 'startTime' | 'unloadTime';
 

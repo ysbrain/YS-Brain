@@ -1,5 +1,11 @@
 // src/hooks/autoclave/useAutoclaveDailyOpsActions.ts
 
+import {
+  AUTOCLAVE_CYCLE_ID,
+  AUTOCLAVE_RECORD_COLLECTIONS,
+  AUTOCLAVE_SETUP_KEYS,
+  AUTOCLAVE_STORAGE,
+} from '@/src/constants/autoclave';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
@@ -311,7 +317,7 @@ export function useAutoclaveDailyOpsActions({
 
         const latestSerialNumber = setupValueToString(
           latestSetup,
-          'serial_number',
+          AUTOCLAVE_SETUP_KEYS.serialNumber,
           '',
         ).trim();
 
@@ -361,7 +367,7 @@ export function useAutoclaveDailyOpsActions({
             roomId,
             'appliances',
             applianceId,
-            'records_DailyOps',
+            AUTOCLAVE_RECORD_COLLECTIONS.dailyOps,
           ),
           nextCycleId,
         );
@@ -548,17 +554,17 @@ export function useAutoclaveDailyOpsActions({
       return;
     }
 
-    const cycleParts = currentCycle.split('-');
+    const cycleIdMatch = currentCycle.match(AUTOCLAVE_CYCLE_ID.regex);
 
-    if (cycleParts.length < 3) {
+    if (!cycleIdMatch) {
       Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
       return;
     }
 
-    const cycleDatePart = cycleParts[0];
-    const cycleNumberPart = Number(cycleParts[cycleParts.length - 1]);
+    const [, cycleDatePart, , cycleNumberText] = cycleIdMatch;
+    const cycleNumberPart = Number(cycleNumberText);
 
-    if (!/^\d{8}$/.test(cycleDatePart) || !Number.isFinite(cycleNumberPart)) {
+    if (!Number.isFinite(cycleNumberPart)) {
       Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
       return;
     }
@@ -569,7 +575,7 @@ export function useAutoclaveDailyOpsActions({
     setUiLocked(true, { scope: 'global' });
 
     let uploadedFileRef: ReturnType<typeof storageRef> | null = null;
-    let finishCommitted = false;
+    let databaseCommitted = false;
 
     try {
       const storage = getStorage();
@@ -586,12 +592,15 @@ export function useAutoclaveDailyOpsActions({
         );
       }
 
-      const photoPath = `clinics/${safeClinicId}/${safeRoomId}/${safeApplianceKey}/dailyOps/${safeCurrentCycle}.jpg`;
+      const photoPath =
+        `clinics/${safeClinicId}/${safeRoomId}/${safeApplianceKey}` +
+        `/${AUTOCLAVE_STORAGE.dailyOpsFolder}` +
+        `/${safeCurrentCycle}.${AUTOCLAVE_STORAGE.photoExtension}`;
 
       uploadedFileRef = storageRef(storage, photoPath);
 
       await uploadBytes(uploadedFileRef, blob, {
-        contentType: 'image/jpeg',
+        contentType: AUTOCLAVE_STORAGE.photoContentType,
       });
 
       const photoUrl = await getDownloadURL(uploadedFileRef);
@@ -614,7 +623,7 @@ export function useAutoclaveDailyOpsActions({
         roomId,
         'appliances',
         applianceId,
-        'records_DailyOps',
+        AUTOCLAVE_RECORD_COLLECTIONS.dailyOps,
         currentCycle,
       );
 
@@ -693,7 +702,7 @@ export function useAutoclaveDailyOpsActions({
         });
       });
 
-      finishCommitted = true;
+      databaseCommitted = true;
       setFormErrorField(null);
 
       Alert.alert(
@@ -712,7 +721,7 @@ export function useAutoclaveDailyOpsActions({
     } catch (e: any) {
       console.error('finish autoclave cycle error', e);
 
-      if (!finishCommitted && uploadedFileRef) {
+      if (!databaseCommitted && uploadedFileRef) {
         try {
           await deleteObject(uploadedFileRef);
         } catch (cleanupErr) {

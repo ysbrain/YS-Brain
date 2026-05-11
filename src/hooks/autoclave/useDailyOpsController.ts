@@ -1,6 +1,7 @@
 // src/hooks/autoclave/useDailyOpsController.ts
 
 import type { ActionBlocker } from '@/src/components/autoclave/ActionBlockerList';
+import { AUTOCLAVE_CYCLE_ID, AUTOCLAVE_SETUP_KEYS } from '@/src/constants/autoclave';
 import {
   setupValueToNumberString,
   setupValueToString,
@@ -100,11 +101,19 @@ export function useDailyOpsController({
   routerBack,
 }: UseDailyOpsControllerParams) {
   const defaultMaxTemp = useMemo(() => {
-    return setupValueToNumberString(setup, 'default_temp_c', '');
+    return setupValueToNumberString(
+      setup,
+      AUTOCLAVE_SETUP_KEYS.defaultTempC,
+      '',
+    );
   }, [setup]);
 
   const defaultPressure = useMemo(() => {
-    return setupValueToNumberString(setup, 'default_pressure', '');
+    return setupValueToNumberString(
+      setup,
+      AUTOCLAVE_SETUP_KEYS.defaultPressure,
+      '',
+    );
   }, [setup]);
 
   const {
@@ -134,7 +143,11 @@ export function useDailyOpsController({
   });
 
   const serialNumber = useMemo(() => {
-    return setupValueToString(setup, 'serial_number', '').trim();
+    return setupValueToString(
+      setup,
+      AUTOCLAVE_SETUP_KEYS.serialNumber,
+      '',
+    ).trim();
   }, [setup]);
 
   const strictSerialIdPart = useMemo(() => {
@@ -162,7 +175,8 @@ export function useDailyOpsController({
   }, [lastCycle, currentDate]);
 
   const cycleIdPreview = useMemo(() => {
-    const serialPart = strictSerialIdPart ?? 'INVALID_SERIAL';
+    const serialPart =
+      strictSerialIdPart ?? AUTOCLAVE_CYCLE_ID.invalidSerialPlaceholder;
     return `${currentDate}-${serialPart}-${nextCycle}`;
   }, [currentDate, strictSerialIdPart, nextCycle]);
 
@@ -279,7 +293,7 @@ export function useDailyOpsController({
     !saving && startBlockers.length === 0;
 
   const hasValidCurrentCycleId =
-    !!currentCycle && /^\d{8}-.+-\d+$/.test(currentCycle);
+    !!currentCycle && AUTOCLAVE_CYCLE_ID.regex.test(currentCycle);
 
   const finishBlockers = useMemo<ActionBlocker[]>(() => {
     const blockers: ActionBlocker[] = [];
@@ -302,6 +316,13 @@ export function useDailyOpsController({
       blockers.push({
         key: 'cycleDocError',
         message: cycleDocError,
+      });
+    }
+
+    if (cycleDoc?._isFinished) {
+      blockers.push({
+        key: 'alreadyFinished',
+        message: 'This cycle has already been finished.',
       });
     }
 
@@ -346,6 +367,7 @@ export function useDailyOpsController({
     cycleDocLoading,
     loadError,
     cycleDocError,
+    cycleDoc?._isFinished,
     clinicId,
     roomId,
     applianceId,

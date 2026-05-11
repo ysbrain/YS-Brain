@@ -1,4 +1,4 @@
-// src/components/autoclave/DailyOpsTab.tsx
+// src/components/autoclave/DailyOpsView.tsx
 
 import { ActionBlockerList } from '@/src/components/autoclave/ActionBlockerList';
 import {
@@ -9,6 +9,7 @@ import {
   AutoclaveTextField,
   AutoclaveTimeField,
 } from '@/src/components/autoclave/DailyOpsFields';
+import { AUTOCLAVE_VALIDATION, DAILY_OPS_FIELD_KEYS } from '@/src/constants/autoclave';
 import type { DailyOpsFieldKey } from '@/src/hooks/autoclave/types';
 import type { DailyOpsController } from '@/src/hooks/autoclave/useDailyOpsController';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -25,9 +26,10 @@ import {
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
 
-
 function sanitizeThreeDigitNumberInput(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 3);
+  return value
+    .replace(/\D/g, '')
+    .slice(0, AUTOCLAVE_VALIDATION.maxThreeDigitLength);
 }
 
 type PickerField = 'startTime' | 'unloadTime';
@@ -116,56 +118,56 @@ export function DailyOpsView({
         <View style={styles.twoColRow}>
           <View style={styles.twoColItem}>
             <AutoclaveTextField
-              ref={registerFieldRef('daily:maxTemp')}
+              ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.maxTemp)}
               label="Max Temp (°C)"
               value={maxTemp}
               onChangeText={(t) => {
                 setMaxTemp(sanitizeThreeDigitNumberInput(t));
 
-                if (formErrorField === 'daily:maxTemp') {
+                if (formErrorField === DAILY_OPS_FIELD_KEYS.maxTemp) {
                   setFormErrorField(null);
                 }
               }}
               placeholder="Enter temp"
-              error={formErrorField === 'daily:maxTemp'}
+              error={formErrorField === DAILY_OPS_FIELD_KEYS.maxTemp}
               keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
-              maxLength={3}
-              onFocus={() => onFieldFocus('daily:maxTemp')}
-              onBlur={() => onFieldBlur('daily:maxTemp')}
+              maxLength={AUTOCLAVE_VALIDATION.maxThreeDigitLength}
+              onFocus={() => onFieldFocus(DAILY_OPS_FIELD_KEYS.maxTemp)}
+              onBlur={() => onFieldBlur(DAILY_OPS_FIELD_KEYS.maxTemp)}
             />
           </View>
 
           <View style={styles.twoColItem}>
             <AutoclaveTextField
-              ref={registerFieldRef('daily:pressure')}
+              ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.pressure)}
               label="Pressure"
               value={pressure}
               onChangeText={(t) => {
                 setPressure(sanitizeThreeDigitNumberInput(t));
 
-                if (formErrorField === 'daily:pressure') {
+                if (formErrorField === DAILY_OPS_FIELD_KEYS.pressure) {
                   setFormErrorField(null);
                 }
               }}
               placeholder="Enter pressure"
-              error={formErrorField === 'daily:pressure'}
+              error={formErrorField === DAILY_OPS_FIELD_KEYS.pressure}
               keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
-              maxLength={3}
-              onFocus={() => onFieldFocus('daily:pressure')}
-              onBlur={() => onFieldBlur('daily:pressure')}
+              maxLength={AUTOCLAVE_VALIDATION.maxThreeDigitLength}
+              onFocus={() => onFieldFocus(DAILY_OPS_FIELD_KEYS.pressure)}
+              onBlur={() => onFieldBlur(DAILY_OPS_FIELD_KEYS.pressure)}
             />
           </View>
         </View>
 
         <AutoclaveTimeField
-          ref={registerFieldRef('daily:startTime')}
+          ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.startTime)}
           label="Start Time"
           value={startTime}
-          error={formErrorField === 'daily:startTime'}
+          error={formErrorField === DAILY_OPS_FIELD_KEYS.startTime}
           onPress={() => {
-            onFieldFocus('daily:startTime');
+            onFieldFocus(DAILY_OPS_FIELD_KEYS.startTime);
 
-            if (formErrorField === 'daily:startTime') {
+            if (formErrorField === DAILY_OPS_FIELD_KEYS.startTime) {
               setFormErrorField(null);
             }
 
@@ -278,14 +280,14 @@ export function DailyOpsView({
         </View>
 
         <AutoclaveTimeField
-          ref={registerFieldRef('daily:unloadTime')}
+          ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.unloadTime)}
           label="Unload Time"
           value={unloadTime}
-          error={formErrorField === 'daily:unloadTime'}
+          error={formErrorField === DAILY_OPS_FIELD_KEYS.unloadTime}
           onPress={() => {
-            onFieldFocus('daily:unloadTime');
+            onFieldFocus(DAILY_OPS_FIELD_KEYS.unloadTime);
 
-            if (formErrorField === 'daily:unloadTime') {
+            if (formErrorField === DAILY_OPS_FIELD_KEYS.unloadTime) {
               setFormErrorField(null);
             }
 
@@ -298,42 +300,42 @@ export function DailyOpsView({
           <View style={styles.verifyDivider} />
 
           <AutoclavePassFailField
-            ref={registerFieldRef('daily:internalIndicator')}
+            ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.internalIndicator)}
             label="Internal Indicator"
             value={internalIndicator}
-            error={formErrorField === 'daily:internalIndicator'}
+            error={formErrorField === DAILY_OPS_FIELD_KEYS.internalIndicator}
             onChange={(value) => {
               setInternalIndicator(value);
 
-              if (formErrorField === 'daily:internalIndicator') {
+              if (formErrorField === DAILY_OPS_FIELD_KEYS.internalIndicator) {
                 setFormErrorField(null);
               }
             }}
           />
 
           <AutoclavePassFailField
-            ref={registerFieldRef('daily:externalIndicator')}
+            ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.externalIndicator)}
             label="External Indicator"
             value={externalIndicator}
-            error={formErrorField === 'daily:externalIndicator'}
+            error={formErrorField === DAILY_OPS_FIELD_KEYS.externalIndicator}
             onChange={(value) => {
               setExternalIndicator(value);
 
-              if (formErrorField === 'daily:externalIndicator') {
+              if (formErrorField === DAILY_OPS_FIELD_KEYS.externalIndicator) {
                 setFormErrorField(null);
               }
             }}
           />
 
           <AutoclavePhotoField
-            ref={registerFieldRef('daily:photoEvidence')}
+            ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.photoEvidence)}
             label="Photo Evidence"
             photoUri={photoUri}
-            error={formErrorField === 'daily:photoEvidence'}
+            error={formErrorField === DAILY_OPS_FIELD_KEYS.photoEvidence}
             onPress={() => {
-              onFieldFocus('daily:photoEvidence');
+              onFieldFocus(DAILY_OPS_FIELD_KEYS.photoEvidence);
 
-              if (formErrorField === 'daily:photoEvidence') {
+              if (formErrorField === DAILY_OPS_FIELD_KEYS.photoEvidence) {
                 setFormErrorField(null);
               }
 
@@ -344,12 +346,12 @@ export function DailyOpsView({
           />
 
           <AutoclaveNotesField
-            ref={registerFieldRef('daily:notes')}
+            ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.notes)}
             label="Notes (Optional)"
             value={notes}
             onChangeText={setNotes}
-            onFocus={() => onFieldFocus('daily:notes')}
-            onBlur={() => onFieldBlur('daily:notes')}
+            onFocus={() => onFieldFocus(DAILY_OPS_FIELD_KEYS.notes)}
+            onBlur={() => onFieldBlur(DAILY_OPS_FIELD_KEYS.notes)}
           />
 
           <ActionBlockerList blockers={finishBlockers} />
