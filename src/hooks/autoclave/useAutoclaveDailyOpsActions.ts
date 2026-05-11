@@ -1,5 +1,8 @@
 // src/hooks/autoclave/useAutoclaveDailyOpsActions.ts
 
+import { useValidationScroll } from '@/src/hooks/useValidationScroll';
+import { db } from '@/src/lib/firebase';
+import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import {
   collection,
   doc,
@@ -14,9 +17,7 @@ import {
   uploadBytes,
 } from 'firebase/storage';
 import { useCallback } from 'react';
-import { Alert, Keyboard, TextInput } from 'react-native';
-
-import { db } from '@/src/lib/firebase';
+import { Alert } from 'react-native';
 import type {
   ApplianceDocShape,
   DailyOpsActivePicker,
@@ -33,17 +34,23 @@ type RequestScrollFn = (
 ) => void;
 
 type ParseHHMMFn = (value: string) => Date | null;
+
 type ValidatePositiveIntUpTo3DigitsFn = (value: string) => number | null;
+
 type UriToBlobFn = (uri: string) => Promise<Blob>;
+
 type SetupValueToStringFn = (
   setup: Record<string, SetupStoredItem | undefined> | undefined,
   key: string,
   fallback?: string,
 ) => string;
+
 type FormatDateYYYYMMDDCompactFn = (date: Date) => string;
+
 type Pad2Fn = (value: number) => string;
 
 type UiLockScope = 'global' | 'modal';
+
 type SetUiLockedFn = (
   locked: boolean,
   options?: { scope?: UiLockScope },
@@ -59,12 +66,14 @@ type UseAutoclaveDailyOpsActionsParams = {
 
   loading: boolean;
   loadError: string | null;
+
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
 
   isRunning: boolean;
   currentCycle: string;
+
   cycleDocLoading: boolean;
   cycleDocError: string | null;
 
@@ -74,8 +83,8 @@ type UseAutoclaveDailyOpsActionsParams = {
   maxTemp: string;
   pressure: string;
   startTime: string;
-
   unloadTime: string;
+
   internalIndicator: boolean | null;
   externalIndicator: boolean | null;
   photoUri: string | null;
@@ -95,45 +104,45 @@ type UseAutoclaveDailyOpsActionsParams = {
   pad2: Pad2Fn;
 };
 
-function blurActiveInputAndDismissKeyboard() {
-  const focusedInput = TextInput.State.currentlyFocusedInput?.();
-
-  if (focusedInput && typeof focusedInput.blur === 'function') {
-    focusedInput.blur();
-  }
-
-  Keyboard.dismiss();
-}
-
 export function useAutoclaveDailyOpsActions({
   clinicId,
   roomId,
   applianceId,
   userUid,
   userName,
+
   loading,
   loadError,
+
   saving,
   setSaving,
   setUiLocked,
+
   isRunning,
   currentCycle,
+
   cycleDocLoading,
   cycleDocError,
+
   serialNumber,
   applianceKey,
+
   maxTemp,
   pressure,
   startTime,
   unloadTime,
+
   internalIndicator,
   externalIndicator,
   photoUri,
   notes,
+
   setFormErrorField,
   setActivePicker,
+
   requestScroll,
   routerBack,
+
   parseHHMM,
   validatePositiveIntUpTo3Digits,
   uriToBlob,
@@ -141,33 +150,17 @@ export function useAutoclaveDailyOpsActions({
   formatDateYYYYMMDDCompact,
   pad2,
 }: UseAutoclaveDailyOpsActionsParams) {
-  const showValidationAlert = useCallback(
-    (field: DailyOpsFieldKey, message: string) => {
-      setFormErrorField(field);
-
-      Alert.alert(
-        'Validation',
-        message,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              requestScroll(field, 'validation', 50);
-            },
-          },
-        ],
-        { cancelable: true },
-      );
-    },
-    [setFormErrorField, requestScroll],
-  );
+  const { showValidationAlert } = useValidationScroll(requestScroll);
 
   const onStartMachine = useCallback(async () => {
     blurActiveInputAndDismissKeyboard();
     setActivePicker(null);
 
     if (!clinicId || !roomId || !applianceId) {
-      Alert.alert('Missing context', 'Clinic, room, or appliance information is missing.');
+      Alert.alert(
+        'Missing context',
+        'Clinic, room, or appliance information is missing.',
+      );
       return;
     }
 
@@ -206,34 +199,78 @@ export function useAutoclaveDailyOpsActions({
     const trimmedStartTime = startTime.trim();
 
     if (!trimmedTemp) {
-      showValidationAlert('daily:maxTemp', 'Max Temp (°C) is required.');
+      setFormErrorField('daily:maxTemp');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Max Temp (°C) is required.',
+        fieldKey: 'daily:maxTemp',
+      });
+
       return;
     }
 
     if (!trimmedPressure) {
-      showValidationAlert('daily:pressure', 'Pressure is required.');
+      setFormErrorField('daily:pressure');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Pressure is required.',
+        fieldKey: 'daily:pressure',
+      });
+
       return;
     }
 
     if (!trimmedStartTime) {
-      showValidationAlert('daily:startTime', 'Start Time is required.');
+      setFormErrorField('daily:startTime');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Start Time is required.',
+        fieldKey: 'daily:startTime',
+      });
+
       return;
     }
 
     const temperatureValue = validatePositiveIntUpTo3Digits(trimmedTemp);
+
     if (temperatureValue === null) {
-      showValidationAlert('daily:maxTemp', 'Max Temp (°C) invalid.');
+      setFormErrorField('daily:maxTemp');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Max Temp (°C) invalid.',
+        fieldKey: 'daily:maxTemp',
+      });
+
       return;
     }
 
     const pressureValue = validatePositiveIntUpTo3Digits(trimmedPressure);
+
     if (pressureValue === null) {
-      showValidationAlert('daily:pressure', 'Pressure invalid.');
+      setFormErrorField('daily:pressure');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Pressure invalid.',
+        fieldKey: 'daily:pressure',
+      });
+
       return;
     }
 
     if (!parseHHMM(trimmedStartTime)) {
-      showValidationAlert('daily:startTime', 'Start Time must be a valid time.');
+      setFormErrorField('daily:startTime');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Start Time must be a valid time.',
+        fieldKey: 'daily:startTime',
+      });
+
       return;
     }
 
@@ -243,7 +280,15 @@ export function useAutoclaveDailyOpsActions({
     setUiLocked(true, { scope: 'global' });
 
     try {
-      const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
+      const applianceRef = doc(
+        db,
+        'clinics',
+        clinicId,
+        'rooms',
+        roomId,
+        'appliances',
+        applianceId,
+      );
 
       const committedCycleId = await runTransaction(db, async (tx) => {
         const applianceSnap = await tx.get(applianceRef);
@@ -263,7 +308,7 @@ export function useAutoclaveDailyOpsActions({
           applianceData.setup && typeof applianceData.setup === 'object'
             ? applianceData.setup
             : {};
-        
+
         const latestSerialNumber = setupValueToString(
           latestSetup,
           'serial_number',
@@ -302,8 +347,10 @@ export function useAutoclaveDailyOpsActions({
 
         const nextCycleNumber =
           latestLastDate === txCurrentDate ? latestRawCycleNumber + 1 : 1;
-        
-        const nextCycleId = `${txCurrentDate}-${safeSerialNumber}-${pad2(nextCycleNumber)}`;
+
+        const nextCycleId = `${txCurrentDate}-${safeSerialNumber}-${pad2(
+          nextCycleNumber,
+        )}`;
 
         const cycleRef = doc(
           collection(
@@ -320,6 +367,7 @@ export function useAutoclaveDailyOpsActions({
         );
 
         const cycleSnap = await tx.get(cycleRef);
+
         if (cycleSnap.exists()) {
           throw new Error('A cycle with this ID already exists. Please try again.');
         }
@@ -386,13 +434,13 @@ export function useAutoclaveDailyOpsActions({
     setFormErrorField,
     setSaving,
     setUiLocked,
+    showValidationAlert,
     parseHHMM,
     validatePositiveIntUpTo3Digits,
     setupValueToString,
     formatDateYYYYMMDDCompact,
     pad2,
     routerBack,
-    showValidationAlert,
   ]);
 
   const onFinishAndUnload = useCallback(async () => {
@@ -400,7 +448,10 @@ export function useAutoclaveDailyOpsActions({
     setActivePicker(null);
 
     if (!clinicId || !roomId || !applianceId) {
-      Alert.alert('Missing context', 'Clinic, room, or appliance information is missing.');
+      Alert.alert(
+        'Missing context',
+        'Clinic, room, or appliance information is missing.',
+      );
       return;
     }
 
@@ -438,37 +489,67 @@ export function useAutoclaveDailyOpsActions({
     const trimmedNotes = notes.trim();
 
     if (!trimmedUnloadTime) {
-      showValidationAlert('daily:unloadTime', 'Unload Time is required.');
+      setFormErrorField('daily:unloadTime');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Unload Time is required.',
+        fieldKey: 'daily:unloadTime',
+      });
+
       return;
     }
 
     if (!parseHHMM(trimmedUnloadTime)) {
-      showValidationAlert('daily:unloadTime', 'Unload Time must be a valid time.');
+      setFormErrorField('daily:unloadTime');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Unload Time must be a valid time.',
+        fieldKey: 'daily:unloadTime',
+      });
+
       return;
     }
 
-    if (internalIndicator === null) {      
-      showValidationAlert(
-        'daily:internalIndicator',
-        'Please select Internal Indicator result.',
-      );
+    if (internalIndicator === null) {
+      setFormErrorField('daily:internalIndicator');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Please select Internal Indicator result.',
+        fieldKey: 'daily:internalIndicator',
+      });
+
       return;
     }
 
-    if (externalIndicator === null) {      
-      showValidationAlert(
-        'daily:externalIndicator',
-        'Please select External Indicator result.',
-      );
+    if (externalIndicator === null) {
+      setFormErrorField('daily:externalIndicator');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Please select External Indicator result.',
+        fieldKey: 'daily:externalIndicator',
+      });
+
       return;
     }
 
     if (!photoUri || photoUri.trim().length === 0) {
-      showValidationAlert('daily:photoEvidence', 'Photo Evidence is required.');
+      setFormErrorField('daily:photoEvidence');
+
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Photo Evidence is required.',
+        fieldKey: 'daily:photoEvidence',
+      });
+
       return;
     }
 
     const cycleParts = currentCycle.split('-');
+
     if (cycleParts.length < 3) {
       Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
       return;
@@ -484,8 +565,6 @@ export function useAutoclaveDailyOpsActions({
 
     if (saving) return;
 
-    Keyboard.dismiss();
-    setActivePicker(null);
     setSaving(true);
     setUiLocked(true, { scope: 'global' });
 
@@ -502,17 +581,30 @@ export function useAutoclaveDailyOpsActions({
       const safeCurrentCycle = sanitizeIdPart(currentCycle, 'cycle');
 
       if (!safeClinicId || !safeRoomId || !safeApplianceKey) {
-        throw new Error('Storage path contains invalid clinic, room, or appliance information.');
+        throw new Error(
+          'Storage path contains invalid clinic, room, or appliance information.',
+        );
       }
 
       const photoPath = `clinics/${safeClinicId}/${safeRoomId}/${safeApplianceKey}/dailyOps/${safeCurrentCycle}.jpg`;
 
       uploadedFileRef = storageRef(storage, photoPath);
 
-      await uploadBytes(uploadedFileRef, blob, { contentType: 'image/jpeg' });
+      await uploadBytes(uploadedFileRef, blob, {
+        contentType: 'image/jpeg',
+      });
+
       const photoUrl = await getDownloadURL(uploadedFileRef);
 
-      const applianceRef = doc(db, 'clinics', clinicId, 'rooms', roomId, 'appliances', applianceId);
+      const applianceRef = doc(
+        db,
+        'clinics',
+        clinicId,
+        'rooms',
+        roomId,
+        'appliances',
+        applianceId,
+      );
 
       const cycleRef = doc(
         db,
@@ -656,10 +748,10 @@ export function useAutoclaveDailyOpsActions({
     setFormErrorField,
     setSaving,
     setUiLocked,
+    showValidationAlert,
     parseHHMM,
     uriToBlob,
     routerBack,
-    showValidationAlert,
   ]);
 
   return {

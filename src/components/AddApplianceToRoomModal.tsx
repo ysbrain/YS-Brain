@@ -1,14 +1,22 @@
 // src/components/AddApplianceToRoomModal.tsx
 
 import BottomSheetShell from '@/src/components/BottomSheetShell';
+import {
+  IOS_PICKER_OVERLAY_HEIGHT,
+  IosDateTimePickerOverlay,
+} from '@/src/components/IosDateTimePickerOverlay';
 import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
+import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
+import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from '@react-native-community/datetimepicker';
 import {
   collection,
   doc,
@@ -32,12 +40,15 @@ import {
   Text,
   TextInput,
   View,
-  useColorScheme
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type SetupFieldType = 'string' | 'number' | 'date';
-type SetupConfigItem = { field: string; type: SetupFieldType };
+
+type SetupConfigItem = {
+  field: string;
+  type: SetupFieldType;
+};
 
 type SetupStoredValue = string | number;
 
@@ -80,9 +91,14 @@ class FormAppError extends Error {
   code: FormErrorCode;
   fieldKey?: FieldKey;
   meta?: Record<string, any>;
+
   constructor(
     code: FormErrorCode,
-    opts?: { fieldKey?: FieldKey; meta?: Record<string, any>; message?: string },
+    opts?: {
+      fieldKey?: FieldKey;
+      meta?: Record<string, any>;
+      message?: string;
+    },
   ) {
     super(opts?.message ?? code);
     this.code = code;
@@ -99,18 +115,25 @@ function getFormErrorMessage(err: FormError): string {
   switch (err.code) {
     case 'NO_MODULE':
       return 'No module selected.';
+
     case 'MISSING_NAME':
       return 'Please enter a valid appliance name.';
+
     case 'MISSING_FIELD':
       return `Please fill in “${err.meta?.field ?? 'this field'}”.`;
+
     case 'INVALID_NUMBER':
       return `“${err.meta?.field ?? 'This field'}” must be a number.`;
+
     case 'INVALID_DATE':
       return `“${err.meta?.field ?? 'This field'}” must be a valid date (YYYY/MM/DD).`;
+
     case 'NAME_COLLISION':
       return 'This appliance name is already used. Please choose a different name.';
+
     case 'ROOM_NOT_FOUND':
       return 'Room does not exist.';
+
     default:
       return 'Failed to add appliance.';
   }
@@ -126,24 +149,19 @@ function formatDateYYYYMMDD(d: Date) {
 
 function parseYYYYMMDD(s: string): Date | null {
   const m = /^(\d{4})\/(\d{2})\/(\d{2})$/.exec(s);
+
   if (!m) return null;
+
   const y = Number(m[1]);
   const mm = Number(m[2]) - 1;
   const dd = Number(m[3]);
   const d = new Date(y, mm, dd);
-  // Validate exact match (avoid 2026/02/31 rolling to March)
-  if (d.getFullYear() !== y || d.getMonth() !== mm || d.getDate() !== dd) return null;
-  return d;
-}
 
-function blurActiveInputAndDismissKeyboard() {
-  const focusedInput = TextInput.State.currentlyFocusedInput?.();
-
-  if (focusedInput && typeof focusedInput.blur === 'function') {
-    focusedInput.blur();
+  if (d.getFullYear() !== y || d.getMonth() !== mm || d.getDate() !== dd) {
+    return null;
   }
 
-  Keyboard.dismiss();
+  return d;
 }
 
 export default function AddApplianceToRoomModal({
@@ -158,44 +176,40 @@ export default function AddApplianceToRoomModal({
   const [applianceName, setApplianceName] = useState('');
   const [setupConfig, setSetupConfig] = useState<SetupConfigItem[] | null>(null);
   const [loadingConfig, setLoadingConfig] = useState(false);
-  const [moduleRecordFields, setModuleRecordFields] = useState<any[] | undefined>(undefined);
+  const [moduleRecordFields, setModuleRecordFields] = useState<any[] | undefined>(
+    undefined,
+  );
   const [saving, setSaving] = useState(false);
 
   const { setUiLocked } = useUiLock();
 
-  const applianceKey = useMemo(() => toFirestoreSafeKey(applianceName), [applianceName]);
+  const applianceKey = useMemo(
+    () => toFirestoreSafeKey(applianceName),
+    [applianceName],
+  );
 
   const [formError, setFormError] = useState<FormError | null>(null);
+
   const errorText = useMemo(
     () => (formError ? getFormErrorMessage(formError) : null),
     [formError],
   );
 
-  // Store values keyed by field name (assumes fields are unique)
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
 
-  // Date picker control
   const [activeDateField, setActiveDateField] = useState<string | null>(null);
   const [dateDraft, setDateDraft] = useState<Date>(new Date());
 
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const pickerTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
-
-  const overlayBg = isDark ? '#333' : '#fff';
-  const overlayBorder = '#111';
-  const overlayText = isDark ? '#fff' : '#111';
-  const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
-
   const activeDateValue = useMemo(() => {
     if (!activeDateField) return new Date();
+
     const s = configValues[activeDateField];
     return parseYYYYMMDD(s) ?? new Date();
   }, [activeDateField, configValues]);
 
   const allFieldsFilled = useMemo(() => {
     if (!selectedModule) return false;
-    if (!applianceKey) return false; // must produce a valid slug/key
+    if (!applianceKey) return false;
     if (loadingConfig) return false;
     if (setupConfig === null) return false;
 
@@ -203,23 +217,21 @@ export default function AddApplianceToRoomModal({
       const v = (configValues[item.field] ?? '').trim();
       if (!v) return false;
     }
+
     return true;
   }, [selectedModule, applianceKey, loadingConfig, setupConfig, configValues]);
 
   const applianceNameInputRef = useRef<TextInput>(null);
 
   const FOOTER_HEIGHT = 72;
+
   const insets = useSafeAreaInsets();
   const footerInset = insets.bottom;
   const footerHeight = FOOTER_HEIGHT + footerInset;
 
-  const IOS_PICKER_HEIGHT = 216;
-  const IOS_PICKER_HEADER_HEIGHT = 44;
-  const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12;
-
   const dateOverlayHeight =
-    Platform.OS === 'ios' && activeDateField ? IOS_PICKER_TOTAL : 0;
-  
+    Platform.OS === 'ios' && activeDateField ? IOS_PICKER_OVERLAY_HEIGHT : 0;
+
   const {
     scrollRef,
     registerFieldRef,
@@ -229,35 +241,32 @@ export default function AddApplianceToRoomModal({
     requestScroll,
     contentBottomPadding,
   } = useKeyboardAwareFieldScroll({
-    activeOverlayFieldKey: activeDateField ? (`setup:${activeDateField}` as FieldKey) : null,
+    activeOverlayFieldKey: activeDateField
+      ? (`setup:${activeDateField}` as FieldKey)
+      : null,
     overlayHeight: dateOverlayHeight,
     baseBottomPadding: footerHeight + 16,
   });
+
+  const { scrollToField } = useValidationScroll(requestScroll);
 
   const icon = useMemo(
     () => getApplianceIcon(selectedModule?.id ?? ''),
     [selectedModule?.id],
   );
 
-  const scrollToApplianceNameError = useCallback(() => {
-    requestAnimationFrame(() => {
-      requestScroll('applianceName', 'validation', 0);
-    });
-  }, [requestScroll]);
-
-  const scrollToFieldError = useCallback(
-    (fieldKey: FieldKey) => {
-      requestAnimationFrame(() => {
-        requestScroll(fieldKey, 'validation', 50);
-      });
-    }, [requestScroll],
-  );
-
   const onChangeConfig = useCallback(
     (field: string, value: string) => {
-      setConfigValues((prev) => ({ ...prev, [field]: value }));
+      setConfigValues((prev) => ({
+        ...prev,
+        [field]: value,
+      }));
+
       const k = `setup:${field}` as FieldKey;
-      if (formError?.fieldKey === k) setFormError(null);
+
+      if (formError?.fieldKey === k) {
+        setFormError(null);
+      }
     },
     [formError?.fieldKey],
   );
@@ -265,8 +274,10 @@ export default function AddApplianceToRoomModal({
   const onPickDate = useCallback(
     (field: string) => {
       Keyboard.dismiss();
+
       const existing = configValues[field];
       const initial = parseYYYYMMDD(existing) ?? new Date();
+
       setDateDraft(initial);
       setActiveDateField(field);
     },
@@ -295,17 +306,21 @@ export default function AddApplianceToRoomModal({
     [activeDateField, onChangeConfig],
   );
 
-  const closeDatePicker = useCallback(() => setActiveDateField(null), []);
+  const closeDatePicker = useCallback(() => {
+    setActiveDateField(null);
+  }, []);
+
   const commitDatePicker = useCallback(() => {
     if (activeDateField) {
       onChangeConfig(activeDateField, formatDateYYYYMMDD(dateDraft));
     }
+
     setActiveDateField(null);
   }, [activeDateField, dateDraft, onChangeConfig]);
 
-  // Reset form when opening/closing or module changes
   useEffect(() => {
     if (!visible) return;
+
     setApplianceName('');
     setConfigValues({});
     setSetupConfig(null);
@@ -316,7 +331,6 @@ export default function AddApplianceToRoomModal({
     setDateDraft(new Date());
   }, [visible, selectedModule?.id]);
 
-  // Subscribe to module doc to fetch setupConfig
   useEffect(() => {
     if (!visible) return;
     if (!selectedModule?.id) return;
@@ -324,15 +338,20 @@ export default function AddApplianceToRoomModal({
     setLoadingConfig(true);
 
     const ref = doc(db, 'applianceModules', selectedModule.id);
+
     const unsub = onSnapshot(
       ref,
       (snap) => {
         const data: any = snap.data() ?? {};
 
-        const rf = Array.isArray(data.recordFields) ? data.recordFields : undefined;
+        const rf = Array.isArray(data.recordFields)
+          ? data.recordFields
+          : undefined;
+
         setModuleRecordFields(rf);
 
         const raw = Array.isArray(data.setupConfig) ? data.setupConfig : null;
+
         if (!raw) {
           setSetupConfig([]);
           setLoadingConfig(false);
@@ -354,16 +373,17 @@ export default function AddApplianceToRoomModal({
 
         setConfigValues((prev) => {
           const next: Record<string, string> = {};
+
           for (const item of parsed) {
             next[item.field] = prev[item.field] ?? '';
           }
+
           return next;
         });
 
         setLoadingConfig(false);
       },
       (err) => {
-        // eslint-disable-next-line no-console
         console.error('setupConfig snapshot error:', err);
         setSetupConfig([]);
         setModuleRecordFields(undefined);
@@ -397,6 +417,7 @@ export default function AddApplianceToRoomModal({
 
       if (item.type === 'number') {
         const n = Number(raw);
+
         if (!Number.isFinite(n)) {
           return {
             ok: false as const,
@@ -407,9 +428,11 @@ export default function AddApplianceToRoomModal({
             },
           };
         }
+
         parsedValue = n;
       } else if (item.type === 'date') {
         const d = parseYYYYMMDD(raw);
+
         if (!d) {
           return {
             ok: false as const,
@@ -420,12 +443,15 @@ export default function AddApplianceToRoomModal({
             },
           };
         }
-        parsedValue = raw; // keep date as YYYY/MM/DD string
+
+        parsedValue = raw;
       } else {
         parsedValue = raw;
       }
 
-      const safeFieldKey = toFirestoreSafeKey(item.field, { fallback: '' });
+      const safeFieldKey = toFirestoreSafeKey(item.field, {
+        fallback: '',
+      });
 
       if (!safeFieldKey) {
         return {
@@ -438,7 +464,6 @@ export default function AddApplianceToRoomModal({
         };
       }
 
-      // Guard against two field labels collapsing to the same safe key
       if (seenSetupKeys.has(safeFieldKey)) {
         return {
           ok: false as const,
@@ -462,10 +487,13 @@ export default function AddApplianceToRoomModal({
       };
     }
 
-    return { ok: true as const, setup };
+    return {
+      ok: true as const,
+      setup,
+    };
   }, [setupConfig, configValues]);
 
-  const onAddToRoom = useCallback(async () => {    
+  const onAddToRoom = useCallback(async () => {
     blurActiveInputAndDismissKeyboard();
     setActiveDateField(null);
     setFormError(null);
@@ -476,40 +504,46 @@ export default function AddApplianceToRoomModal({
     }
 
     const name = applianceName.trim();
-    const applianceKey = toFirestoreSafeKey(name, { fallback: '' });
+    const applianceKey = toFirestoreSafeKey(name, {
+      fallback: '',
+    });
 
     if (!applianceKey) {
-      setFormError({ code: 'MISSING_NAME', fieldKey: 'applianceName' });
-      scrollToApplianceNameError();
+      setFormError({
+        code: 'MISSING_NAME',
+        fieldKey: 'applianceName',
+      });
+
+      scrollToField('applianceName');
       return;
     }
 
     if (!allFieldsFilled) {
-      // Find first missing field and target it
       const cfg = setupConfig ?? [];
+
       for (const item of cfg) {
         const v = (configValues[item.field] ?? '').trim();
+
         if (!v) {
           const fk = `setup:${item.field}` as FieldKey;
+
           setFormError({
             code: 'MISSING_FIELD',
             fieldKey: fk,
             meta: { field: item.field },
           });
-          scrollToFieldError(fk);
+
+          scrollToField(fk);
           return;
         }
       }
     }
 
     const res = validateAndBuildSetup();
+
     if (!res.ok) {
       setFormError(res.error);
-
-      if (res.error.fieldKey) {
-        scrollToFieldError(res.error.fieldKey);
-      }
-
+      scrollToField(res.error.fieldKey);
       return;
     }
 
@@ -518,31 +552,45 @@ export default function AddApplianceToRoomModal({
       setUiLocked(true, { scope: 'modal' });
 
       const roomRef = doc(db, 'clinics', clinicId, 'rooms', roomId);
-      const appliancesColRef = collection(db, 'clinics', clinicId, 'rooms', roomId, 'appliances');
 
-      // Preflight uniqueness check against the appliances subcollection
+      const appliancesColRef = collection(
+        db,
+        'clinics',
+        clinicId,
+        'rooms',
+        roomId,
+        'appliances',
+      );
+
       const collisionQuery = query(
         appliancesColRef,
         where('applianceKey', '==', applianceKey),
         limit(1),
       );
+
       const collisionSnap = await getDocs(collisionQuery);
 
       if (!collisionSnap.empty) {
-        setFormError({ code: 'NAME_COLLISION', fieldKey: 'applianceName' });
-        scrollToApplianceNameError();
+        setFormError({
+          code: 'NAME_COLLISION',
+          fieldKey: 'applianceName',
+        });
+
+        scrollToField('applianceName');
         return;
       }
 
-      // Build custom document ID: <typeKey>_<randomId>
-      const safeTypeKey = toFirestoreSafeKey(selectedModule.id, { fallback: 'appliance' });
+      const safeTypeKey = toFirestoreSafeKey(selectedModule.id, {
+        fallback: 'appliance',
+      });
+
       const randomPart = doc(appliancesColRef).id;
       const applianceDocId = `${safeTypeKey}_${randomPart}`;
-
       const newApplianceRef = doc(appliancesColRef, applianceDocId);
 
       await runTransaction(db, async (tx) => {
         const roomSnap = await tx.get(roomRef);
+
         if (!roomSnap.exists()) {
           throw new FormAppError('ROOM_NOT_FOUND');
         }
@@ -553,7 +601,9 @@ export default function AddApplianceToRoomModal({
           typeKey: selectedModule.id,
           typeName: selectedModule.moduleName,
           setup: res.setup,
-          ...(moduleRecordFields !== undefined ? { recordFields: moduleRecordFields } : {}),
+          ...(moduleRecordFields !== undefined
+            ? { recordFields: moduleRecordFields }
+            : {}),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -562,19 +612,25 @@ export default function AddApplianceToRoomModal({
       Alert.alert(
         '✅ Success',
         `“${name}” has been added to “${roomName}”.`,
-        [{ text: 'OK', onPress: () => onCloseAll() }],
+        [
+          {
+            text: 'OK',
+            onPress: () => onCloseAll(),
+          },
+        ],
         { cancelable: true },
       );
     } catch (e: any) {
       console.error('Add appliance error:', e);
 
       if (isFormAppError(e)) {
-        setFormError({ code: e.code, fieldKey: e.fieldKey, meta: e.meta });
+        setFormError({
+          code: e.code,
+          fieldKey: e.fieldKey,
+          meta: e.meta,
+        });
 
-        if (e.fieldKey) {
-          scrollToFieldError(e.fieldKey);
-        }
-
+        scrollToField(e.fieldKey);
         return;
       }
 
@@ -595,8 +651,7 @@ export default function AddApplianceToRoomModal({
     moduleRecordFields,
     roomName,
     onCloseAll,
-    scrollToFieldError,
-    scrollToApplianceNameError,
+    scrollToField,
     setUiLocked,
   ]);
 
@@ -637,22 +692,33 @@ export default function AddApplianceToRoomModal({
           {!selectedModule ? (
             <View style={{ paddingVertical: 8, gap: 10 }}>
               <Text style={styles.loadingHint}>No module selected.</Text>
+
               <Pressable
                 onPress={onBack}
-                style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
+                style={({ pressed }) => [
+                  styles.backBtn,
+                  pressed && { opacity: 0.85 },
+                ]}
               >
-                <MaterialCommunityIcons name="arrow-left" size={20} color="#111" />
+                <MaterialCommunityIcons
+                  name="arrow-left"
+                  size={20}
+                  color="#111"
+                />
                 <Text style={styles.footerBtnText}>Back</Text>
               </Pressable>
             </View>
           ) : (
             <>
               <Text style={styles.sectionLabel}>Module</Text>
+
               <View style={styles.moduleChip}>
                 <View
                   style={[
                     styles.tagPinned,
-                    selectedModule.official ? styles.tagOfficial : styles.tagCustom,
+                    selectedModule.official
+                      ? styles.tagOfficial
+                      : styles.tagCustom,
                   ]}
                 >
                   <Text style={styles.tagText}>
@@ -673,6 +739,7 @@ export default function AddApplianceToRoomModal({
                     <Text style={styles.moduleName} numberOfLines={1}>
                       {selectedModule.moduleName}
                     </Text>
+
                     {!!selectedModule.description && (
                       <Text style={styles.moduleDesc} numberOfLines={2}>
                         {selectedModule.description}
@@ -700,13 +767,17 @@ export default function AddApplianceToRoomModal({
                 value={applianceName}
                 onChangeText={(t) => {
                   setApplianceName(t);
-                  if (formError?.fieldKey === 'applianceName') setFormError(null);
+
+                  if (formError?.fieldKey === 'applianceName') {
+                    setFormError(null);
+                  }
                 }}
                 placeholder="Enter appliance name"
                 placeholderTextColor="#999"
                 style={[
                   styles.textInput,
-                  formError?.fieldKey === 'applianceName' && styles.errorBorder,
+                  formError?.fieldKey === 'applianceName' &&
+                    styles.errorBorder,
                 ]}
                 returnKeyType="done"
                 onFocus={() => onFieldFocus('applianceName')}
@@ -714,7 +785,13 @@ export default function AddApplianceToRoomModal({
               />
 
               {errorText && (
-                <Text style={{ color: '#B00020', fontWeight: '700', marginTop: 10 }}>
+                <Text
+                  style={{
+                    color: '#B00020',
+                    fontWeight: '700',
+                    marginTop: 10,
+                  }}
+                >
                   {errorText}
                 </Text>
               )}
@@ -727,7 +804,9 @@ export default function AddApplianceToRoomModal({
 
                   <View style={styles.setupBox}>
                     {loadingConfig ? (
-                      <Text style={styles.loadingHint}>Loading setup fields...</Text>
+                      <Text style={styles.loadingHint}>
+                        Loading setup fields...
+                      </Text>
                     ) : (
                       (setupConfig ?? []).map((item) => {
                         const k = `setup:${item.field}` as FieldKey;
@@ -755,13 +834,21 @@ export default function AddApplianceToRoomModal({
                                 style={({ pressed }) => [
                                   styles.dateInput,
                                   pressed && { opacity: 0.85 },
-                                  formError?.fieldKey === k && styles.errorBorder,
+                                  formError?.fieldKey === k &&
+                                    styles.errorBorder,
                                 ]}
                                 accessibilityRole="button"
                               >
-                                <Text style={value ? styles.dateText : styles.datePlaceholder}>
+                                <Text
+                                  style={
+                                    value
+                                      ? styles.dateText
+                                      : styles.datePlaceholder
+                                  }
+                                >
                                   {value || 'Select date'}
                                 </Text>
+
                                 <MaterialCommunityIcons
                                   name="calendar-month-outline"
                                   size={20}
@@ -772,12 +859,19 @@ export default function AddApplianceToRoomModal({
                               <TextInput
                                 ref={registerFieldRef(k)}
                                 value={value}
-                                onChangeText={(t) => onChangeConfig(item.field, t)}
-                                placeholder={item.type === 'number' ? 'Enter number' : 'Enter text'}
+                                onChangeText={(t) =>
+                                  onChangeConfig(item.field, t)
+                                }
+                                placeholder={
+                                  item.type === 'number'
+                                    ? 'Enter number'
+                                    : 'Enter text'
+                                }
                                 placeholderTextColor="#999"
                                 style={[
                                   styles.textInput,
-                                  formError?.fieldKey === k && styles.errorBorder,
+                                  formError?.fieldKey === k &&
+                                    styles.errorBorder,
                                 ]}
                                 keyboardType={
                                   item.type === 'number'
@@ -802,8 +896,7 @@ export default function AddApplianceToRoomModal({
           )}
         </ScrollView>
 
-        {/* Footer buttons (hide while date overlay is active) */}
-        {!activeDateField && (          
+        {!activeDateField && (
           <View
             style={[
               styles.footerFixed,
@@ -815,10 +908,17 @@ export default function AddApplianceToRoomModal({
           >
             <Pressable
               onPress={onBack}
-              style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [
+                styles.backBtn,
+                pressed && { opacity: 0.85 },
+              ]}
               disabled={saving}
             >
-              <MaterialCommunityIcons name="arrow-left" size={20} color="#111" />
+              <MaterialCommunityIcons
+                name="arrow-left"
+                size={20}
+                color="#111"
+              />
               <Text style={styles.footerBtnText}>Back</Text>
             </Pressable>
 
@@ -832,61 +932,31 @@ export default function AddApplianceToRoomModal({
               ]}
               disabled={saving || !selectedModule || !allFieldsFilled}
             >
-              <Text style={styles.primaryBtnText}>{saving ? 'Adding…' : 'Add to Room'}</Text>
+              <Text style={styles.primaryBtnText}>
+                {saving ? 'Adding…' : 'Add to Room'}
+              </Text>
             </Pressable>
           </View>
         )}
-      </KeyboardAvoidingView>
 
-      {/* Android Date picker (native) */}
-      {Platform.OS !== 'ios' && activeDateField && (
-        <DateTimePicker
-          value={activeDateValue}
-          mode="date"
-          display="default"
-          onChange={onDateChange}
-        />
-      )}
-
-      {/* iOS Date Picker Overlay (theme-aware) */}
-      {Platform.OS === 'ios' && activeDateField && (
-        <View style={styles.dateOverlayWrap} pointerEvents="auto">
-          <Pressable
-            style={[styles.dateOverlayBackdrop, { backgroundColor: overlayBackdrop }]}
-            onPress={closeDatePicker}
+        {Platform.OS !== 'ios' && activeDateField && (
+          <DateTimePicker
+            value={activeDateValue}
+            mode="date"
+            display="default"
+            onChange={onDateChange}
           />
+        )}
 
-          <View
-            style={[
-              styles.dateOverlayPanel,
-              { backgroundColor: overlayBg, borderTopColor: overlayBorder },
-            ]}
-          >
-            <View style={styles.dateOverlayHeader}>
-              <Pressable
-                onPress={commitDatePicker}
-                style={({ pressed }) => [
-                  styles.dateDoneBtn,
-                  { borderColor: overlayBorder, backgroundColor: overlayBg },
-                  pressed && { opacity: 0.8 },
-                ]}
-              >
-                <Text style={[styles.dateDoneText, { color: overlayText }]}>Done</Text>
-              </Pressable>
-            </View>
-
-            <DateTimePicker
-              value={dateDraft}
-              mode="date"
-              display="spinner"
-              onChange={onDateChange}
-              themeVariant={pickerTheme}
-              textColor={overlayText}
-              style={[styles.iosPicker, { backgroundColor: overlayBg }]}
-            />
-          </View>
-        </View>
-      )}
+        <IosDateTimePickerOverlay
+          visible={Platform.OS === 'ios' && !!activeDateField}
+          value={dateDraft}
+          mode="date"
+          onChange={onDateChange}
+          onClose={closeDatePicker}
+          onDone={commitDatePicker}
+        />
+      </KeyboardAvoidingView>
     </BottomSheetShell>
   );
 }
@@ -902,12 +972,29 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 6,
   },
-  addToRoomLabel: { fontSize: 13, fontWeight: '900' },
-  roomText: { fontSize: 13, fontWeight: '800', flexShrink: 1 },
-  body: { flex: 1 },
-  scroll: { flex: 1 },
-  scrollContent: { padding: 16 },
-  sectionLabel: { fontSize: 13, fontWeight: '900', marginBottom: 8 },
+  addToRoomLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  roomText: {
+    fontSize: 13,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  body: {
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    padding: 16,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
   moduleChip: {
     borderWidth: 1,
     borderColor: '#111',
@@ -917,7 +1004,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     position: 'relative',
   },
-  chipTopRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  chipTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   iconWrap: {
     width: 44,
     height: 44,
@@ -928,8 +1019,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-  moduleName: { fontSize: 15, fontWeight: '900' },
-  moduleDesc: { marginTop: 6, fontSize: 13, color: '#444', fontWeight: '600' },
+  moduleName: {
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  moduleDesc: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#444',
+    fontWeight: '600',
+  },
   tagPinned: {
     position: 'absolute',
     top: 10,
@@ -940,9 +1039,16 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingHorizontal: 10,
   },
-  tagOfficial: { backgroundColor: '#EAF7EA' },
-  tagCustom: { backgroundColor: '#F3F3F3' },
-  tagText: { fontSize: 12, fontWeight: '900' },
+  tagOfficial: {
+    backgroundColor: '#EAF7EA',
+  },
+  tagCustom: {
+    backgroundColor: '#F3F3F3',
+  },
+  tagText: {
+    fontSize: 12,
+    fontWeight: '900',
+  },
   textInput: {
     borderWidth: 1,
     borderColor: '#111',
@@ -962,9 +1068,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     gap: 12,
   },
-  setupItem: { gap: 8 },
-  setupFieldLabel: { fontSize: 13, fontWeight: '900' },
-  loadingHint: { color: '#666', fontWeight: '700' },
+  setupItem: {
+    gap: 8,
+  },
+  setupFieldLabel: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  loadingHint: {
+    color: '#666',
+    fontWeight: '700',
+  },
   dateInput: {
     borderWidth: 1,
     borderColor: '#111',
@@ -976,8 +1090,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  datePlaceholder: { color: '#999', fontSize: 14, fontWeight: '700' },
-  dateText: { color: '#111', fontSize: 14, fontWeight: '700' },
+  datePlaceholder: {
+    color: '#999',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dateText: {
+    color: '#111',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   footerFixed: {
     position: 'absolute',
     left: 0,
@@ -1005,7 +1127,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     flex: 1,
   },
-  footerBtnText: { fontSize: 14, fontWeight: '900' },
+  footerBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+  },
   primaryBtn: {
     borderWidth: 1,
     borderColor: '#111',
@@ -1016,35 +1141,19 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
   },
-  primaryBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
-  errorLabel: { color: '#B00020' },
-  errorBorder: { borderColor: '#B00020', borderWidth: 2 },
-  primaryBtnDisabled: { opacity: 0.5 },
-  dateOverlayWrap: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 999 },
-  dateOverlayBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-  dateOverlayPanel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: 1,
-    paddingBottom: 12,
+  primaryBtnText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#fff',
   },
-  dateOverlayHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+  errorLabel: {
+    color: '#B00020',
   },
-  dateDoneBtn: {
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    backgroundColor: '#fff',
+  errorBorder: {
+    borderColor: '#B00020',
+    borderWidth: 2,
   },
-  dateDoneText: { fontWeight: '900' },
-  iosPicker: { width: '100%', minWidth: 280, height: 216 },
+  primaryBtnDisabled: {
+    opacity: 0.5,
+  },
 });

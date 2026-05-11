@@ -1,10 +1,15 @@
 // app/(tabs)/clinic/record.tsx
 
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
+import {
+  IOS_PICKER_OVERLAY_HEIGHT,
+  IosDateTimePickerOverlay,
+} from '@/src/components/IosDateTimePickerOverlay';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
+import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import {
@@ -15,6 +20,7 @@ import {
   parseYYYYMMDDSlash
 } from '@/src/utils/dateTime';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
+import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import {
   cropToAspect,
   uriToBlob,
@@ -43,7 +49,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useColorScheme,
   View
 } from 'react-native';
 
@@ -67,16 +72,6 @@ type RecordValue = string | boolean | null;
 
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
-
-function blurActiveInputAndDismissKeyboard() {
-  const focusedInput = TextInput.State.currentlyFocusedInput?.();
-
-  if (focusedInput && typeof focusedInput.blur === 'function') {
-    focusedInput.blur();
-  }
-
-  Keyboard.dismiss();
-}
 
 export default function ClinicRecordScreen() {
   const router = useRouter();
@@ -116,21 +111,10 @@ export default function ClinicRecordScreen() {
   );
   const [pickerDraft, setPickerDraft] = useState<Date>(new Date());
 
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const pickerTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
-  const overlayBg = isDark ? '#333' : '#fff';
-  const overlayBorder = '#111';
-  const overlayText = isDark ? '#fff' : '#111';
-  const overlayBackdrop = isDark ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.15)';
-
   const FOOTER_BASE_HEIGHT = 84;
-  const IOS_PICKER_HEIGHT = 216;
-  const IOS_PICKER_HEADER_HEIGHT = 44;
-  const IOS_PICKER_TOTAL = IOS_PICKER_HEIGHT + IOS_PICKER_HEADER_HEIGHT + 12;
 
   const pickerOverlayHeight =
-    Platform.OS === 'ios' && activePicker ? IOS_PICKER_TOTAL : 0;
+    Platform.OS === 'ios' && activePicker ? IOS_PICKER_OVERLAY_HEIGHT : 0;
 
   const {
     scrollRef,
@@ -336,26 +320,7 @@ export default function ClinicRecordScreen() {
     return () => unsub();
   }, [clinicId, roomId, applianceId]);
 
-  const showValidationAlert = useCallback(
-    (message: string, field?: string | null) => {
-      Alert.alert(
-        'Fix these issues',
-        message,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (field) {
-                requestScroll(`record:${field}`, 'validation', 50);
-              }
-            },
-          },
-        ],
-        { cancelable: true },
-      );
-    },
-    [requestScroll],
-  );
+  const { showValidationAlert } = useValidationScroll(requestScroll);
 
   const onSaveRecord = useCallback(async () => {
     blurActiveInputAndDismissKeyboard();
@@ -462,7 +427,11 @@ export default function ClinicRecordScreen() {
     }
 
     if (errors.length) {
-      showValidationAlert(errors.join('\n'), firstInvalidField);
+      showValidationAlert({
+        title: 'Fix these issues',
+        message: errors.join('\n'),
+        fieldKey: firstInvalidField ? `record:${firstInvalidField}` : null,
+      });
       return;
     }
 
@@ -798,43 +767,14 @@ export default function ClinicRecordScreen() {
         )}
 
         {/* iOS picker overlay */}
-        {Platform.OS === 'ios' && activePicker && (
-          <View style={styles.dateOverlayWrap} pointerEvents="auto">
-            <Pressable
-              style={[styles.dateOverlayBackdrop, { backgroundColor: overlayBackdrop }]}
-              onPress={closePicker}
-            />
-            <View
-              style={[
-                styles.dateOverlayPanel,
-                { backgroundColor: overlayBg, borderTopColor: overlayBorder },
-              ]}
-            >
-              <View style={styles.dateOverlayHeader}>
-                <Pressable
-                  onPress={commitPicker}
-                  style={({ pressed }) => [
-                    styles.dateDoneBtn,
-                    { borderColor: overlayBorder, backgroundColor: overlayBg },
-                    pressed && { opacity: 0.8 },
-                  ]}
-                >
-                  <Text style={[styles.dateDoneText, { color: overlayText }]}>Done</Text>
-                </Pressable>
-              </View>
-
-              <DateTimePicker
-                value={pickerDraft}
-                mode={activePicker.mode}
-                display="spinner"
-                onChange={onPickerChange}
-                themeVariant={pickerTheme}
-                textColor={overlayText as any}
-                style={[styles.iosPicker, { backgroundColor: overlayBg }]}
-              />
-            </View>
-          </View>
-        )}
+        <IosDateTimePickerOverlay
+          visible={Platform.OS === 'ios' && !!activePicker}
+          value={pickerDraft}
+          mode={activePicker?.mode ?? 'date'}
+          onChange={onPickerChange}
+          onClose={closePicker}
+          onDone={commitPicker}
+        />
       </KeyboardAvoidingView>
 
       <CameraCaptureModal
@@ -1021,38 +961,4 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { fontSize: 14, fontWeight: '900', color: '#fff' },
   primaryBtnDisabled: { opacity: 0.6 },
-  dateOverlayWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
-    zIndex: 999,
-  },
-  dateOverlayBackdrop: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 },
-  dateOverlayPanel: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: 1,
-    paddingBottom: 12,
-  },
-  dateOverlayHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 6,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-  },
-  dateDoneBtn: {
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    backgroundColor: '#fff',
-  },
-  dateDoneText: { fontWeight: '900' },
-  iosPicker: { width: '100%', minWidth: 280, height: 216 },
 });
