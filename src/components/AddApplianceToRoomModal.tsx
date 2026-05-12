@@ -284,11 +284,18 @@ export default function AddApplianceToRoomModal({
     [configValues],
   );
 
+  const blurActiveDateField = useCallback(() => {
+    if (!activeDateField) return;
+
+    onFieldBlur(`setup:${activeDateField}` as FieldKey);
+  }, [activeDateField, onFieldBlur]);
+
   const onDateChange = useCallback(
     (evt: DateTimePickerEvent, date?: Date) => {
       if (!activeDateField) return;
 
       if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
+        blurActiveDateField();
         setActiveDateField(null);
         return;
       }
@@ -301,22 +308,26 @@ export default function AddApplianceToRoomModal({
       }
 
       onChangeConfig(activeDateField, formatDateYYYYMMDD(date));
+
+      blurActiveDateField();
       setActiveDateField(null);
     },
-    [activeDateField, onChangeConfig],
+    [activeDateField, onChangeConfig, blurActiveDateField],
   );
 
   const closeDatePicker = useCallback(() => {
+    blurActiveDateField();
     setActiveDateField(null);
-  }, []);
+  }, [blurActiveDateField]);
 
   const commitDatePicker = useCallback(() => {
     if (activeDateField) {
       onChangeConfig(activeDateField, formatDateYYYYMMDD(dateDraft));
     }
 
+    blurActiveDateField();
     setActiveDateField(null);
-  }, [activeDateField, dateDraft, onChangeConfig]);
+  }, [activeDateField, dateDraft, onChangeConfig, blurActiveDateField]);
 
   useEffect(() => {
     if (!visible) return;
@@ -495,6 +506,7 @@ export default function AddApplianceToRoomModal({
 
   const onAddToRoom = useCallback(async () => {
     blurActiveInputAndDismissKeyboard();
+    blurActiveDateField();
     setActiveDateField(null);
     setFormError(null);
 
@@ -653,6 +665,10 @@ export default function AddApplianceToRoomModal({
     onCloseAll,
     scrollToField,
     setUiLocked,
+    blurActiveInputAndDismissKeyboard,
+    blurActiveDateField,
+    setActiveDateField,
+    setFormError,
   ]);
 
   const showSetupSection = loadingConfig || (setupConfig?.length ?? 0) > 0;

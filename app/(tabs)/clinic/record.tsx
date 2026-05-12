@@ -170,14 +170,22 @@ export default function ClinicRecordScreen() {
     [recordValues],
   );
 
+  const blurActivePickerField = useCallback(() => {
+    if (!activePicker) return;
+
+    onFieldBlur(`record:${activePicker.field}`);
+  }, [activePicker, onFieldBlur]);
+
   const onPickerChange = useCallback(
     (evt: DateTimePickerEvent, date?: Date) => {
       if (!activePicker) return;
 
       if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
+        blurActivePickerField();
         setActivePicker(null);
         return;
       }
+
       if (!date) return;
 
       if (Platform.OS === 'ios') {
@@ -185,22 +193,35 @@ export default function ClinicRecordScreen() {
         return;
       }
 
-      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDDSlash(date));
-      else onChangeField(activePicker.field, formatTimeHHMM(date));
+      if (activePicker.mode === 'date') {
+        onChangeField(activePicker.field, formatDateYYYYMMDDSlash(date));
+      } else {
+        onChangeField(activePicker.field, formatTimeHHMM(date));
+      }
 
+      blurActivePickerField();
       setActivePicker(null);
     },
-    [activePicker, onChangeField],
+    [activePicker, onChangeField, blurActivePickerField],
   );
 
-  const closePicker = useCallback(() => setActivePicker(null), []);
+  const closePicker = useCallback(() => {
+    blurActivePickerField();
+    setActivePicker(null);
+  }, [blurActivePickerField]);
+
   const commitPicker = useCallback(() => {
     if (activePicker) {
-      if (activePicker.mode === 'date') onChangeField(activePicker.field, formatDateYYYYMMDDSlash(pickerDraft));
-      else onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
+      if (activePicker.mode === 'date') {
+        onChangeField(activePicker.field, formatDateYYYYMMDDSlash(pickerDraft));
+      } else {
+        onChangeField(activePicker.field, formatTimeHHMM(pickerDraft));
+      }
     }
+
+    blurActivePickerField();
     setActivePicker(null);
-  }, [activePicker, pickerDraft, onChangeField]);
+  }, [activePicker, pickerDraft, onChangeField, blurActivePickerField]);
 
   const closeCamera = useCallback(() => {
     setCameraOpen(false);
@@ -324,6 +345,7 @@ export default function ClinicRecordScreen() {
 
   const onSaveRecord = useCallback(async () => {
     blurActiveInputAndDismissKeyboard();
+    blurActivePickerField();
     setActivePicker(null);
 
     if (!clinicId || !roomId || !applianceId) {
@@ -535,6 +557,9 @@ export default function ClinicRecordScreen() {
     user?.uid,
     profile?.name,
     router,
+    blurActiveInputAndDismissKeyboard,
+    blurActivePickerField,
+    setActivePicker,
     setUiLocked,
     showValidationAlert,
   ]);

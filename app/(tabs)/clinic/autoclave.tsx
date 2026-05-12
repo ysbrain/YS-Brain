@@ -1,49 +1,27 @@
 // app/(tabs)/clinic/autoclave.tsx
 
-import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
-import { IOS_PICKER_OVERLAY_HEIGHT, IosDateTimePickerOverlay } from '@/src/components/IosDateTimePickerOverlay';
 import {
   AutoclaveTabBar,
   type AutoclaveTabKey,
 } from '@/src/components/autoclave/AutoclaveTabBar';
-import { DailyOpsView } from '@/src/components/autoclave/DailyOpsView';
+import { DailyOpsTab } from '@/src/components/autoclave/DailyOpsTab';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
-import type {
-  DailyOpsActivePicker,
-  DailyOpsPickerField,
-} from '@/src/hooks/autoclave/types';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
-import { useAutoclaveDailyOpsCycle } from '@/src/hooks/autoclave/useAutoclaveDailyOpsCycle';
-import { useDailyOpsController } from '@/src/hooks/autoclave/useDailyOpsController';
-import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
-import {
-  formatDateYYYYMMDDCompact,
-  formatTimeHHMM,
-  parseHHMM,
-} from '@/src/utils/dateTime';
-import { cropToAspect } from '@/src/utils/photo';
+import { formatDateYYYYMMDDCompact } from '@/src/utils/dateTime';
 import { normalizeParam } from '@/src/utils/routeParams';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Stack, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
-  View
+  View,
 } from 'react-native';
-
-const PHOTO_ASPECT = 4 / 3;
 
 function useTodayKey(): string {
   const [todayKey, setTodayKey] = useState(() =>
@@ -77,20 +55,21 @@ function useTodayKey(): string {
 
 function PlaceholderTab({ label }: { label: string }) {
   return (
-    <View style={styles.placeholderCard}>
-      <MaterialCommunityIcons
-        name="hammer-wrench"
-        size={28}
-        color="#64748b"
-      />
-      <Text style={styles.placeholderTitle}>{label}</Text>
-      <Text style={styles.placeholderText}>This tab will be built next.</Text>
+    <View style={styles.placeholderWrap}>
+      <View style={styles.placeholderCard}>
+        <MaterialCommunityIcons
+          name="hammer-wrench"
+          size={28}
+          color="#64748b"
+        />
+        <Text style={styles.placeholderTitle}>{label}</Text>
+        <Text style={styles.placeholderText}>This tab will be built next.</Text>
+      </View>
     </View>
   );
 }
 
 export default function AutoclaveScreen() {
-  const router = useRouter();
   const profile = useProfile();
   const user = useAuth().user;
   const clinicId = profile?.clinic;
@@ -109,6 +88,8 @@ export default function AutoclaveScreen() {
   const [saving, setSaving] = useState(false);
   const { setUiLocked } = useUiLock();
 
+  const currentDate = useTodayKey();
+
   const {
     loading,
     loadError,
@@ -123,192 +104,6 @@ export default function AutoclaveScreen() {
     roomId,
     applianceId,
   });
-
-  const {
-    cycleDocLoading,
-    cycleDocError,
-    cycleDoc,
-  } = useAutoclaveDailyOpsCycle({
-    clinicId,
-    roomId,
-    applianceId,
-    isRunning,
-    currentCycle,
-  });
-
-  const [cameraOpen, setCameraOpen] = useState(false);
-
-  const [activePicker, setActivePicker] =
-    useState<DailyOpsActivePicker>(null);
-
-  const [pickerDraft, setPickerDraft] = useState<Date>(new Date());
-
-  const pickerOverlayHeight =
-    Platform.OS === 'ios' && activePicker ? IOS_PICKER_OVERLAY_HEIGHT : 0;
-
-  const {
-    scrollRef,
-    registerFieldRef,
-    onFieldFocus,
-    onFieldBlur,
-    handleScroll,
-    requestScroll,
-    contentBottomPadding,
-  } = useKeyboardAwareFieldScroll({
-    activeOverlayFieldKey: activePicker
-      ? `daily:${activePicker.field}`
-      : null,
-    overlayHeight: pickerOverlayHeight,
-  });
-
-  const currentDate = useTodayKey();
-
-  const dailyOps = useDailyOpsController({
-    clinicId,
-    roomId,
-    applianceId,
-
-    userUid: user?.uid ?? null,
-    userName: profile?.name ?? null,
-
-    loading,
-    loadError,
-    setup,
-    lastCycle,
-    isRunning,
-    currentCycle,
-    applianceKey,
-
-    cycleDocLoading,
-    cycleDocError,
-    cycleDoc,
-
-    currentDate,
-
-    saving,
-    setSaving,
-    setUiLocked,
-    setActivePicker,
-    requestScroll,
-    routerBack: () => router.back(),
-  });
-
-  const activePickerValue = useMemo(() => {
-    if (!activePicker) return new Date();
-
-    if (activePicker.field === 'startTime') {
-      return parseHHMM(dailyOps.startTime) ?? new Date();
-    }
-
-    if (activePicker.field === 'unloadTime') {
-      return parseHHMM(dailyOps.unloadTime) ?? new Date();
-    }
-
-    return new Date();
-  }, [activePicker, dailyOps.startTime, dailyOps.unloadTime]);
-
-  const openPicker = useCallback(
-    (field: DailyOpsPickerField, mode: 'time') => {
-      Keyboard.dismiss();
-
-      const initial =
-        field === 'startTime'
-          ? parseHHMM(dailyOps.startTime) ?? new Date()
-          : parseHHMM(dailyOps.unloadTime) ?? new Date();
-
-      setPickerDraft(initial);
-      setActivePicker({ field, mode });
-    },
-    [dailyOps.startTime, dailyOps.unloadTime],
-  );
-
-  const onPickerChange = useCallback(
-    (evt: DateTimePickerEvent, date?: Date) => {
-      if (!activePicker) return;
-
-      if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-        setActivePicker(null);
-        return;
-      }
-
-      if (!date) return;
-
-      if (Platform.OS === 'ios') {
-        setPickerDraft(date);
-        return;
-      }
-
-      if (activePicker.field === 'startTime') {
-        dailyOps.setStartTime(formatTimeHHMM(date));
-      } else if (activePicker.field === 'unloadTime') {
-        dailyOps.setUnloadTime(formatTimeHHMM(date));
-      }
-
-      setActivePicker(null);
-    },
-    [
-      activePicker,
-      dailyOps.setStartTime,
-      dailyOps.setUnloadTime,
-    ],
-  );
-
-  const closePicker = useCallback(() => {
-    setActivePicker(null);
-  }, []);
-
-  const commitPicker = useCallback(() => {
-    if (activePicker?.field === 'startTime') {
-      dailyOps.setStartTime(formatTimeHHMM(pickerDraft));
-    } else if (activePicker?.field === 'unloadTime') {
-      dailyOps.setUnloadTime(formatTimeHHMM(pickerDraft));
-    }
-
-    setActivePicker(null);
-  }, [
-    activePicker,
-    pickerDraft,
-    dailyOps.setStartTime,
-    dailyOps.setUnloadTime,
-  ]);
-
-  const openCamera = useCallback(() => {
-    setCameraOpen(true);
-  }, []);
-
-  const closeCamera = useCallback(() => {
-    setCameraOpen(false);
-  }, []);
-
-  const onCapturedPhoto = useCallback(
-    async (photo: { uri: string; width: number; height: number }) => {
-      try {
-        const croppedUri = await cropToAspect({
-          uri: photo.uri,
-          width: photo.width,
-          height: photo.height,
-          aspectRatio: PHOTO_ASPECT,
-        });
-
-        dailyOps.setPhotoUri(croppedUri);
-
-        if (dailyOps.formErrorField === 'daily:photoEvidence') {
-          dailyOps.setFormErrorField(null);
-        }
-      } catch (err) {
-        console.error('autoclave photo process error', err);
-        Alert.alert('Photo error', 'Failed to process the captured photo.');
-      } finally {
-        closeCamera();
-      }
-    },
-    [
-      closeCamera,
-      dailyOps.formErrorField,
-      dailyOps.setFormErrorField,
-      dailyOps.setPhotoUri,
-    ],
-  );
 
   return (
     <>
@@ -334,61 +129,33 @@ export default function AutoclaveScreen() {
             <Text style={styles.errorText}>{loadError}</Text>
           </View>
         ) : (
-          <ScrollView
-            ref={scrollRef}
-            style={styles.scroll}
-            contentContainerStyle={[
-              styles.scrollContent,
-              { paddingBottom: contentBottomPadding },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-          >
+          <>
             {activeTab === 'dailyOps' && (
-              <DailyOpsView
-                controller={dailyOps}
-                registerFieldRef={registerFieldRef}
-                onFieldFocus={onFieldFocus}
-                onFieldBlur={onFieldBlur}
-                openPicker={openPicker}
-                onOpenCamera={openCamera}
+              <DailyOpsTab
+                clinicId={clinicId}
+                roomId={roomId}
+                applianceId={applianceId}
+                userUid={user?.uid ?? null}
+                userName={profile?.name ?? null}
+                loading={loading}
+                loadError={loadError}
+                setup={setup}
+                lastCycle={lastCycle}
+                applianceKey={applianceKey}
+                isRunning={isRunning}
+                currentCycle={currentCycle}
+                currentDate={currentDate}
                 saving={saving}
+                setSaving={setSaving}
+                setUiLocked={setUiLocked}
               />
             )}
 
             {activeTab === 'helix' && <PlaceholderTab label="Helix" />}
             {activeTab === 'spore' && <PlaceholderTab label="Spore" />}
-          </ScrollView>
+          </>
         )}
-
-        {/* Android native picker */}
-        {Platform.OS !== 'ios' && activePicker && (
-          <DateTimePicker
-            value={activePickerValue}
-            mode={activePicker.mode}
-            display="default"
-            onChange={onPickerChange}
-          />
-        )}
-
-        {/* iOS picker overlay */}
-        <IosDateTimePickerOverlay
-          visible={Platform.OS === 'ios' && !!activePicker}
-          value={pickerDraft}
-          mode={activePicker?.mode ?? 'time'}
-          onChange={onPickerChange}
-          onClose={closePicker}
-          onDone={commitPicker}
-        />
       </KeyboardAvoidingView>
-
-      <CameraCaptureModal
-        visible={cameraOpen}
-        onClose={closeCamera}
-        onCaptured={onCapturedPhoto}
-      />
     </>
   );
 }
@@ -397,14 +164,6 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: '#f3f4f6',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 24,
   },
   centerWrap: {
     flex: 1,
@@ -421,6 +180,11 @@ const styles = StyleSheet.create({
     color: '#B00020',
     fontWeight: '700',
     textAlign: 'center',
+  },
+  placeholderWrap: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingTop: 18,
   },
   placeholderCard: {
     borderWidth: 1,

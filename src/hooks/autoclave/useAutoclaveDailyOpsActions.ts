@@ -5,6 +5,7 @@ import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_SETUP_KEYS,
   AUTOCLAVE_STORAGE,
+  DAILY_OPS_FIELD_KEYS,
 } from '@/src/constants/autoclave';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
@@ -205,78 +206,66 @@ export function useAutoclaveDailyOpsActions({
     const trimmedStartTime = startTime.trim();
 
     if (!trimmedTemp) {
-      setFormErrorField('daily:maxTemp');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.maxTemp);
       showValidationAlert({
         title: 'Validation',
         message: 'Max Temp (°C) is required.',
-        fieldKey: 'daily:maxTemp',
+        fieldKey: DAILY_OPS_FIELD_KEYS.maxTemp,
       });
-
       return;
     }
 
     if (!trimmedPressure) {
-      setFormErrorField('daily:pressure');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.pressure);
       showValidationAlert({
         title: 'Validation',
         message: 'Pressure is required.',
-        fieldKey: 'daily:pressure',
+        fieldKey: DAILY_OPS_FIELD_KEYS.pressure,
       });
-
       return;
     }
 
     if (!trimmedStartTime) {
-      setFormErrorField('daily:startTime');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.startTime);
       showValidationAlert({
         title: 'Validation',
         message: 'Start Time is required.',
-        fieldKey: 'daily:startTime',
+        fieldKey: DAILY_OPS_FIELD_KEYS.startTime,
       });
-
       return;
     }
 
     const temperatureValue = validatePositiveIntUpTo3Digits(trimmedTemp);
 
     if (temperatureValue === null) {
-      setFormErrorField('daily:maxTemp');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.maxTemp);
       showValidationAlert({
         title: 'Validation',
         message: 'Max Temp (°C) invalid.',
-        fieldKey: 'daily:maxTemp',
+        fieldKey: DAILY_OPS_FIELD_KEYS.maxTemp,
       });
-
       return;
     }
 
     const pressureValue = validatePositiveIntUpTo3Digits(trimmedPressure);
 
     if (pressureValue === null) {
-      setFormErrorField('daily:pressure');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.pressure);
       showValidationAlert({
         title: 'Validation',
         message: 'Pressure invalid.',
-        fieldKey: 'daily:pressure',
+        fieldKey: DAILY_OPS_FIELD_KEYS.pressure,
       });
-
       return;
     }
 
     if (!parseHHMM(trimmedStartTime)) {
-      setFormErrorField('daily:startTime');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.startTime);
       showValidationAlert({
         title: 'Validation',
         message: 'Start Time must be a valid time.',
-        fieldKey: 'daily:startTime',
+        fieldKey: DAILY_OPS_FIELD_KEYS.startTime,
       });
-
       return;
     }
 
@@ -495,62 +484,52 @@ export function useAutoclaveDailyOpsActions({
     const trimmedNotes = notes.trim();
 
     if (!trimmedUnloadTime) {
-      setFormErrorField('daily:unloadTime');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.unloadTime);
       showValidationAlert({
         title: 'Validation',
         message: 'Unload Time is required.',
-        fieldKey: 'daily:unloadTime',
+        fieldKey: DAILY_OPS_FIELD_KEYS.unloadTime,
       });
-
       return;
     }
 
     if (!parseHHMM(trimmedUnloadTime)) {
-      setFormErrorField('daily:unloadTime');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.unloadTime);
       showValidationAlert({
         title: 'Validation',
         message: 'Unload Time must be a valid time.',
-        fieldKey: 'daily:unloadTime',
+        fieldKey: DAILY_OPS_FIELD_KEYS.unloadTime,
       });
-
       return;
     }
 
     if (internalIndicator === null) {
-      setFormErrorField('daily:internalIndicator');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.internalIndicator);
       showValidationAlert({
         title: 'Validation',
         message: 'Please select Internal Indicator result.',
-        fieldKey: 'daily:internalIndicator',
+        fieldKey: DAILY_OPS_FIELD_KEYS.internalIndicator,
       });
-
       return;
     }
 
     if (externalIndicator === null) {
-      setFormErrorField('daily:externalIndicator');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.externalIndicator);
       showValidationAlert({
         title: 'Validation',
         message: 'Please select External Indicator result.',
-        fieldKey: 'daily:externalIndicator',
+        fieldKey: DAILY_OPS_FIELD_KEYS.externalIndicator,
       });
-
       return;
     }
 
     if (!photoUri || photoUri.trim().length === 0) {
-      setFormErrorField('daily:photoEvidence');
-
+      setFormErrorField(DAILY_OPS_FIELD_KEYS.photoEvidence);
       showValidationAlert({
         title: 'Validation',
         message: 'Photo Evidence is required.',
-        fieldKey: 'daily:photoEvidence',
+        fieldKey: DAILY_OPS_FIELD_KEYS.photoEvidence,
       });
-
       return;
     }
 
