@@ -1,10 +1,10 @@
 import { db } from '@/src/lib/firebase';
+import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
 import {
   doc,
   runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
-import { safeTypeKeyFromLabel } from '../utils/firestoreKeys';
 
 export type ModuleDoc = {
   typeKey: string;       // doc id mirror
@@ -28,7 +28,7 @@ type CreateModuleParams = {
 export async function createModule(params: CreateModuleParams): Promise<ModuleDoc> {
   const { clinicId, typeLabel, createdBy, iconKey } = params;
 
-  const base = safeTypeKeyFromLabel(typeLabel);
+  const base = toFirestoreSafeKey(typeLabel);
 
   return await runTransaction(db, async (tx) => {
     // Try base, then base-2, base-3...
