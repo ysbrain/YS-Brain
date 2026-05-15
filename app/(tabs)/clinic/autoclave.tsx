@@ -4,6 +4,7 @@ import {
   AutoclaveTabBar,
   type AutoclaveTabKey,
 } from '@/src/components/autoclave/AutoclaveTabBar';
+import { AutoclaveTestTab } from '@/src/components/autoclave/AutoclaveTestTab';
 import { DailyOpsTab } from '@/src/components/autoclave/DailyOpsTab';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
@@ -11,7 +12,6 @@ import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
 import { formatDateYYYYMMDDCompact } from '@/src/utils/dateTime';
 import { normalizeParam } from '@/src/utils/routeParams';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -51,22 +51,6 @@ function useTodayKey(): string {
   }, []);
 
   return todayKey;
-}
-
-function PlaceholderTab({ label }: { label: string }) {
-  return (
-    <View style={styles.placeholderWrap}>
-      <View style={styles.placeholderCard}>
-        <MaterialCommunityIcons
-          name="hammer-wrench"
-          size={28}
-          color="#64748b"
-        />
-        <Text style={styles.placeholderTitle}>{label}</Text>
-        <Text style={styles.placeholderText}>This tab will be built next.</Text>
-      </View>
-    </View>
-  );
 }
 
 export default function AutoclaveScreen() {
@@ -151,8 +135,43 @@ export default function AutoclaveScreen() {
               />
             )}
 
-            {activeTab === 'helix' && <PlaceholderTab label="Helix" />}
-            {activeTab === 'spore' && <PlaceholderTab label="Spore" />}
+            {activeTab === 'helix' && (
+              <AutoclaveTestTab
+                testType="helix"
+                clinicId={clinicId}
+                roomId={roomId}
+                applianceId={applianceId}
+                applianceKey={applianceKey}
+                setup={setup}
+                userUid={user?.uid ?? null}
+                userName={profile?.name ?? null}
+                loading={loading}
+                loadError={loadError}
+                currentDate={currentDate}
+                saving={saving}
+                setSaving={setSaving}
+                setUiLocked={setUiLocked}
+              />
+            )}
+
+            {activeTab === 'spore' && (
+              <AutoclaveTestTab
+                testType="spore"
+                clinicId={clinicId}
+                roomId={roomId}
+                applianceId={applianceId}
+                applianceKey={applianceKey}
+                setup={setup}
+                userUid={user?.uid ?? null}
+                userName={profile?.name ?? null}
+                loading={loading}
+                loadError={loadError}
+                currentDate={currentDate}
+                saving={saving}
+                setSaving={setSaving}
+                setUiLocked={setUiLocked}
+              />
+            )}
           </>
         )}
       </KeyboardAvoidingView>

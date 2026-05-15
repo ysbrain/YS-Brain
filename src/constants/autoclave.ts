@@ -26,6 +26,8 @@ export const AUTOCLAVE_CYCLE_ID = {
 
 export const AUTOCLAVE_STORAGE = {
   dailyOpsFolder: 'dailyOps',
+  helixFolder: 'helix',
+  sporeFolder: 'spore',
   photoContentType: 'image/jpeg',
   photoExtension: 'jpg',
 } as const;

@@ -114,15 +114,16 @@ AutoclaveTextField.displayName = 'AutoclaveTextField';
 type TimeFieldProps = {
   label: string;
   value: string;
+  required?: boolean;
   error?: boolean;
   onPress: () => void;
 };
 
 export const AutoclaveTimeField = forwardRef<any, TimeFieldProps>(
-  ({ label, value, error = false, onPress }, ref) => {
+  ({ label, value, required = false, error = false, onPress }, ref) => {
     return (
       <View style={styles.fieldBlock}>
-        <FieldLabel label={label} error={error} />
+        <FieldLabel label={label} required={required} error={error} />
         <Pressable
           ref={ref}
           collapsable={false}
@@ -219,6 +220,7 @@ AutoclavePassFailField.displayName = 'AutoclavePassFailField';
 type PhotoFieldProps = {
   label: string;
   photoUri: string | null;
+  required?: boolean;
   error?: boolean;
   onPress: () => void;
   aspectRatioFilled: number;
@@ -232,6 +234,7 @@ export const AutoclavePhotoField = forwardRef<any, PhotoFieldProps>(
     {
       label,
       photoUri,
+      required = true,
       error = false,
       onPress,
       aspectRatioFilled,
@@ -243,7 +246,12 @@ export const AutoclavePhotoField = forwardRef<any, PhotoFieldProps>(
   ) => {
     return (
       <View style={styles.fieldBlock}>
-        <FieldLabel label={label} required error={error} variant="verify" />
+        <FieldLabel
+          label={label}
+          required={required}
+          error={error}
+          variant="verify"
+        />
 
         <Pressable
           ref={ref}
@@ -273,7 +281,9 @@ export const AutoclavePhotoField = forwardRef<any, PhotoFieldProps>(
                 size={30}
                 color="#94a3b8"
               />
-              <Text style={styles.photoPlaceholderText}>{placeholderText}</Text>
+              <Text style={styles.photoPlaceholderText}>
+                {placeholderText}
+              </Text>
             </View>
           )}
         </Pressable>
