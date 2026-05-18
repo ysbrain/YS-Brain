@@ -10,7 +10,7 @@ import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
-import { formatDateYYYYMMDDCompact } from '@/src/utils/dateTime';
+import { formatDateFullYYYYMMDD } from '@/src/utils/dateTime';
 import { normalizeParam } from '@/src/utils/routeParams';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -25,14 +25,14 @@ import {
 
 function useTodayKey(): string {
   const [todayKey, setTodayKey] = useState(() =>
-    formatDateYYYYMMDDCompact(new Date()),
+    formatDateFullYYYYMMDD(new Date()),
   );
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const sync = () => {
-      setTodayKey(formatDateYYYYMMDDCompact(new Date()));
+      setTodayKey(formatDateFullYYYYMMDD(new Date()));
     };
 
     const now = new Date();

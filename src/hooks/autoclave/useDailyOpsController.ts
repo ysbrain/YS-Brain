@@ -22,7 +22,7 @@ import {
   getStrictSerialIdPart,
 } from '@/src/hooks/autoclave/utils';
 import {
-  formatDateYYMMDDCompact,
+  formatDateShortYYMMDD,
   pad2,
   parseHHMM,
 } from '@/src/utils/dateTime';
@@ -94,7 +94,7 @@ export function useDailyOpsController({
   routerBack,
 }: UseDailyOpsControllerParams) {
   const currentDateYYMMDD = useMemo(() => {
-    return formatDateYYMMDDCompact(new Date());
+    return formatDateShortYYMMDD(new Date());
   }, []);
 
   const defaultMaxTemp = useMemo(() => {
@@ -220,7 +220,7 @@ export function useDailyOpsController({
       validatePositiveIntUpTo3Digits,
       uriToBlob,
       setupValueToString,
-      formatDateYYMMDDCompact,
+      formatDateYYMMDDCompact: formatDateShortYYMMDD,
       pad2,
     });
 

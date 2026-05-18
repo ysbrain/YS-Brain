@@ -3,7 +3,7 @@
 import { AUTOCLAVE_RECORD_COLLECTIONS, AUTOCLAVE_STORAGE } from '@/src/constants/autoclave';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
-import { formatDateYYYYMMDDCompact, formatTimeHHMM, parseHHMM } from '@/src/utils/dateTime';
+import { formatDateFullYYYYMMDD, formatTimeHHMM, parseHHMM } from '@/src/utils/dateTime';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import { uriToBlob } from '@/src/utils/photo';
 import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -324,7 +324,7 @@ export function useAutoclaveTestController({
       await setDoc(recordRef, {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        dateExecuted: currentDate || formatDateYYYYMMDDCompact(new Date()),
+        dateExecuted: currentDate || formatDateFullYYYYMMDD(new Date()),
         cycleStartTime: trimmedStartTime,
         cycleEndTime: trimmedEndTime,
         testResult,

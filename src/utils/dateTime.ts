@@ -4,7 +4,7 @@ export function pad2(value: number): string {
   return String(value).padStart(2, '0');
 }
 
-export function formatDateYYYYMMDDCompact(date: Date): string {
+export function formatDateFullYYYYMMDD(date: Date): string {
   const yyyy = date.getFullYear();
   const mm = pad2(date.getMonth() + 1);
   const dd = pad2(date.getDate());
@@ -12,7 +12,7 @@ export function formatDateYYYYMMDDCompact(date: Date): string {
   return `${yyyy}${mm}${dd}`;
 }
 
-export function formatDateYYMMDDCompact(date: Date): string {
+export function formatDateShortYYMMDD(date: Date): string {
   const fullYear = date.getFullYear();     // e.g. 2026
   const year = fullYear % 100;             // → 26
   const month = date.getMonth() + 1;       // 1–12
