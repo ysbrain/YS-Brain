@@ -1,7 +1,10 @@
 // src/hooks/autoclave/useDailyOpsController.ts
 
 import type { ActionBlocker } from '@/src/components/autoclave/ActionBlockerList';
-import { AUTOCLAVE_CYCLE_ID, AUTOCLAVE_SETUP_KEYS } from '@/src/constants/autoclave';
+import {
+  AUTOCLAVE_CYCLE_ID,
+  AUTOCLAVE_SETUP_KEYS,
+} from '@/src/constants/autoclave';
 import {
   setupValueToNumberString,
   setupValueToString,
@@ -10,15 +13,16 @@ import {
 import type {
   DailyOpsActivePicker,
   DailyOpsCycleDoc,
-  SetupStoredItem
+  SetupStoredItem,
 } from '@/src/hooks/autoclave/types';
 import { useAutoclaveDailyOpsActions } from '@/src/hooks/autoclave/useAutoclaveDailyOpsActions';
 import { useDailyOpsForm } from '@/src/hooks/autoclave/useDailyOpsForm';
 import {
+  buildCycleId,
   getStrictSerialIdPart,
 } from '@/src/hooks/autoclave/utils';
 import {
-  formatDateYYYYMMDDCompact,
+  formatDateYYMMDDCompact,
   pad2,
   parseHHMM,
 } from '@/src/utils/dateTime';
@@ -42,10 +46,8 @@ type UseDailyOpsControllerParams = {
   clinicId?: string | null;
   roomId?: string | null;
   applianceId?: string | null;
-
   userUid?: string | null;
   userName?: string | null;
-
   loading: boolean;
   loadError: string | null;
   setup: Record<string, SetupStoredItem | undefined>;
@@ -56,13 +58,10 @@ type UseDailyOpsControllerParams = {
   isRunning: boolean;
   currentCycle: string;
   applianceKey: string;
-
   cycleDocLoading: boolean;
   cycleDocError: string | null;
   cycleDoc: DailyOpsCycleDoc | null;
-
-  currentDate: string;
-
+  currentDate: string; // still passed but no longer used for ID logic
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
@@ -75,10 +74,8 @@ export function useDailyOpsController({
   clinicId,
   roomId,
   applianceId,
-
   userUid,
   userName,
-
   loading,
   loadError,
   setup,
@@ -86,13 +83,9 @@ export function useDailyOpsController({
   isRunning,
   currentCycle,
   applianceKey,
-
   cycleDocLoading,
   cycleDocError,
   cycleDoc,
-
-  currentDate,
-
   saving,
   setSaving,
   setUiLocked,
@@ -100,6 +93,10 @@ export function useDailyOpsController({
   requestScroll,
   routerBack,
 }: UseDailyOpsControllerParams) {
+  const currentDateYYMMDD = useMemo(() => {
+    return formatDateYYMMDDCompact(new Date());
+  }, []);
+
   const defaultMaxTemp = useMemo(() => {
     return setupValueToNumberString(
       setup,
@@ -156,6 +153,7 @@ export function useDailyOpsController({
 
   const hasValidSerialNumber = !!strictSerialIdPart;
 
+  // compare using YYMMDD
   const nextCycle = useMemo(() => {
     const lastDate =
       typeof lastCycle?.dateExecuted === 'string'
@@ -169,16 +167,24 @@ export function useDailyOpsController({
         : 0;
 
     const nextNumber =
-      lastDate === currentDate ? rawCycleNumber + 1 : 1;
+      lastDate === currentDateYYMMDD ? rawCycleNumber + 1 : 1;
 
     return pad2(nextNumber);
-  }, [lastCycle, currentDate]);
+  }, [lastCycle, currentDateYYMMDD]);
 
+  // SERIAL-YYMMDD-XX
   const cycleIdPreview = useMemo(() => {
     const serialPart =
-      strictSerialIdPart ?? AUTOCLAVE_CYCLE_ID.invalidSerialPlaceholder;
-    return `${currentDate}-${serialPart}-${nextCycle}`;
-  }, [currentDate, strictSerialIdPart, nextCycle]);
+      strictSerialIdPart ??
+      AUTOCLAVE_CYCLE_ID.invalidSerialPlaceholder;
+
+    return buildCycleId({
+      serial: serialPart,
+      dateYYMMDD: currentDateYYMMDD,
+      cycleNumber: Number(nextCycle),
+      pad2,
+    });
+  }, [currentDateYYMMDD, strictSerialIdPart, nextCycle]);
 
   const { onStartMachine, onFinishAndUnload } =
     useAutoclaveDailyOpsActions({
@@ -187,22 +193,17 @@ export function useDailyOpsController({
       applianceId,
       userUid: userUid ?? null,
       userName: userName ?? null,
-
       loading,
       loadError,
       saving,
       setSaving,
       setUiLocked,
-
       isRunning,
       currentCycle,
-
       cycleDocLoading,
       cycleDocError,
-
       serialNumber,
       applianceKey,
-
       maxTemp,
       pressure,
       startTime,
@@ -211,17 +212,15 @@ export function useDailyOpsController({
       externalIndicator,
       photoUri,
       notes,
-
       setFormErrorField,
       setActivePicker,
       requestScroll,
       routerBack,
-
       parseHHMM,
       validatePositiveIntUpTo3Digits,
       uriToBlob,
       setupValueToString,
-      formatDateYYYYMMDDCompact,
+      formatDateYYMMDDCompact,
       pad2,
     });
 
@@ -385,14 +384,11 @@ export function useDailyOpsController({
     isRunning,
     cycleIdPreview,
     currentCycle,
-
     cycleDocLoading,
     cycleDocError,
     cycleDoc,
-
     formErrorField,
     setFormErrorField,
-
     maxTemp,
     setMaxTemp,
     pressure,
@@ -401,24 +397,18 @@ export function useDailyOpsController({
     setStartTime,
     unloadTime,
     setUnloadTime,
-
     internalIndicator,
     setInternalIndicator,
     externalIndicator,
     setExternalIndicator,
-
     photoUri,
     setPhotoUri,
-
     notes,
     setNotes,
-
     onStartMachine,
     onFinishAndUnload,
-
     canPressStartMachine,
     canPressFinishUnload,
-
     startBlockers,
     finishBlockers,
   };

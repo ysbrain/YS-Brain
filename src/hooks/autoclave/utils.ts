@@ -1,5 +1,42 @@
 // src/hooks/autoclave/utils.ts
 
+import { AUTOCLAVE_CYCLE_ID } from '@/src/constants/autoclave';
+
+/**
+ * Build autoclave cycle ID
+ *
+ * Format:
+ * SERIAL-YYMMDD-XX
+ */
+export function buildCycleId(params: {
+  serial: string;
+  dateYYMMDD: string;
+  cycleNumber: number;
+  pad2: (value: number) => string;
+}): string {
+  const { serial, dateYYMMDD, cycleNumber, pad2 } = params;
+
+  return `${serial}-${dateYYMMDD}-${pad2(cycleNumber)}`;
+}
+
+export function parseCycleId(cycleId: string) {
+  const match = cycleId.match(AUTOCLAVE_CYCLE_ID.regex);
+
+  if (!match) return null;
+
+  const [, serial, dateYYMMDD, cycleNumberText] = match;
+
+  const cycleNumber = Number(cycleNumberText);
+
+  if (!Number.isFinite(cycleNumber)) return null;
+
+  return {
+    serial,
+    dateYYMMDD,
+    cycleNumber,
+  };
+}
+
 export function sanitizeIdPart(value: string, fallback = 'unknown'): string {
   const cleaned = value
     .trim()

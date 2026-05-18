@@ -16,12 +16,12 @@ export const AUTOCLAVE_CYCLE_ID = {
   invalidSerialPlaceholder: 'INVALID_SERIAL',
   /**
    * Format:
-   * YYYYMMDD-SERIAL-01
+   * SERIAL-YYMMDD-01
    *
    * Serial may contain hyphens, so do not parse cycle IDs with split('-')
    * unless you only read first and last parts carefully.
    */
-  regex: /^(\d{8})-(.+)-(\d{2,})$/,
+  regex: /^(.+)-(\d{6})-(\d{2,})$/,
 } as const;
 
 export const AUTOCLAVE_STORAGE = {

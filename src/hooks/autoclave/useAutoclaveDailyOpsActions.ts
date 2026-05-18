@@ -1,11 +1,10 @@
 // src/hooks/autoclave/useAutoclaveDailyOpsActions.ts
 
 import {
-  AUTOCLAVE_CYCLE_ID,
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_SETUP_KEYS,
   AUTOCLAVE_STORAGE,
-  DAILY_OPS_FIELD_KEYS,
+  DAILY_OPS_FIELD_KEYS
 } from '@/src/constants/autoclave';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
@@ -32,7 +31,12 @@ import type {
   DailyOpsFieldKey,
   SetupStoredItem,
 } from './types';
-import { getStrictSerialIdPart, sanitizeIdPart } from './utils';
+import {
+  buildCycleId,
+  getStrictSerialIdPart,
+  parseCycleId,
+  sanitizeIdPart,
+} from './utils';
 
 type RequestScrollFn = (
   key: string,
@@ -52,7 +56,7 @@ type SetupValueToStringFn = (
   fallback?: string,
 ) => string;
 
-type FormatDateYYYYMMDDCompactFn = (date: Date) => string;
+type FormatDateYYMMDDCompactFn = (date: Date) => string;
 
 type Pad2Fn = (value: number) => string;
 
@@ -107,7 +111,7 @@ type UseAutoclaveDailyOpsActionsParams = {
   validatePositiveIntUpTo3Digits: ValidatePositiveIntUpTo3DigitsFn;
   uriToBlob: UriToBlobFn;
   setupValueToString: SetupValueToStringFn;
-  formatDateYYYYMMDDCompact: FormatDateYYYYMMDDCompactFn;
+  formatDateYYMMDDCompact: FormatDateYYMMDDCompactFn;
   pad2: Pad2Fn;
 };
 
@@ -154,7 +158,7 @@ export function useAutoclaveDailyOpsActions({
   validatePositiveIntUpTo3Digits,
   uriToBlob,
   setupValueToString,
-  formatDateYYYYMMDDCompact,
+  formatDateYYMMDDCompact,
   pad2,
 }: UseAutoclaveDailyOpsActionsParams) {
   const { showValidationAlert } = useValidationScroll(requestScroll);
@@ -322,7 +326,7 @@ export function useAutoclaveDailyOpsActions({
           );
         }
 
-        const txCurrentDate = formatDateYYYYMMDDCompact(new Date());
+        const txCurrentDate = formatDateYYMMDDCompact(new Date());
 
         const latestLastCycle =
           applianceData.lastCycle && typeof applianceData.lastCycle === 'object'
@@ -343,9 +347,12 @@ export function useAutoclaveDailyOpsActions({
         const nextCycleNumber =
           latestLastDate === txCurrentDate ? latestRawCycleNumber + 1 : 1;
 
-        const nextCycleId = `${txCurrentDate}-${safeSerialNumber}-${pad2(
-          nextCycleNumber,
-        )}`;
+        const nextCycleId = buildCycleId({
+          serial: safeSerialNumber,
+          dateYYMMDD: txCurrentDate,
+          cycleNumber: nextCycleNumber,
+          pad2,
+        });
 
         const cycleRef = doc(
           collection(
@@ -433,7 +440,7 @@ export function useAutoclaveDailyOpsActions({
     parseHHMM,
     validatePositiveIntUpTo3Digits,
     setupValueToString,
-    formatDateYYYYMMDDCompact,
+    formatDateYYMMDDCompact,
     pad2,
     routerBack,
   ]);
@@ -533,15 +540,14 @@ export function useAutoclaveDailyOpsActions({
       return;
     }
 
-    const cycleIdMatch = currentCycle.match(AUTOCLAVE_CYCLE_ID.regex);
+    const parsed = parseCycleId(currentCycle);
 
-    if (!cycleIdMatch) {
+    if (!parsed) {
       Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');
       return;
     }
 
-    const [, cycleDatePart, , cycleNumberText] = cycleIdMatch;
-    const cycleNumberPart = Number(cycleNumberText);
+    const { dateYYMMDD: cycleDatePart, cycleNumber: cycleNumberPart } = parsed;
 
     if (!Number.isFinite(cycleNumberPart)) {
       Alert.alert('Cannot finish', 'Current cycle ID format is invalid.');

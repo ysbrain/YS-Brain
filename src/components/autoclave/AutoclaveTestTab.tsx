@@ -504,20 +504,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8fafc',
     paddingHorizontal: 10,
     paddingVertical: 6,
-    alignItems: 'flex-end',
   },
   serialLabel: {
     fontSize: 10,
     fontWeight: '900',
     color: '#94a3b8',
     letterSpacing: 0.5,
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
   },
   serialValue: {
     marginTop: 1,
     fontSize: 12,
     fontWeight: '800',
     color: '#334155',
+    alignSelf: 'flex-end',
   },
   twoColRow: {
     flexDirection: 'row',
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
   saveButton: {
     marginTop: 8,
     borderRadius: 12,
-    backgroundColor: '#8fc9c3',
+    backgroundColor: '#4361ee',
     minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',

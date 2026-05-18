@@ -12,6 +12,17 @@ export function formatDateYYYYMMDDCompact(date: Date): string {
   return `${yyyy}${mm}${dd}`;
 }
 
+export function formatDateYYMMDDCompact(date: Date): string {
+  const fullYear = date.getFullYear();     // e.g. 2026
+  const year = fullYear % 100;             // → 26
+  const month = date.getMonth() + 1;       // 1–12
+  const day = date.getDate();              // 1–31
+
+  const pad2 = (value: number) => String(value).padStart(2, '0');
+
+  return `${pad2(year)}${pad2(month)}${pad2(day)}`;
+}
+
 export function formatTimeHHMM(date: Date): string {
   return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
 }
