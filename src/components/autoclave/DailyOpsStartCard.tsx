@@ -157,7 +157,7 @@ export function DailyOpsStartCard({
 const styles = StyleSheet.create({
   card: {
     borderWidth: 1.5,
-    borderColor: '#f0b86b',
+    borderColor: '#22c55e',
     borderRadius: 20,
     backgroundColor: '#fff',
     padding: 18,
