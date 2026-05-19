@@ -1,31 +1,21 @@
 // src/hooks/autoclave/useDailyOpsController.ts
 
-import type { ActionBlocker } from '@/src/components/autoclave/ActionBlockerList';
-import {
-  AUTOCLAVE_CYCLE_ID,
-  AUTOCLAVE_SETUP_KEYS,
-} from '@/src/constants/autoclave';
+import { AUTOCLAVE_SETUP_KEYS } from '@/src/constants/autoclave';
 import {
   setupValueToNumberString,
-  setupValueToString,
-  validatePositiveIntUpTo3Digits,
 } from '@/src/hooks/autoclave/setupUtils';
 import type {
   DailyOpsActivePicker,
   DailyOpsCycleDoc,
   SetupStoredItem,
 } from '@/src/hooks/autoclave/types';
-import { useAutoclaveDailyOpsActions } from '@/src/hooks/autoclave/useAutoclaveDailyOpsActions';
 import { useDailyOpsForm } from '@/src/hooks/autoclave/useDailyOpsForm';
-import {
-  buildCycleId,
-  getStrictSerialIdPart,
-} from '@/src/hooks/autoclave/utils';
-import { formatDateShortYYMMDD, pad2, parseHHMM } from '@/src/utils/dateTime';
-import { uriToBlob } from '@/src/utils/photo';
+import { useDailyOpsRunningController } from '@/src/hooks/autoclave/useDailyOpsRunningController';
+import { useDailyOpsStartController } from '@/src/hooks/autoclave/useDailyOpsStartController';
 import { useMemo } from 'react';
 
 type UiLockScope = 'global' | 'modal';
+
 type SetUiLockedFn = (
   locked: boolean,
   options?: { scope?: UiLockScope },
@@ -43,26 +33,30 @@ type UseDailyOpsControllerParams = {
   applianceId?: string | null;
   userUid?: string | null;
   userName?: string | null;
+
   loading: boolean;
   loadError: string | null;
+
   setup: Record<string, SetupStoredItem | undefined>;
   lastCycle: {
     cycleNumber?: number;
     dateExecuted?: string;
   };
+
   isRunning: boolean;
   currentCycle: string;
   applianceKey: string;
+
   cycleDocLoading: boolean;
   cycleDocError: string | null;
   cycleDoc: DailyOpsCycleDoc | null;
 
-  // ✅ UPDATED
   currentDateYYMMDD: string;
 
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
+
   setActivePicker: (value: DailyOpsActivePicker) => void;
   requestScroll: RequestScrollFn;
   routerBack: () => void;
@@ -84,7 +78,7 @@ export function useDailyOpsController({
   cycleDocLoading,
   cycleDocError,
   cycleDoc,
-  currentDateYYMMDD, // ✅ now comes from screen
+  currentDateYYMMDD,
   saving,
   setSaving,
   setUiLocked,
@@ -108,305 +102,141 @@ export function useDailyOpsController({
     );
   }, [setup]);
 
-  const {
-    formErrorField,
-    setFormErrorField,
-    maxTemp,
-    setMaxTemp,
-    pressure,
-    setPressure,
-    startTime,
-    setStartTime,
-    unloadTime,
-    setUnloadTime,
-    internalIndicator,
-    setInternalIndicator,
-    externalIndicator,
-    setExternalIndicator,
-    photoUri,
-    setPhotoUri,
-    notes,
-    setNotes,
-  } = useDailyOpsForm({
+  const form = useDailyOpsForm({
     applianceId,
     currentCycle,
     defaultMaxTemp,
     defaultPressure,
   });
 
-  const serialNumber = useMemo(() => {
-    return setupValueToString(
-      setup,
-      AUTOCLAVE_SETUP_KEYS.serialNumber,
-      '',
-    ).trim();
-  }, [setup]);
-
-  const strictSerialIdPart = useMemo(() => {
-    return getStrictSerialIdPart(serialNumber);
-  }, [serialNumber]);
-
-  const hasValidSerialNumber = !!strictSerialIdPart;
-
-  // ✅ FIXED: uses injected date (updates across midnight)
-  const nextCycle = useMemo(() => {
-    const lastDate =
-      typeof lastCycle?.dateExecuted === 'string'
-        ? lastCycle.dateExecuted
-        : '';
-
-    const rawCycleNumber =
-      typeof lastCycle?.cycleNumber === 'number' &&
-      Number.isFinite(lastCycle.cycleNumber)
-        ? lastCycle.cycleNumber
-        : 0;
-
-    const nextNumber =
-      lastDate === currentDateYYMMDD ? rawCycleNumber + 1 : 1;
-
-    return pad2(nextNumber);
-  }, [lastCycle, currentDateYYMMDD]);
-
-  // ✅ SERIAL-YYMMDD-XX preview (now correct across midnight)
-  const cycleIdPreview = useMemo(() => {
-    const serialPart =
-      strictSerialIdPart ??
-      AUTOCLAVE_CYCLE_ID.invalidSerialPlaceholder;
-
-    return buildCycleId({
-      serial: serialPart,
-      dateYYMMDD: currentDateYYMMDD,
-      cycleNumber: Number(nextCycle),
-      pad2,
-    });
-  }, [currentDateYYMMDD, strictSerialIdPart, nextCycle]);
-
-  const { onStartMachine, onFinishAndUnload } =
-    useAutoclaveDailyOpsActions({
-      clinicId,
-      roomId,
-      applianceId,
-      userUid: userUid ?? null,
-      userName: userName ?? null,
-      loading,
-      loadError,
-      saving,
-      setSaving,
-      setUiLocked,
-      isRunning,
-      currentCycle,
-      cycleDocLoading,
-      cycleDocError,
-      serialNumber,
-      applianceKey,
-      maxTemp,
-      pressure,
-      startTime,
-      unloadTime,
-      internalIndicator,
-      externalIndicator,
-      photoUri,
-      notes,
-      setFormErrorField,
-      setActivePicker,
-      requestScroll,
-      routerBack,
-      parseHHMM,
-      validatePositiveIntUpTo3Digits,
-      uriToBlob,
-      setupValueToString,
-      formatDateYYMMDD: formatDateShortYYMMDD, // ✅ keep transaction-safe
-      pad2,
-    });
-
-  const startBlockers = useMemo<ActionBlocker[]>(() => {
-    const blockers: ActionBlocker[] = [];
-
-    if (loading) {
-      blockers.push({
-        key: 'loading',
-        message: 'Autoclave information is still loading.',
-      });
-    }
-
-    if (loadError) {
-      blockers.push({ key: 'loadError', message: loadError });
-    }
-
-    if (!clinicId || !roomId || !applianceId) {
-      blockers.push({
-        key: 'missingContext',
-        message:
-          'Clinic, room, or appliance information is missing.',
-      });
-    }
-
-    if (!userUid) {
-      blockers.push({
-        key: 'notSignedIn',
-        message:
-          'Please sign in before starting the machine.',
-      });
-    }
-
-    if (!serialNumber.trim()) {
-      blockers.push({
-        key: 'missingSerial',
-        message:
-          'Missing serial number in appliance setup.',
-      });
-    } else if (!hasValidSerialNumber) {
-      blockers.push({
-        key: 'invalidSerial',
-        message:
-          'Serial number contains unsupported characters.',
-      });
-    }
-
-    if (isRunning) {
-      blockers.push({
-        key: 'alreadyRunning',
-        message:
-          'This autoclave is already running a cycle.',
-      });
-    }
-
-    return blockers;
-  }, [
-    loading,
-    loadError,
+  const sharedParams = {
     clinicId,
     roomId,
     applianceId,
     userUid,
-    serialNumber,
-    hasValidSerialNumber,
-    isRunning,
-  ]);
-
-  const canPressStartMachine =
-    !saving && startBlockers.length === 0;
-
-  const hasValidCurrentCycleId =
-    !!currentCycle &&
-    AUTOCLAVE_CYCLE_ID.regex.test(currentCycle);
-
-  const finishBlockers = useMemo<ActionBlocker[]>(() => {
-    const blockers: ActionBlocker[] = [];
-
-    if (loading || cycleDocLoading) {
-      blockers.push({
-        key: 'loading',
-        message: 'Cycle information is still loading.',
-      });
-    }
-
-    if (loadError) {
-      blockers.push({ key: 'loadError', message: loadError });
-    }
-
-    if (cycleDocError) {
-      blockers.push({
-        key: 'cycleDocError',
-        message: cycleDocError,
-      });
-    }
-
-    if (cycleDoc?._isFinished) {
-      blockers.push({
-        key: 'alreadyFinished',
-        message: 'This cycle has already been finished.',
-      });
-    }
-
-    if (!clinicId || !roomId || !applianceId) {
-      blockers.push({
-        key: 'missingContext',
-        message:
-          'Clinic, room, or appliance information is missing.',
-      });
-    }
-
-    if (!userUid) {
-      blockers.push({
-        key: 'notSignedIn',
-        message:
-          'Please sign in before finishing the cycle.',
-      });
-    }
-
-    if (!isRunning || !currentCycle) {
-      blockers.push({
-        key: 'noRunningCycle',
-        message: 'No running cycle was found.',
-      });
-    }
-
-    if (isRunning && currentCycle && !hasValidCurrentCycleId) {
-      blockers.push({
-        key: 'invalidCycleId',
-        message:
-          'Current cycle ID format is invalid.',
-      });
-    }
-
-    if (applianceKey.trim().length === 0) {
-      blockers.push({
-        key: 'missingApplianceKey',
-        message: 'Appliance key is missing.',
-      });
-    }
-
-    return blockers;
-  }, [
+    userName,
     loading,
-    cycleDocLoading,
     loadError,
-    cycleDocError,
-    cycleDoc?._isFinished,
-    clinicId,
-    roomId,
-    applianceId,
-    userUid,
     isRunning,
     currentCycle,
-    hasValidCurrentCycleId,
     applianceKey,
-  ]);
+    saving,
+    setSaving,
+    setUiLocked,
+    setActivePicker,
+    requestScroll,
+    routerBack,
+  };
 
-  const canPressFinishUnload =
-    !saving && finishBlockers.length === 0;
-
-  return {
+  const start = useDailyOpsStartController({
+    clinicId,
+    roomId,
+    applianceId,
+    userUid,
+    userName,
+    loading,
+    loadError,
+    setup,
+    lastCycle,
     isRunning,
-    cycleIdPreview,
+    currentDateYYMMDD,
+    saving,
+    setSaving,
+    setUiLocked,
+    setActivePicker,
+    requestScroll,
+    routerBack,
+    form: {
+      setFormErrorField: form.setFormErrorField,
+      maxTemp: form.maxTemp,
+      pressure: form.pressure,
+      startTime: form.startTime,
+    },
+  });
+
+  const running = useDailyOpsRunningController({
+    clinicId,
+    roomId,
+    applianceId,
+    userUid,
+    userName,
+    loading,
+    loadError,
+    isRunning,
     currentCycle,
+    applianceKey,
     cycleDocLoading,
     cycleDocError,
     cycleDoc,
-    formErrorField,
-    setFormErrorField,
-    maxTemp,
-    setMaxTemp,
-    pressure,
-    setPressure,
-    startTime,
-    setStartTime,
-    unloadTime,
-    setUnloadTime,
-    internalIndicator,
-    setInternalIndicator,
-    externalIndicator,
-    setExternalIndicator,
-    photoUri,
-    setPhotoUri,
-    notes,
-    setNotes,
-    onStartMachine,
-    onFinishAndUnload,
-    canPressStartMachine,
-    canPressFinishUnload,
-    startBlockers,
-    finishBlockers,
+    saving,
+    setSaving,
+    setUiLocked,
+    setActivePicker,
+    requestScroll,
+    routerBack,
+    form: {
+      setFormErrorField: form.setFormErrorField,
+      unloadTime: form.unloadTime,
+      internalIndicator: form.internalIndicator,
+      externalIndicator: form.externalIndicator,
+      photoUri: form.photoUri,
+      notes: form.notes,
+    },
+  });
+
+  /**
+   * Compatibility return shape.
+   *
+   * This means your existing DailyOpsStartCard, DailyOpsRunningCard,
+   * and DailyOpsView do not need to change yet.
+   */
+  return {
+    isRunning,
+
+    cycleIdPreview: start.cycleIdPreview,
+
+    currentCycle,
+
+    cycleDocLoading: running.cycleDocLoading,
+    cycleDocError: running.cycleDocError,
+    cycleDoc: running.cycleDoc,
+
+    formErrorField: form.formErrorField,
+    setFormErrorField: form.setFormErrorField,
+
+    maxTemp: form.maxTemp,
+    setMaxTemp: form.setMaxTemp,
+
+    pressure: form.pressure,
+    setPressure: form.setPressure,
+
+    startTime: form.startTime,
+    setStartTime: form.setStartTime,
+
+    unloadTime: form.unloadTime,
+    setUnloadTime: form.setUnloadTime,
+
+    internalIndicator: form.internalIndicator,
+    setInternalIndicator: form.setInternalIndicator,
+
+    externalIndicator: form.externalIndicator,
+    setExternalIndicator: form.setExternalIndicator,
+
+    photoUri: form.photoUri,
+    setPhotoUri: form.setPhotoUri,
+
+    notes: form.notes,
+    setNotes: form.setNotes,
+
+    onStartMachine: start.onStartMachine,
+    onFinishAndUnload: running.onFinishAndUnload,
+
+    canPressStartMachine: start.canPressStartMachine,
+    canPressFinishUnload: running.canPressFinishUnload,
+
+    startBlockers: start.startBlockers,
+    finishBlockers: running.finishBlockers,
   };
 }
+
+export type DailyOpsController = ReturnType<typeof useDailyOpsController>;
