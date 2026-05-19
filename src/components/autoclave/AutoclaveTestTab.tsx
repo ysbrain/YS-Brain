@@ -57,7 +57,7 @@ type AutoclaveTestTabProps = {
   userName?: string | null;
   loading: boolean;
   loadError: string | null;
-  currentDate: string;
+  currentDateYYYYMMDD: string;
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: (
@@ -77,7 +77,7 @@ export function AutoclaveTestTab({
   userName,
   loading,
   loadError,
-  currentDate,
+  currentDateYYYYMMDD,
   saving,
   setSaving,
   setUiLocked,
@@ -119,7 +119,7 @@ export function AutoclaveTestTab({
     userName: userName ?? null,
     loading,
     loadError,
-    currentDate,
+    currentDateYYYYMMDD,
     saving,
     setSaving,
     setUiLocked,

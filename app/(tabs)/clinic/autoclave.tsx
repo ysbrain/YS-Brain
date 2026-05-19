@@ -10,7 +10,10 @@ import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useAutoclaveAppliance } from '@/src/hooks/autoclave/useAutoclaveAppliance';
-import { formatDateFullYYYYMMDD } from '@/src/utils/dateTime';
+import {
+  formatDateFullYYYYMMDD,
+  formatDateShortYYMMDD,
+} from '@/src/utils/dateTime';
 import { normalizeParam } from '@/src/utils/routeParams';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -23,16 +26,26 @@ import {
   View,
 } from 'react-native';
 
-function useTodayKey(): string {
-  const [todayKey, setTodayKey] = useState(() =>
-    formatDateFullYYYYMMDD(new Date()),
-  );
+function useTodayDateKeys(): {
+  dateYYYYMMDD: string;
+  dateYYMMDD: string;
+} {
+  const buildKeys = () => {
+    const now = new Date();
+
+    return {
+      dateYYYYMMDD: formatDateFullYYYYMMDD(now),
+      dateYYMMDD: formatDateShortYYMMDD(now),
+    };
+  };
+
+  const [dateKeys, setDateKeys] = useState(buildKeys);
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval> | null = null;
 
     const sync = () => {
-      setTodayKey(formatDateFullYYYYMMDD(new Date()));
+      setDateKeys(buildKeys());
     };
 
     const now = new Date();
@@ -50,7 +63,7 @@ function useTodayKey(): string {
     };
   }, []);
 
-  return todayKey;
+  return dateKeys;
 }
 
 export default function AutoclaveScreen() {
@@ -72,7 +85,7 @@ export default function AutoclaveScreen() {
   const [saving, setSaving] = useState(false);
   const { setUiLocked } = useUiLock();
 
-  const currentDate = useTodayKey();
+  const { dateYYYYMMDD, dateYYMMDD } = useTodayDateKeys();
 
   const {
     loading,
@@ -128,7 +141,7 @@ export default function AutoclaveScreen() {
                 applianceKey={applianceKey}
                 isRunning={isRunning}
                 currentCycle={currentCycle}
-                currentDate={currentDate}
+                currentDateYYMMDD={dateYYMMDD}
                 saving={saving}
                 setSaving={setSaving}
                 setUiLocked={setUiLocked}
@@ -147,7 +160,7 @@ export default function AutoclaveScreen() {
                 userName={profile?.name ?? null}
                 loading={loading}
                 loadError={loadError}
-                currentDate={currentDate}
+                currentDateYYYYMMDD={dateYYYYMMDD}
                 saving={saving}
                 setSaving={setSaving}
                 setUiLocked={setUiLocked}
@@ -166,7 +179,7 @@ export default function AutoclaveScreen() {
                 userName={profile?.name ?? null}
                 loading={loading}
                 loadError={loadError}
-                currentDate={currentDate}
+                currentDateYYYYMMDD={dateYYYYMMDD}
                 saving={saving}
                 setSaving={setSaving}
                 setUiLocked={setUiLocked}

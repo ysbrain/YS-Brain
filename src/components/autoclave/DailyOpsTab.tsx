@@ -56,7 +56,7 @@ type DailyOpsTabProps = {
   applianceKey: string;
   isRunning: boolean;
   currentCycle: string;
-  currentDate: string;
+  currentDateYYMMDD: string;
 
   saving: boolean;
   setSaving: (value: boolean) => void;
@@ -79,7 +79,7 @@ export function DailyOpsTab({
   applianceKey,
   isRunning,
   currentCycle,
-  currentDate,
+  currentDateYYMMDD,
   saving,
   setSaving,
   setUiLocked,
@@ -141,7 +141,7 @@ export function DailyOpsTab({
     cycleDocLoading,
     cycleDocError,
     cycleDoc,
-    currentDate,
+    currentDateYYMMDD,
     saving,
     setSaving,
     setUiLocked,

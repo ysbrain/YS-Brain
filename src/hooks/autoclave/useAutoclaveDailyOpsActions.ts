@@ -4,7 +4,7 @@ import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_SETUP_KEYS,
   AUTOCLAVE_STORAGE,
-  DAILY_OPS_FIELD_KEYS
+  DAILY_OPS_FIELD_KEYS,
 } from '@/src/constants/autoclave';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
@@ -56,7 +56,7 @@ type SetupValueToStringFn = (
   fallback?: string,
 ) => string;
 
-type FormatDateYYMMDDCompactFn = (date: Date) => string;
+type FormatDateYYMMDDFn = (date: Date) => string;
 
 type Pad2Fn = (value: number) => string;
 
@@ -71,20 +71,17 @@ type UseAutoclaveDailyOpsActionsParams = {
   clinicId?: string | null;
   roomId?: string | null;
   applianceId?: string | null;
-
   userUid?: string | null;
   userName?: string | null;
 
   loading: boolean;
   loadError: string | null;
-
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
 
   isRunning: boolean;
   currentCycle: string;
-
   cycleDocLoading: boolean;
   cycleDocError: string | null;
 
@@ -95,7 +92,6 @@ type UseAutoclaveDailyOpsActionsParams = {
   pressure: string;
   startTime: string;
   unloadTime: string;
-
   internalIndicator: boolean | null;
   externalIndicator: boolean | null;
   photoUri: string | null;
@@ -103,7 +99,6 @@ type UseAutoclaveDailyOpsActionsParams = {
 
   setFormErrorField: (field: DailyOpsFieldKey | null) => void;
   setActivePicker: (value: DailyOpsActivePicker) => void;
-
   requestScroll: RequestScrollFn;
   routerBack: () => void;
 
@@ -111,7 +106,15 @@ type UseAutoclaveDailyOpsActionsParams = {
   validatePositiveIntUpTo3Digits: ValidatePositiveIntUpTo3DigitsFn;
   uriToBlob: UriToBlobFn;
   setupValueToString: SetupValueToStringFn;
-  formatDateYYMMDDCompact: FormatDateYYMMDDCompactFn;
+
+  /**
+   * Formats a Date into YYMMDD.
+   *
+   * Example:
+   * 2026-05-19 -> "260519"
+   */
+  formatDateYYMMDD: FormatDateYYMMDDFn;
+
   pad2: Pad2Fn;
 };
 
@@ -124,14 +127,12 @@ export function useAutoclaveDailyOpsActions({
 
   loading,
   loadError,
-
   saving,
   setSaving,
   setUiLocked,
 
   isRunning,
   currentCycle,
-
   cycleDocLoading,
   cycleDocError,
 
@@ -142,7 +143,6 @@ export function useAutoclaveDailyOpsActions({
   pressure,
   startTime,
   unloadTime,
-
   internalIndicator,
   externalIndicator,
   photoUri,
@@ -150,7 +150,6 @@ export function useAutoclaveDailyOpsActions({
 
   setFormErrorField,
   setActivePicker,
-
   requestScroll,
   routerBack,
 
@@ -158,7 +157,7 @@ export function useAutoclaveDailyOpsActions({
   validatePositiveIntUpTo3Digits,
   uriToBlob,
   setupValueToString,
-  formatDateYYMMDDCompact,
+  formatDateYYMMDD,
   pad2,
 }: UseAutoclaveDailyOpsActionsParams) {
   const { showValidationAlert } = useValidationScroll(requestScroll);
@@ -326,7 +325,12 @@ export function useAutoclaveDailyOpsActions({
           );
         }
 
-        const txCurrentDate = formatDateYYMMDDCompact(new Date());
+        /**
+         * Important:
+         * This date is generated inside the transaction so the committed
+         * cycle ID always uses the real transaction-time date.
+         */
+        const txCurrentDate = formatDateYYMMDD(new Date());
 
         const latestLastCycle =
           applianceData.lastCycle && typeof applianceData.lastCycle === 'object'
@@ -440,7 +444,7 @@ export function useAutoclaveDailyOpsActions({
     parseHHMM,
     validatePositiveIntUpTo3Digits,
     setupValueToString,
-    formatDateYYMMDDCompact,
+    formatDateYYMMDD,
     pad2,
     routerBack,
   ]);

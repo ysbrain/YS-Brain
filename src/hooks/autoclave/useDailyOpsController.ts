@@ -21,16 +21,11 @@ import {
   buildCycleId,
   getStrictSerialIdPart,
 } from '@/src/hooks/autoclave/utils';
-import {
-  formatDateShortYYMMDD,
-  pad2,
-  parseHHMM,
-} from '@/src/utils/dateTime';
+import { formatDateShortYYMMDD, pad2, parseHHMM } from '@/src/utils/dateTime';
 import { uriToBlob } from '@/src/utils/photo';
 import { useMemo } from 'react';
 
 type UiLockScope = 'global' | 'modal';
-
 type SetUiLockedFn = (
   locked: boolean,
   options?: { scope?: UiLockScope },
@@ -61,7 +56,10 @@ type UseDailyOpsControllerParams = {
   cycleDocLoading: boolean;
   cycleDocError: string | null;
   cycleDoc: DailyOpsCycleDoc | null;
-  currentDate: string; // still passed but no longer used for ID logic
+
+  // ✅ UPDATED
+  currentDateYYMMDD: string;
+
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
@@ -86,6 +84,7 @@ export function useDailyOpsController({
   cycleDocLoading,
   cycleDocError,
   cycleDoc,
+  currentDateYYMMDD, // ✅ now comes from screen
   saving,
   setSaving,
   setUiLocked,
@@ -93,10 +92,6 @@ export function useDailyOpsController({
   requestScroll,
   routerBack,
 }: UseDailyOpsControllerParams) {
-  const currentDateYYMMDD = useMemo(() => {
-    return formatDateShortYYMMDD(new Date());
-  }, []);
-
   const defaultMaxTemp = useMemo(() => {
     return setupValueToNumberString(
       setup,
@@ -153,7 +148,7 @@ export function useDailyOpsController({
 
   const hasValidSerialNumber = !!strictSerialIdPart;
 
-  // compare using YYMMDD
+  // ✅ FIXED: uses injected date (updates across midnight)
   const nextCycle = useMemo(() => {
     const lastDate =
       typeof lastCycle?.dateExecuted === 'string'
@@ -172,7 +167,7 @@ export function useDailyOpsController({
     return pad2(nextNumber);
   }, [lastCycle, currentDateYYMMDD]);
 
-  // SERIAL-YYMMDD-XX
+  // ✅ SERIAL-YYMMDD-XX preview (now correct across midnight)
   const cycleIdPreview = useMemo(() => {
     const serialPart =
       strictSerialIdPart ??
@@ -220,7 +215,7 @@ export function useDailyOpsController({
       validatePositiveIntUpTo3Digits,
       uriToBlob,
       setupValueToString,
-      formatDateYYMMDDCompact: formatDateShortYYMMDD,
+      formatDateYYMMDD: formatDateShortYYMMDD, // ✅ keep transaction-safe
       pad2,
     });
 
@@ -235,43 +230,44 @@ export function useDailyOpsController({
     }
 
     if (loadError) {
-      blockers.push({
-        key: 'loadError',
-        message: loadError,
-      });
+      blockers.push({ key: 'loadError', message: loadError });
     }
 
     if (!clinicId || !roomId || !applianceId) {
       blockers.push({
         key: 'missingContext',
-        message: 'Clinic, room, or appliance information is missing.',
+        message:
+          'Clinic, room, or appliance information is missing.',
       });
     }
 
     if (!userUid) {
       blockers.push({
         key: 'notSignedIn',
-        message: 'Please sign in before starting the machine.',
+        message:
+          'Please sign in before starting the machine.',
       });
     }
 
     if (!serialNumber.trim()) {
       blockers.push({
         key: 'missingSerial',
-        message: 'Missing serial number in appliance setup.',
+        message:
+          'Missing serial number in appliance setup.',
       });
     } else if (!hasValidSerialNumber) {
       blockers.push({
         key: 'invalidSerial',
         message:
-          'Serial number contains unsupported characters. Please update appliance setup.',
+          'Serial number contains unsupported characters.',
       });
     }
 
     if (isRunning) {
       blockers.push({
         key: 'alreadyRunning',
-        message: 'This autoclave is already running a cycle.',
+        message:
+          'This autoclave is already running a cycle.',
       });
     }
 
@@ -292,7 +288,8 @@ export function useDailyOpsController({
     !saving && startBlockers.length === 0;
 
   const hasValidCurrentCycleId =
-    !!currentCycle && AUTOCLAVE_CYCLE_ID.regex.test(currentCycle);
+    !!currentCycle &&
+    AUTOCLAVE_CYCLE_ID.regex.test(currentCycle);
 
   const finishBlockers = useMemo<ActionBlocker[]>(() => {
     const blockers: ActionBlocker[] = [];
@@ -305,10 +302,7 @@ export function useDailyOpsController({
     }
 
     if (loadError) {
-      blockers.push({
-        key: 'loadError',
-        message: loadError,
-      });
+      blockers.push({ key: 'loadError', message: loadError });
     }
 
     if (cycleDocError) {
@@ -328,14 +322,16 @@ export function useDailyOpsController({
     if (!clinicId || !roomId || !applianceId) {
       blockers.push({
         key: 'missingContext',
-        message: 'Clinic, room, or appliance information is missing.',
+        message:
+          'Clinic, room, or appliance information is missing.',
       });
     }
 
     if (!userUid) {
       blockers.push({
         key: 'notSignedIn',
-        message: 'Please sign in before finishing the cycle.',
+        message:
+          'Please sign in before finishing the cycle.',
       });
     }
 
@@ -349,7 +345,8 @@ export function useDailyOpsController({
     if (isRunning && currentCycle && !hasValidCurrentCycleId) {
       blockers.push({
         key: 'invalidCycleId',
-        message: 'Current cycle ID format is invalid.',
+        message:
+          'Current cycle ID format is invalid.',
       });
     }
 
@@ -413,5 +410,3 @@ export function useDailyOpsController({
     finishBlockers,
   };
 }
-
-export type DailyOpsController = ReturnType<typeof useDailyOpsController>;

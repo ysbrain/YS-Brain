@@ -60,7 +60,7 @@ type UseAutoclaveTestControllerParams = {
   userName?: string | null;
   loading: boolean;
   loadError: string | null;
-  currentDate: string;
+  currentDateYYYYMMDD: string;
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
@@ -97,7 +97,7 @@ export function useAutoclaveTestController({
   userName,
   loading,
   loadError,
-  currentDate,
+  currentDateYYYYMMDD,
   saving,
   setSaving,
   setUiLocked,
@@ -126,24 +126,31 @@ export function useAutoclaveTestController({
   const title = testType === 'helix' ? 'Daily Helix Test' : 'Weekly Spore Test';
 
   const displayDate = useMemo(() => {
-    const year = Number(currentDate.slice(0, 4));
-    const monthIndex = Number(currentDate.slice(4, 6)) - 1;
-    const day = Number(currentDate.slice(6, 8));
+    if (!/^\d{8}$/.test(currentDateYYYYMMDD)) {
+      return currentDateYYYYMMDD;
+    }
 
-    if (
-      !Number.isFinite(year) ||
-      !Number.isFinite(monthIndex) ||
-      !Number.isFinite(day)
-    ) {
-      return currentDate;
+    const year = Number(currentDateYYYYMMDD.slice(0, 4));
+    const month = Number(currentDateYYYYMMDD.slice(4, 6));
+    const day = Number(currentDateYYYYMMDD.slice(6, 8));
+
+    const date = new Date(year, month - 1, day);
+
+    const isValidDate =
+      date.getFullYear() === year &&
+      date.getMonth() === month - 1 &&
+      date.getDate() === day;
+
+    if (!isValidDate) {
+      return currentDateYYYYMMDD;
     }
 
     return new Intl.DateTimeFormat('en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
-    }).format(new Date(year, monthIndex, day));
-  }, [currentDate]);
+    }).format(date);
+  }, [currentDateYYYYMMDD]);
 
   const blockers = useMemo(() => {
     const nextBlockers: { key: string; message: string }[] = [];
@@ -324,7 +331,7 @@ export function useAutoclaveTestController({
       await setDoc(recordRef, {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        dateExecuted: currentDate || formatDateFullYYYYMMDD(new Date()),
+        dateExecuted: currentDateYYYYMMDD || formatDateFullYYYYMMDD(new Date()),
         cycleStartTime: trimmedStartTime,
         cycleEndTime: trimmedEndTime,
         testResult,
@@ -373,7 +380,7 @@ export function useAutoclaveTestController({
     userName,
     loading,
     loadError,
-    currentDate,
+    currentDateYYYYMMDD,
     cycleStartTime,
     cycleEndTime,
     testResult,
