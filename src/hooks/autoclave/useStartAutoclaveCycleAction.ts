@@ -3,8 +3,24 @@
 import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_SETUP_KEYS,
-  DAILY_OPS_FIELD_KEYS,
 } from '@/src/constants/autoclave';
+import type {
+  FormatDateYYMMDDFn,
+  Pad2Fn,
+  ParseHHMMFn,
+  RequestScrollFn,
+  SetActivePickerFn,
+  SetFormErrorFieldFn,
+  SetUiLockedFn,
+  SetupValueToStringFn,
+  ValidatePositiveIntUpTo3DigitsFn,
+} from '@/src/hooks/autoclave/dailyOpsActionTypes';
+import { validateDailyOpsStartForm } from '@/src/hooks/autoclave/dailyOpsValidation';
+import type { ApplianceDocShape } from '@/src/hooks/autoclave/types';
+import {
+  buildCycleId,
+  getStrictSerialIdPart,
+} from '@/src/hooks/autoclave/utils';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
@@ -16,22 +32,6 @@ import {
 } from 'firebase/firestore';
 import { useCallback } from 'react';
 import { Alert } from 'react-native';
-import type {
-  FormatDateYYMMDDFn,
-  Pad2Fn,
-  ParseHHMMFn,
-  RequestScrollFn,
-  SetActivePickerFn,
-  SetFormErrorFieldFn,
-  SetUiLockedFn,
-  SetupValueToStringFn,
-  ValidatePositiveIntUpTo3DigitsFn,
-} from './dailyOpsActionTypes';
-import type { ApplianceDocShape } from './types';
-import {
-  buildCycleId,
-  getStrictSerialIdPart,
-} from './utils';
 
 type UseStartAutoclaveCycleActionParams = {
   clinicId?: string | null;
@@ -143,75 +143,25 @@ export function useStartAutoclaveCycleAction({
       return;
     }
 
-    const trimmedTemp = maxTemp.trim();
-    const trimmedPressure = pressure.trim();
-    const trimmedStartTime = startTime.trim();
+    const validation = validateDailyOpsStartForm({
+      maxTemp,
+      pressure,
+      startTime,
+      parseHHMM,
+      validatePositiveIntUpTo3Digits,
+    });
 
-    if (!trimmedTemp) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.maxTemp);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Max Temp (°C) is required.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.maxTemp,
-      });
+    if (!validation.ok) {
+      setFormErrorField(validation.fieldKey);
+      showValidationAlert(validation.alert);
       return;
     }
 
-    if (!trimmedPressure) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.pressure);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Pressure is required.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.pressure,
-      });
-      return;
-    }
-
-    if (!trimmedStartTime) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.startTime);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Start Time is required.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.startTime,
-      });
-      return;
-    }
-
-    const temperatureValue =
-      validatePositiveIntUpTo3Digits(trimmedTemp);
-
-    if (temperatureValue === null) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.maxTemp);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Max Temp (°C) invalid.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.maxTemp,
-      });
-      return;
-    }
-
-    const pressureValue =
-      validatePositiveIntUpTo3Digits(trimmedPressure);
-
-    if (pressureValue === null) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.pressure);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Pressure invalid.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.pressure,
-      });
-      return;
-    }
-
-    if (!parseHHMM(trimmedStartTime)) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.startTime);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Start Time must be a valid time.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.startTime,
-      });
-      return;
-    }
+    const {
+      temperatureValue,
+      pressureValue,
+      trimmedStartTime,
+    } = validation.values;
 
     if (saving) return;
 
