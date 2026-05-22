@@ -3,8 +3,24 @@
 import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_STORAGE,
-  DAILY_OPS_FIELD_KEYS,
 } from '@/src/constants/autoclave';
+import type {
+  ParseHHMMFn,
+  RequestScrollFn,
+  SetActivePickerFn,
+  SetFormErrorFieldFn,
+  SetUiLockedFn,
+  UriToBlobFn,
+} from '@/src/hooks/autoclave/dailyOpsActionTypes';
+import { validateDailyOpsFinishForm } from '@/src/hooks/autoclave/dailyOpsValidation';
+import type {
+  ApplianceDocShape,
+  DailyOpsCycleDoc,
+} from '@/src/hooks/autoclave/types';
+import {
+  parseCycleId,
+  sanitizeIdPart,
+} from '@/src/hooks/autoclave/utils';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
@@ -22,22 +38,6 @@ import {
 } from 'firebase/storage';
 import { useCallback } from 'react';
 import { Alert } from 'react-native';
-import type {
-  ParseHHMMFn,
-  RequestScrollFn,
-  SetActivePickerFn,
-  SetFormErrorFieldFn,
-  SetUiLockedFn,
-  UriToBlobFn,
-} from './dailyOpsActionTypes';
-import type {
-  ApplianceDocShape,
-  DailyOpsCycleDoc,
-} from './types';
-import {
-  parseCycleId,
-  sanitizeIdPart,
-} from './utils';
 
 type UseFinishAutoclaveCycleActionParams = {
   clinicId?: string | null;
@@ -161,58 +161,25 @@ export function useFinishAutoclaveCycleAction({
       return;
     }
 
-    const trimmedUnloadTime = unloadTime.trim();
-    const trimmedNotes = notes.trim();
+    const validation = validateDailyOpsFinishForm({
+      unloadTime,
+      internalIndicator,
+      externalIndicator,
+      photoUri,
+      notes,
+      parseHHMM,
+    });
 
-    if (!trimmedUnloadTime) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.unloadTime);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Unload Time is required.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.unloadTime,
-      });
+    if (!validation.ok) {
+      setFormErrorField(validation.fieldKey);
+      showValidationAlert(validation.alert);
       return;
     }
 
-    if (!parseHHMM(trimmedUnloadTime)) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.unloadTime);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Unload Time must be a valid time.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.unloadTime,
-      });
-      return;
-    }
-
-    if (internalIndicator === null) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.internalIndicator);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Please select Internal Indicator result.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.internalIndicator,
-      });
-      return;
-    }
-
-    if (externalIndicator === null) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.externalIndicator);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Please select External Indicator result.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.externalIndicator,
-      });
-      return;
-    }
-
-    if (!photoUri || photoUri.trim().length === 0) {
-      setFormErrorField(DAILY_OPS_FIELD_KEYS.photoEvidence);
-      showValidationAlert({
-        title: 'Validation',
-        message: 'Photo Evidence is required.',
-        fieldKey: DAILY_OPS_FIELD_KEYS.photoEvidence,
-      });
-      return;
-    }
+    const {
+      trimmedUnloadTime,
+      trimmedNotes,
+    } = validation.values;
 
     const parsed = parseCycleId(currentCycle);
 
