@@ -41,10 +41,14 @@
       ],
       "expo-secure-store",
       "expo-web-browser",
-      "@react-native-community/datetimepicker",      
-      ["expo-camera", {
-        "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera"
-      }]
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera"
+        }
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
