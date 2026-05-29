@@ -179,6 +179,7 @@ export function useFinishAutoclaveCycleAction({
     const {
       trimmedUnloadTime,
       trimmedNotes,
+      trimmedPhotoUri,
     } = validation.values;
 
     const parsed = parseCycleId(currentCycle);
@@ -216,7 +217,7 @@ export function useFinishAutoclaveCycleAction({
 
     try {
       const storage = getStorage();
-      const blob = await uriToBlob(photoUri);
+      const blob = await uriToBlob(trimmedPhotoUri);
 
       const safeClinicId = sanitizeIdPart(clinicId, '');
       const safeRoomId = sanitizeIdPart(roomId, '');

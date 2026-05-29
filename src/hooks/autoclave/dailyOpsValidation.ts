@@ -39,6 +39,7 @@ export type DailyOpsStartValidatedValues = {
 export type DailyOpsFinishValidatedValues = {
   trimmedUnloadTime: string;
   trimmedNotes: string;
+  trimmedPhotoUri: string;
 };
 
 function validationError(
@@ -152,6 +153,7 @@ export function validateDailyOpsFinishForm(params: {
 
   const trimmedUnloadTime = unloadTime.trim();
   const trimmedNotes = notes.trim();
+  const trimmedPhotoUri = photoUri?.trim() ?? '';
 
   if (!trimmedUnloadTime) {
     return validationError(
@@ -181,7 +183,7 @@ export function validateDailyOpsFinishForm(params: {
     );
   }
 
-  if (!photoUri || photoUri.trim().length === 0) {
+  if (!trimmedPhotoUri) {
     return validationError(
       DAILY_OPS_FIELD_KEYS.photoEvidence,
       'Photo Evidence is required.',
@@ -193,6 +195,7 @@ export function validateDailyOpsFinishForm(params: {
     values: {
       trimmedUnloadTime,
       trimmedNotes,
+      trimmedPhotoUri,
     },
   };
 }
