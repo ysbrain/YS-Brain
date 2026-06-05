@@ -4,6 +4,7 @@ import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_STORAGE,
 } from '@/src/constants/autoclave';
+import { buildApplianceSnapshot } from '@/src/hooks/autoclave/applianceSnapshot';
 import type {
   ParseHHMMFn,
   RequestScrollFn,
@@ -326,21 +327,38 @@ export function useFinishAutoclaveCycleAction({
           );
         }
 
+        const existingApplianceSnapshot = (cycleData as any).applianceSnapshot;
+
+        const applianceSnapshot =
+          existingApplianceSnapshot &&
+          typeof existingApplianceSnapshot === 'object'
+            ? existingApplianceSnapshot
+            : buildApplianceSnapshot({
+                clinicId,
+                roomId,
+                applianceId,
+                applianceData,
+              });
+
         tx.update(cycleRef, {
           _isFinished: true,
+
+          applianceSnapshot,
+
           cycleEndTime: trimmedUnloadTime,
           cycleEndedBy: {
             userId: userUid,
             userName: userName ?? null,
           },
+
           results: {
             internalIndicator,
             externalIndicator,
-            notes:
-              trimmedNotes.length > 0 ? trimmedNotes : null,
+            notes: trimmedNotes.length > 0 ? trimmedNotes : null,
             photoUrl,
             photoPath,
           },
+
           updatedAt: serverTimestamp(),
         });
 

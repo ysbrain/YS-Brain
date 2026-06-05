@@ -501,17 +501,24 @@ export default function ClinicRecordScreen() {
         'records',
       );
 
-      const payload = {
+      const applianceSnapshot = {
         clinicId,
         roomId,
         applianceId,
-        appliance: {
-          key: applianceKey ?? null,
-          name: applianceName ?? null,
-          typeKey: typeKey ?? null,
-          typeName: typeName ?? null,
-        },
+        applianceKey: applianceKey.trim() || null,
+        applianceName: applianceName.trim() || null,
+        typeKey: typeKey.trim() || null,
+        typeName: typeName.trim() || null,
+      };
+
+      const payload = {
+        /**
+         * Preferred immutable appliance metadata for this record.
+         */
+        applianceSnapshot,
+
         records: recordsArr,
+
         createdAt: serverTimestamp(),
         createdBy: {
           userId: user.uid,

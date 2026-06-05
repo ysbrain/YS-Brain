@@ -4,6 +4,7 @@ import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_SETUP_KEYS,
 } from '@/src/constants/autoclave';
+import { buildApplianceSnapshot } from '@/src/hooks/autoclave/applianceSnapshot';
 import type {
   FormatDateYYMMDDFn,
   Pad2Fn,
@@ -217,6 +218,13 @@ export function useStartAutoclaveCycleAction({
             );
           }
 
+          const applianceSnapshot = buildApplianceSnapshot({
+            clinicId,
+            roomId,
+            applianceId,
+            applianceData,
+          });
+
           const safeSerialNumber =
             getStrictSerialIdPart(latestSerialNumber);
 
@@ -288,10 +296,18 @@ export function useStartAutoclaveCycleAction({
           tx.set(cycleRef, {
             _isFinished: false,
             createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+
+            dateExecuted: txCurrentDate,
+            cycleId: nextCycleId,
+
+            applianceSnapshot,
+
             settings: {
               temperature: temperatureValue,
               pressure: pressureValue,
             },
+
             cycleBeginTime: trimmedStartTime,
             cycleBeganBy: {
               userId: userUid,

@@ -56,6 +56,8 @@ type UseAutoclaveTestControllerParams = {
   roomId?: string | null;
   applianceId?: string | null;
   applianceKey: string;
+  applianceName?: string | null;
+  serialNumber?: string | null;
   userUid?: string | null;
   userName?: string | null;
   loading: boolean;
@@ -93,6 +95,8 @@ export function useAutoclaveTestController({
   roomId,
   applianceId,
   applianceKey,
+  applianceName,
+  serialNumber,
   userUid,
   userName,
   loading,
@@ -183,8 +187,31 @@ export function useAutoclaveTestController({
       });
     }
 
+    if (!applianceKey.trim()) {
+      nextBlockers.push({
+        key: 'missingApplianceKey',
+        message: 'Appliance key is missing.',
+      });
+    }
+
+    if (!serialNumber?.trim()) {
+      nextBlockers.push({
+        key: 'missingSerial',
+        message: 'Serial number is missing.',
+      });
+    }
+
     return nextBlockers;
-  }, [loading, loadError, clinicId, roomId, applianceId, userUid]);
+  }, [
+    loading,
+    loadError,
+    clinicId,
+    roomId,
+    applianceId,
+    userUid,
+    applianceKey,
+    serialNumber,
+  ]);
 
   const canPressSaveRecord = !saving && blockers.length === 0;
 
@@ -328,19 +355,34 @@ export function useAutoclaveTestController({
         photoUrl = await getDownloadURL(uploadedFileRef);
       }
 
+      const applianceSnapshot = {
+        clinicId,
+        roomId,
+        applianceId,
+        applianceKey: applianceKey.trim(),
+        applianceName: applianceName?.trim() ? applianceName.trim() : null,
+        serialNumber: serialNumber?.trim() ?? '',
+      };
+
       await setDoc(recordRef, {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         dateExecuted: currentDateYYYYMMDD || formatDateFullYYYYMMDD(new Date()),
-        cycleStartTime: trimmedStartTime,
-        cycleEndTime: trimmedEndTime,
-        testResult,
+
+        applianceSnapshot,
+
         performedBy: {
           userId: userUid,
           userName: userName ?? null,
         },
-        photoUrl,
-        photoPath,
+
+        results: {
+          cycleBeginTime: trimmedStartTime,
+          cycleEndTime: trimmedEndTime,
+          testResult,
+          photoPath,
+          photoUrl,
+        },
       });
 
       databaseCommitted = true;

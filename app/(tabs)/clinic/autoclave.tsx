@@ -154,6 +154,7 @@ export default function AutoclaveScreen() {
                 clinicId={clinicId}
                 roomId={roomId}
                 applianceId={applianceId}
+                applianceName={applianceName}
                 applianceKey={applianceKey}
                 setup={setup}
                 userUid={user?.uid ?? null}
@@ -173,6 +174,7 @@ export default function AutoclaveScreen() {
                 clinicId={clinicId}
                 roomId={roomId}
                 applianceId={applianceId}
+                applianceName={applianceName}
                 applianceKey={applianceKey}
                 setup={setup}
                 userUid={user?.uid ?? null}

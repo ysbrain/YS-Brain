@@ -51,6 +51,13 @@ type AutoclaveTestTabProps = {
   clinicId?: string | null;
   roomId?: string | null;
   applianceId?: string | null;
+
+  /**
+   * Added for immutable appliance snapshot.
+   * This should come from useAutoclaveAppliance() in AutoclaveScreen.
+   */
+  applianceName?: string | null;
+
   applianceKey: string;
   setup: Record<string, SetupStoredItem | undefined>;
   userUid?: string | null;
@@ -71,6 +78,7 @@ export function AutoclaveTestTab({
   clinicId,
   roomId,
   applianceId,
+  applianceName,
   applianceKey,
   setup,
   userUid,
@@ -109,12 +117,27 @@ export function AutoclaveTestTab({
     overlayHeight: pickerOverlayHeight,
   });
 
+  /**
+   * Serial number is part of the immutable appliance snapshot.
+   * It is read from setup here, then passed to the controller so the saved
+   * Helix/Spore record can include applianceSnapshot.serialNumber.
+   */
+  const serialNumber = useMemo(() => {
+    return setupValueToString(
+      setup,
+      AUTOCLAVE_SETUP_KEYS.serialNumber,
+      '',
+    ).trim();
+  }, [setup]);
+
   const controller = useAutoclaveTestController({
     testType,
     clinicId,
     roomId,
     applianceId,
+    applianceName,
     applianceKey,
+    serialNumber,
     userUid: userUid ?? null,
     userName: userName ?? null,
     loading,
@@ -127,14 +150,6 @@ export function AutoclaveTestTab({
     requestScroll,
     routerBack: () => router.back(),
   });
-
-  const serialNumber = useMemo(() => {
-    return setupValueToString(
-      setup,
-      AUTOCLAVE_SETUP_KEYS.serialNumber,
-      '',
-    ).trim();
-  }, [setup]);
 
   const activePickerValue = useMemo(() => {
     if (!activePicker) return new Date();

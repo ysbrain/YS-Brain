@@ -61,3 +61,17 @@ export type DailyOpsActivePicker = {
   field: DailyOpsPickerField;
   mode: 'time';
 } | null;
+
+export type AutoclaveApplianceSnapshot = {
+  clinicId: string;
+  roomId: string;
+  applianceId: string;
+  applianceKey: string;
+  applianceName: string | null;
+  serialNumber: string;
+};
+
+export type AutoclaveRecordActor = {
+  userId: string;
+  userName: string | null;
+};
