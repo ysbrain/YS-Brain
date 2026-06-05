@@ -99,6 +99,9 @@ export function DailyOpsRunningCard({
       ? cycleDoc.cycleBeganBy.userName
       : 'Unknown';
 
+  const notesRequired =
+    internalIndicator === false || externalIndicator === false;
+
   return (
     <View style={styles.card}>
       <View style={styles.runningHeader}>
@@ -211,7 +214,9 @@ export function DailyOpsRunningCard({
 
         <AutoclaveNotesField
           ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.notes)}
-          label="Notes (Optional)"
+          label={notesRequired ? 'Notes' : 'Notes (Optional)'}
+          required={notesRequired}
+          error={formErrorField === DAILY_OPS_FIELD_KEYS.notes}
           value={notes}
           onChangeText={setNotes}
           onFocus={() => onFieldFocus(DAILY_OPS_FIELD_KEYS.notes)}

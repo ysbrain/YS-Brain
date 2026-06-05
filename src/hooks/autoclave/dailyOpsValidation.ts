@@ -183,6 +183,16 @@ export function validateDailyOpsFinishForm(params: {
     );
   }
 
+  const hasFailedIndicator =
+    internalIndicator === false || externalIndicator === false;
+
+  if (hasFailedIndicator && trimmedNotes.length === 0) {
+    return validationError(
+      DAILY_OPS_FIELD_KEYS.notes,
+      'Notes are required when any indicator fails.',
+    );
+  }
+
   if (!trimmedPhotoUri) {
     return validationError(
       DAILY_OPS_FIELD_KEYS.photoEvidence,

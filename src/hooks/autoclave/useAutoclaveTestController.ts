@@ -3,7 +3,7 @@
 import { AUTOCLAVE_RECORD_COLLECTIONS, AUTOCLAVE_STORAGE } from '@/src/constants/autoclave';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
-import { formatDateFullYYYYMMDD, formatTimeHHMM, parseHHMM } from '@/src/utils/dateTime';
+import { formatTimeHHMM, parseHHMM } from '@/src/utils/dateTime';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import { uriToBlob } from '@/src/utils/photo';
 import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
@@ -87,6 +87,10 @@ function getSuccessMessage(testType: AutoclaveTestType) {
   return testType === 'helix'
     ? 'Helix test record saved successfully.'
     : 'Spore test record saved successfully.';
+}
+
+function getTestTypeLabel(testType: AutoclaveTestType): 'Helix' | 'Spore' {
+  return testType === 'helix' ? 'Helix' : 'Spore';
 }
 
 export function useAutoclaveTestController({
@@ -295,6 +299,18 @@ export function useAutoclaveTestController({
       return;
     }
 
+    const trimmedPhotoUri = photoUri?.trim() ?? '';
+
+    if (testResult === false && trimmedPhotoUri.length === 0) {
+      setFormErrorField(AUTOCLAVE_TEST_FIELD_KEYS.photoEvidence);
+      showValidationAlert({
+        title: 'Validation',
+        message: 'Photo evidence is required when the test result fails.',
+        fieldKey: AUTOCLAVE_TEST_FIELD_KEYS.photoEvidence,
+      });
+      return;
+    }
+
     if (saving) return;
 
     setSaving(true);
@@ -321,10 +337,10 @@ export function useAutoclaveTestController({
 
       let photoUrl: string | null = null;
       let photoPath: string | null = null;
-
-      if (photoUri && photoUri.trim().length > 0) {
+      
+      if (trimmedPhotoUri.length > 0) {
         const storage = getStorage();
-        const blob = await uriToBlob(photoUri);
+        const blob = await uriToBlob(trimmedPhotoUri);
 
         const safeClinicId = sanitizeIdPart(clinicId, '');
         const safeRoomId = sanitizeIdPart(roomId, '');
@@ -364,10 +380,16 @@ export function useAutoclaveTestController({
         serialNumber: serialNumber?.trim() ?? '',
       };
 
+      const outcome: 'pass' | 'fail' =
+        testResult === false ? 'fail' : 'pass';
+
+      const testTypeLabel = getTestTypeLabel(testType);
+
       await setDoc(recordRef, {
+        _testType: testTypeLabel,
+        _outcome: outcome,
+
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        dateExecuted: currentDateYYYYMMDD || formatDateFullYYYYMMDD(new Date()),
 
         applianceSnapshot,
 

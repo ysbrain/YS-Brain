@@ -403,7 +403,7 @@ export function AutoclaveTestTab({
           <AutoclavePhotoField
             ref={registerFieldRef(AUTOCLAVE_TEST_FIELD_KEYS.photoEvidence)}
             label="Photo"
-            required={false}
+            required={controller.testResult === false}
             photoUri={controller.photoUri}
             error={
               controller.formErrorField ===
@@ -412,7 +412,11 @@ export function AutoclaveTestTab({
             onPress={openCamera}
             aspectRatioFilled={PHOTO_ASPECT}
             aspectRatioEmpty={PHOTO_ASPECT_EMPTY}
-            placeholderText="Attach Photo of Indicator (Optional)"
+            placeholderText={
+              controller.testResult === false
+                ? 'Attach Photo of Failed Indicator'
+                : 'Attach Photo of Indicator (Optional)'
+            }
           />
 
           <ActionBlockerList blockers={controller.blockers} />

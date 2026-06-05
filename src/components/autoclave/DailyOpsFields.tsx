@@ -299,6 +299,8 @@ type NotesFieldProps = {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
+  required?: boolean;
+  error?: boolean;
   onFocus?: () => void;
   onBlur?: () => void;
 };
@@ -310,6 +312,8 @@ export const AutoclaveNotesField = forwardRef<TextInput, NotesFieldProps>(
       value,
       onChangeText,
       placeholder = 'Any issues observed?',
+      required = false,
+      error = false,
       onFocus,
       onBlur,
     },
@@ -317,7 +321,12 @@ export const AutoclaveNotesField = forwardRef<TextInput, NotesFieldProps>(
   ) => {
     return (
       <View style={styles.fieldBlock}>
-        <FieldLabel label={label} variant="verify" />
+        <FieldLabel
+          label={label}
+          required={required}
+          error={error}
+          variant="verify"
+        />
         <TextInput
           ref={ref}
           value={value}
@@ -326,7 +335,7 @@ export const AutoclaveNotesField = forwardRef<TextInput, NotesFieldProps>(
           placeholderTextColor="#999"          
           multiline
           textAlignVertical="top"
-          style={styles.notesInput}
+          style={[styles.notesInput, error && styles.errorBorder]}
           returnKeyType="done"
           onFocus={onFocus}
           onBlur={onBlur}

@@ -339,11 +339,27 @@ export function useFinishAutoclaveCycleAction({
                 applianceId,
                 applianceData,
               });
+        
+        const failedChecks: string[] = [];
+
+        if (internalIndicator === false) {
+          failedChecks.push('internalIndicator');
+        }
+
+        if (externalIndicator === false) {
+          failedChecks.push('externalIndicator');
+        }
+
+        const outcome: 'pass' | 'fail' =
+          failedChecks.length > 0 ? 'fail' : 'pass';
 
         tx.update(cycleRef, {
           _isFinished: true,
+          _outcome: outcome,
 
           applianceSnapshot,
+
+          failedChecks,
 
           cycleEndTime: trimmedUnloadTime,
           cycleEndedBy: {
