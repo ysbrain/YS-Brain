@@ -93,7 +93,8 @@ export default function AutoclaveScreen() {
     applianceName,
     applianceKey,
     setup,
-    lastCycle,
+    lastStartedCycle,
+    lastFinishedCycle,
     isRunning,
     currentCycle,
   } = useAutoclaveAppliance({
@@ -137,7 +138,8 @@ export default function AutoclaveScreen() {
                 loading={loading}
                 loadError={loadError}
                 setup={setup}
-                lastCycle={lastCycle}
+                lastStartedCycle={lastStartedCycle}
+                lastFinishedCycle={lastFinishedCycle}
                 applianceKey={applianceKey}
                 isRunning={isRunning}
                 currentCycle={currentCycle}

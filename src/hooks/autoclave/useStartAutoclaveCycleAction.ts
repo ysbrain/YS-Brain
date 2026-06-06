@@ -236,26 +236,26 @@ export function useStartAutoclaveCycleAction({
 
           const txCurrentDate = formatDateYYMMDD(new Date());
 
-          const latestLastCycle =
-            applianceData.lastCycle &&
-            typeof applianceData.lastCycle === 'object'
-              ? applianceData.lastCycle
+          const latestLastStartedCycle =
+            applianceData.lastStartedCycle &&
+            typeof applianceData.lastStartedCycle === 'object'
+              ? applianceData.lastStartedCycle
               : {};
 
-          const latestLastDate =
-            typeof latestLastCycle.dateExecuted === 'string'
-              ? latestLastCycle.dateExecuted
+          const latestLastStartedDate =
+            typeof latestLastStartedCycle.dateExecuted === 'string'
+              ? latestLastStartedCycle.dateExecuted
               : '';
 
-          const latestRawCycleNumber =
-            typeof latestLastCycle.cycleNumber === 'number' &&
-            Number.isFinite(latestLastCycle.cycleNumber)
-              ? latestLastCycle.cycleNumber
+          const latestRawStartedCycleNumber =
+            typeof latestLastStartedCycle.cycleNumber === 'number' &&
+            Number.isFinite(latestLastStartedCycle.cycleNumber)
+              ? latestLastStartedCycle.cycleNumber
               : 0;
 
           const nextCycleNumber =
-            latestLastDate === txCurrentDate
-              ? latestRawCycleNumber + 1
+            latestLastStartedDate === txCurrentDate
+              ? latestRawStartedCycleNumber + 1
               : 1;
 
           const nextCycleId = buildCycleId({
@@ -290,6 +290,13 @@ export function useStartAutoclaveCycleAction({
           tx.update(applianceRef, {
             '_status.isRunning': true,
             '_status.currentCycle': nextCycleId,
+
+            lastStartedCycle: {
+              dateExecuted: txCurrentDate,
+              cycleNumber: nextCycleNumber,
+              cycleId: nextCycleId,
+            },
+
             updatedAt: serverTimestamp(),
           });
 

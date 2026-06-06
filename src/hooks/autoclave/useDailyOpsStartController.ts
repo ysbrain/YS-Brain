@@ -50,9 +50,11 @@ export type UseDailyOpsStartControllerParams = {
   loadError: string | null;
 
   setup: Record<string, SetupStoredItem | undefined>;
-  lastCycle: {
+
+  lastStartedCycle: {
     cycleNumber?: number;
     dateExecuted?: string;
+    cycleId?: string;
   };
 
   isRunning: boolean;
@@ -85,7 +87,7 @@ export function useDailyOpsStartController({
   loading,
   loadError,
   setup,
-  lastCycle,
+  lastStartedCycle,
   isRunning,
   currentDateYYMMDD,
   saving,
@@ -112,21 +114,21 @@ export function useDailyOpsStartController({
 
   const nextCycle = useMemo(() => {
     const lastDate =
-      typeof lastCycle?.dateExecuted === 'string'
-        ? lastCycle.dateExecuted
+      typeof lastStartedCycle?.dateExecuted === 'string'
+        ? lastStartedCycle.dateExecuted
         : '';
 
     const rawCycleNumber =
-      typeof lastCycle?.cycleNumber === 'number' &&
-      Number.isFinite(lastCycle.cycleNumber)
-        ? lastCycle.cycleNumber
+      typeof lastStartedCycle?.cycleNumber === 'number' &&
+      Number.isFinite(lastStartedCycle.cycleNumber)
+        ? lastStartedCycle.cycleNumber
         : 0;
 
     const nextNumber =
       lastDate === currentDateYYMMDD ? rawCycleNumber + 1 : 1;
 
     return pad2(nextNumber);
-  }, [lastCycle, currentDateYYMMDD]);
+  }, [lastStartedCycle, currentDateYYMMDD]);
 
   const cycleIdPreview = useMemo(() => {
     const serialPart =

@@ -381,10 +381,13 @@ export function useFinishAutoclaveCycleAction({
         tx.update(applianceRef, {
           '_status.isRunning': false,
           '_status.currentCycle': '',
-          lastCycle: {
+
+          lastFinishedCycle: {
             dateExecuted: cycleDatePart,
             cycleNumber: cycleNumberPart,
+            cycleId: currentCycle,
           },
+
           updatedAt: serverTimestamp(),
         });
       });

@@ -38,9 +38,17 @@ type UseDailyOpsControllerParams = {
   loadError: string | null;
 
   setup: Record<string, SetupStoredItem | undefined>;
-  lastCycle: {
+  
+  lastStartedCycle: {
     cycleNumber?: number;
     dateExecuted?: string;
+    cycleId?: string;
+  };
+
+  lastFinishedCycle: {
+    cycleNumber?: number;
+    dateExecuted?: string;
+    cycleId?: string;
   };
 
   isRunning: boolean;
@@ -71,7 +79,8 @@ export function useDailyOpsController({
   loading,
   loadError,
   setup,
-  lastCycle,
+  lastStartedCycle,
+  lastFinishedCycle,
   isRunning,
   currentCycle,
   applianceKey,
@@ -137,7 +146,7 @@ export function useDailyOpsController({
     loading,
     loadError,
     setup,
-    lastCycle,
+    lastStartedCycle,
     isRunning,
     currentDateYYMMDD,
     saving,

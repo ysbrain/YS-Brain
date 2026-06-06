@@ -48,9 +48,17 @@ type DailyOpsTabProps = {
   loadError: string | null;
 
   setup: Record<string, SetupStoredItem | undefined>;
-  lastCycle: {
+
+  lastStartedCycle: {
     cycleNumber?: number;
     dateExecuted?: string;
+    cycleId?: string;
+  };
+
+  lastFinishedCycle: {
+    cycleNumber?: number;
+    dateExecuted?: string;
+    cycleId?: string;
   };
 
   applianceKey: string;
@@ -75,7 +83,8 @@ export function DailyOpsTab({
   loading,
   loadError,
   setup,
-  lastCycle,
+  lastStartedCycle,
+  lastFinishedCycle,
   applianceKey,
   isRunning,
   currentCycle,
@@ -134,7 +143,8 @@ export function DailyOpsTab({
     loading,
     loadError,
     setup,
-    lastCycle,
+    lastStartedCycle,
+    lastFinishedCycle,
     isRunning,
     currentCycle,
     applianceKey,

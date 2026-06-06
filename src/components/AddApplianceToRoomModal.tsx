@@ -600,6 +600,23 @@ export default function AddApplianceToRoomModal({
       const applianceDocId = `${safeTypeKey}_${randomPart}`;
       const newApplianceRef = doc(appliancesColRef, applianceDocId);
 
+      const moduleSnapshot = {
+        moduleId: selectedModule.id,
+        moduleName: selectedModule.moduleName,
+        official: Boolean(selectedModule.official),
+        description:
+          typeof selectedModule.description === 'string' &&
+          selectedModule.description.trim().length > 0
+            ? selectedModule.description.trim()
+            : null,
+      };
+
+      const locationSnapshot = {
+        clinicId,
+        roomId,
+        roomName: roomName.trim() || null,
+      };
+
       await runTransaction(db, async (tx) => {
         const roomSnap = await tx.get(roomRef);
 
@@ -607,15 +624,35 @@ export default function AddApplianceToRoomModal({
           throw new FormAppError('ROOM_NOT_FOUND');
         }
 
+        const isAutoclaveModule = selectedModule.id === 'autoclave';
+
         tx.set(newApplianceRef, {
           applianceKey,
           applianceName: name,
+
           typeKey: selectedModule.id,
           typeName: selectedModule.moduleName,
+
+          moduleSnapshot,
+          locationSnapshot,
+
           setup: res.setup,
+
           ...(moduleRecordFields !== undefined
             ? { recordFields: moduleRecordFields }
             : {}),
+
+          ...(isAutoclaveModule
+            ? {
+                _status: {
+                  isRunning: false,
+                  currentCycle: '',
+                },
+                lastStartedCycle: null,
+                lastFinishedCycle: null,
+              }
+            : {}),
+
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });

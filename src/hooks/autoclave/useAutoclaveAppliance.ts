@@ -18,9 +18,15 @@ type UseAutoclaveApplianceResult = {
   applianceName: string;
   applianceKey: string;
   setup: Record<string, SetupStoredItem | undefined>;
-  lastCycle: {
+  lastStartedCycle: {
     cycleNumber?: number;
     dateExecuted?: string;
+    cycleId?: string;
+  };
+  lastFinishedCycle: {
+    cycleNumber?: number;
+    dateExecuted?: string;
+    cycleId?: string;
   };
   isRunning: boolean;
   currentCycle: string;
@@ -37,10 +43,19 @@ export function useAutoclaveAppliance({
   const [applianceName, setApplianceName] = useState('Autoclave');
   const [applianceKey, setApplianceKey] = useState('');
   const [setup, setSetup] = useState<Record<string, SetupStoredItem | undefined>>({});
-  const [lastCycle, setLastCycle] = useState<{
+
+  const [lastStartedCycle, setLastStartedCycle] = useState<{
     cycleNumber?: number;
     dateExecuted?: string;
+    cycleId?: string;
   }>({});
+
+  const [lastFinishedCycle, setLastFinishedCycle] = useState<{
+    cycleNumber?: number;
+    dateExecuted?: string;
+    cycleId?: string;
+  }>({});
+
   const [isRunning, setIsRunning] = useState(false);
   const [currentCycle, setCurrentCycle] = useState('');
 
@@ -52,7 +67,8 @@ export function useAutoclaveAppliance({
       setApplianceName('Autoclave');
       setApplianceKey('');
       setSetup({});
-      setLastCycle({});
+      setLastStartedCycle({});
+      setLastFinishedCycle({});
       setIsRunning(false);
       setCurrentCycle('');
       return;
@@ -81,7 +97,8 @@ export function useAutoclaveAppliance({
           setApplianceName('Autoclave');
           setApplianceKey('');
           setSetup({});
-          setLastCycle({});
+          setLastStartedCycle({});
+          setLastFinishedCycle({});
           setIsRunning(false);
           setCurrentCycle('');
           return;
@@ -106,12 +123,19 @@ export function useAutoclaveAppliance({
             ? data.setup
             : ({} as Record<string, SetupStoredItem | undefined>);
         setSetup(nextSetup);
+        
+        const nextLastStartedCycle =
+          data.lastStartedCycle && typeof data.lastStartedCycle === 'object'
+            ? data.lastStartedCycle
+            : {};
 
-        const nextLastCycle =
-          data.lastCycle && typeof data.lastCycle === 'object'
-            ? data.lastCycle
-            : { cycleNumber: undefined, dateExecuted: undefined };
-        setLastCycle(nextLastCycle);
+        const nextLastFinishedCycle =
+          data.lastFinishedCycle && typeof data.lastFinishedCycle === 'object'
+            ? data.lastFinishedCycle
+            : {};
+
+        setLastStartedCycle(nextLastStartedCycle);
+        setLastFinishedCycle(nextLastFinishedCycle);
 
         const nextStatus = data._status ?? {};
         setIsRunning(Boolean(nextStatus.isRunning));
@@ -137,7 +161,8 @@ export function useAutoclaveAppliance({
     applianceName,
     applianceKey,
     setup,
-    lastCycle,
+    lastStartedCycle,
+    lastFinishedCycle,
     isRunning,
     currentCycle,
   };

@@ -9,16 +9,31 @@ export type SetupStoredItem = {
   value?: SetupStoredValue;
 };
 
+export type AutoclaveCycleCounter = {
+  cycleNumber?: number;
+  dateExecuted?: string;
+  cycleId?: string;
+};
+
 export type ApplianceDocShape = {
   applianceKey?: string;
   applianceName?: string;
   typeKey?: string;
   typeName?: string;
   setup?: Record<string, SetupStoredItem | undefined>;
-  lastCycle?: {
-    cycleNumber?: number;
-    dateExecuted?: string;
-  };
+
+  /**
+   * Last cycle that was successfully started.
+   * Used to generate the next cycle number.
+   */
+  lastStartedCycle?: AutoclaveCycleCounter;
+
+  /**
+   * Last cycle that was successfully finished/unloaded.
+   * Used for audit/reporting only.
+   */
+  lastFinishedCycle?: AutoclaveCycleCounter;
+
   _status?: {
     isRunning?: boolean;
     currentCycle?: string;
