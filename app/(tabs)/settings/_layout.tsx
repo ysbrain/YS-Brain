@@ -5,6 +5,7 @@ export default function SettingsLayout() {
   return (
     <Stack screenOptions={commonStackOptions}>
       <Stack.Screen name="index" options={{ title: 'Settings' }} />
+      <Stack.Screen name="create-module" options={{ title: 'Create Module' }} />
     </Stack>
   );
 }
