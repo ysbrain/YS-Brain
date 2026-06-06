@@ -16,9 +16,9 @@ export type AutoclaveCycleCounter = {
 };
 
 export type AutoclaveTestCounter = {
-  dateExecuted?: string;
+  dateYYMMDD?: string;
   count?: number;
-  recordId?: string;
+  lastRecordId?: string;
   updatedAt?: unknown;
 };
 

@@ -7,7 +7,9 @@ import {
 } from '@/src/constants/autoclave';
 import { setupValueToString } from '@/src/hooks/autoclave/setupUtils';
 import { buildAutoclavePhotoPath } from '@/src/hooks/autoclave/storagePaths';
+import { normalizeAutoclaveTestCounter } from '@/src/hooks/autoclave/testCounterUtils';
 import type { ApplianceDocShape } from '@/src/hooks/autoclave/types';
+import { getStrictSerialIdPart } from '@/src/hooks/autoclave/utils';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
 import { formatTimeHHMM, parseHHMM } from '@/src/utils/dateTime';
@@ -29,7 +31,6 @@ import {
 } from 'firebase/storage';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
-import { getStrictSerialIdPart } from './utils';
 
 export type AutoclaveTestType = 'helix' | 'spore';
 
@@ -273,22 +274,12 @@ async function createPendingAutoclaveTestRecordWithApplianceCounter({
           ? applianceName.trim()
           : null;
 
-    const latestTestMap = (applianceData as any)[lastTestedField];
-    
-    const latestDateYYMMDD =
-      latestTestMap &&
-      typeof latestTestMap === 'object' &&
-      typeof latestTestMap.dateYYMMDD === 'string'
-        ? latestTestMap.dateYYMMDD
-        : '';
+    const latestTestCounter = normalizeAutoclaveTestCounter(
+      applianceData[lastTestedField],
+    );
 
-    const latestCount =
-      latestTestMap &&
-      typeof latestTestMap === 'object' &&
-      typeof latestTestMap.count === 'number' &&
-      Number.isFinite(latestTestMap.count)
-        ? latestTestMap.count
-        : 0;
+    const latestDateYYMMDD = latestTestCounter.dateYYMMDD ?? '';
+    const latestCount = latestTestCounter.count ?? 0;
     
     const nextSequenceNumber =
       latestDateYYMMDD === dateYYMMDD ? latestCount + 1 : 1;

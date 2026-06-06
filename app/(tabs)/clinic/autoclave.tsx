@@ -217,30 +217,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  placeholderWrap: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingTop: 18,
-  },
-  placeholderCard: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    minHeight: 240,
-  },
-  placeholderTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#334155',
-  },
-  placeholderText: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-  },
 });

@@ -118,25 +118,6 @@ export function useDailyOpsController({
     defaultPressure,
   });
 
-  const sharedParams = {
-    clinicId,
-    roomId,
-    applianceId,
-    userUid,
-    userName,
-    loading,
-    loadError,
-    isRunning,
-    currentCycle,
-    applianceKey,
-    saving,
-    setSaving,
-    setUiLocked,
-    setActivePicker,
-    requestScroll,
-    routerBack,
-  };
-
   const start = useDailyOpsStartController({
     clinicId,
     roomId,
