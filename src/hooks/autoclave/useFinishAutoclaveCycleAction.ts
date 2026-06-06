@@ -14,14 +14,12 @@ import type {
   UriToBlobFn,
 } from '@/src/hooks/autoclave/dailyOpsActionTypes';
 import { validateDailyOpsFinishForm } from '@/src/hooks/autoclave/dailyOpsValidation';
+import { buildAutoclavePhotoPath } from '@/src/hooks/autoclave/storagePaths';
 import type {
   ApplianceDocShape,
   DailyOpsCycleDoc,
 } from '@/src/hooks/autoclave/types';
-import {
-  parseCycleId,
-  sanitizeIdPart,
-} from '@/src/hooks/autoclave/utils';
+import { parseCycleId } from '@/src/hooks/autoclave/utils';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
@@ -220,24 +218,13 @@ export function useFinishAutoclaveCycleAction({
       const storage = getStorage();
       const blob = await uriToBlob(trimmedPhotoUri);
 
-      const safeClinicId = sanitizeIdPart(clinicId, '');
-      const safeRoomId = sanitizeIdPart(roomId, '');
-      const safeApplianceKey = sanitizeIdPart(applianceKey, '');
-      const safeCurrentCycle = sanitizeIdPart(
-        currentCycle,
-        'cycle',
-      );
-
-      if (!safeClinicId || !safeRoomId || !safeApplianceKey) {
-        throw new Error(
-          'Storage path contains invalid clinic, room, or appliance information.',
-        );
-      }
-
-      const photoPath =
-        `clinics/${safeClinicId}/${safeRoomId}/${safeApplianceKey}` +
-        `/${AUTOCLAVE_STORAGE.dailyOpsFolder}` +
-        `/${safeCurrentCycle}.${AUTOCLAVE_STORAGE.photoExtension}`;
+      const photoPath = buildAutoclavePhotoPath({
+        clinicId,
+        roomId,
+        applianceId,
+        folder: AUTOCLAVE_STORAGE.dailyOpsFolder,
+        fileBaseName: currentCycle,
+      });
 
       uploadedFileRef = storageRef(storage, photoPath);
 

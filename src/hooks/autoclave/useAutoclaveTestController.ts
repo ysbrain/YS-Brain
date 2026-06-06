@@ -6,6 +6,7 @@ import {
   AUTOCLAVE_STORAGE,
 } from '@/src/constants/autoclave';
 import { setupValueToString } from '@/src/hooks/autoclave/setupUtils';
+import { buildAutoclavePhotoPath } from '@/src/hooks/autoclave/storagePaths';
 import type { ApplianceDocShape } from '@/src/hooks/autoclave/types';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
@@ -28,10 +29,7 @@ import {
 } from 'firebase/storage';
 import { useCallback, useMemo, useState } from 'react';
 import { Alert } from 'react-native';
-import {
-  getStrictSerialIdPart,
-  sanitizeIdPart,
-} from './utils';
+import { getStrictSerialIdPart } from './utils';
 
 export type AutoclaveTestType = 'helix' | 'spore';
 
@@ -664,25 +662,15 @@ export function useAutoclaveTestController({
         const storage = getStorage();
         const blob = await uriToBlob(trimmedPhotoUri);
 
-        const safeClinicId = sanitizeIdPart(clinicId, '');
-        const safeRoomId = sanitizeIdPart(roomId, '');
-        const safeAppliancePart = sanitizeIdPart(
-          applianceKey.trim().length > 0 ? applianceKey : applianceId,
-          '',
-        );
-
-        if (!safeClinicId || !safeRoomId || !safeAppliancePart) {
-          throw new Error(
-            'Storage path contains invalid clinic, room, or appliance information.',
-          );
-        }
-
         const folder = getStorageFolder(testType);
 
-        photoPath =
-          `clinics/${safeClinicId}/${safeRoomId}/${safeAppliancePart}` +
-          `/${folder}` +
-          `/${recordRef.id}.${AUTOCLAVE_STORAGE.photoExtension}`;
+        photoPath = buildAutoclavePhotoPath({
+          clinicId,
+          roomId,
+          applianceId,
+          folder,
+          fileBaseName: recordRef.id,
+        });
 
         uploadedFileRef = storageRef(storage, photoPath);
 
