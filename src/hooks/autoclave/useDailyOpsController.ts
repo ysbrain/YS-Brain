@@ -129,6 +129,7 @@ export function useDailyOpsController({
     setup,
     lastStartedCycle,
     isRunning,
+    applianceKey,
     currentDateYYMMDD,
     saving,
     setSaving,

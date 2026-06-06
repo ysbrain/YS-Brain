@@ -45,33 +45,25 @@ export type UseDailyOpsStartControllerParams = {
   applianceId?: string | null;
   userUid?: string | null;
   userName?: string | null;
-
   loading: boolean;
   loadError: string | null;
-
   setup: Record<string, SetupStoredItem | undefined>;
-
   lastStartedCycle: {
     cycleNumber?: number;
     dateExecuted?: string;
     cycleId?: string;
   };
-
   isRunning: boolean;
-
+  applianceKey: string;
   currentDateYYMMDD: string;
-
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
-
   setActivePicker: (value: DailyOpsActivePicker) => void;
   requestScroll: RequestScrollFn;
   routerBack: () => void;
-
   form: {
     setFormErrorField: (field: DailyOpsFieldKey | null) => void;
-
     maxTemp: string;
     pressure: string;
     startTime: string;
@@ -89,6 +81,7 @@ export function useDailyOpsStartController({
   setup,
   lastStartedCycle,
   isRunning,
+  applianceKey,
   currentDateYYMMDD,
   saving,
   setSaving,
@@ -149,25 +142,20 @@ export function useDailyOpsStartController({
     applianceId,
     userUid: userUid ?? null,
     userName: userName ?? null,
-
     loading,
     loadError,
-
     saving,
     setSaving,
     setUiLocked,
-
     serialNumber,
-
+    applianceKey,
     maxTemp: form.maxTemp,
     pressure: form.pressure,
     startTime: form.startTime,
-
     setFormErrorField: form.setFormErrorField,
     setActivePicker,
     requestScroll,
     routerBack,
-
     parseHHMM,
     validatePositiveIntUpTo3Digits,
     setupValueToString,
@@ -206,6 +194,13 @@ export function useDailyOpsStartController({
       });
     }
 
+    if (applianceKey.trim().length === 0) {
+      blockers.push({
+        key: 'missingApplianceKey',
+        message: 'Appliance key is missing.',
+      });
+    }
+
     if (!serialNumber.trim()) {
       blockers.push({
         key: 'missingSerial',
@@ -233,6 +228,7 @@ export function useDailyOpsStartController({
     roomId,
     applianceId,
     userUid,
+    applianceKey,
     serialNumber,
     hasValidSerialNumber,
     isRunning,

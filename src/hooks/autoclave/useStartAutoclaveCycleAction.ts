@@ -38,27 +38,22 @@ type UseStartAutoclaveCycleActionParams = {
   clinicId?: string | null;
   roomId?: string | null;
   applianceId?: string | null;
-
   userUid?: string | null;
   userName?: string | null;
-
   loading: boolean;
   loadError: string | null;
-
   saving: boolean;
   setSaving: (value: boolean) => void;
   setUiLocked: SetUiLockedFn;
-
   serialNumber: string;
+  applianceKey: string;
   maxTemp: string;
   pressure: string;
   startTime: string;
-
   setFormErrorField: SetFormErrorFieldFn;
   setActivePicker: SetActivePickerFn;
   requestScroll: RequestScrollFn;
   routerBack: () => void;
-
   parseHHMM: ParseHHMMFn;
   validatePositiveIntUpTo3Digits: ValidatePositiveIntUpTo3DigitsFn;
   setupValueToString: SetupValueToStringFn;
@@ -78,6 +73,7 @@ export function useStartAutoclaveCycleAction({
   setSaving,
   setUiLocked,
   serialNumber,
+  applianceKey,
   maxTemp,
   pressure,
   startTime,
@@ -130,6 +126,14 @@ export function useStartAutoclaveCycleAction({
       Alert.alert(
         'Cannot start',
         'Missing serial number in appliance setup.',
+      );
+      return;
+    }
+
+    if (!applianceKey.trim()) {
+      Alert.alert(
+        'Cannot start',
+        'Appliance key is missing.',
       );
       return;
     }
@@ -192,8 +196,22 @@ export function useStartAutoclaveCycleAction({
           const applianceData =
             (applianceSnap.data() as ApplianceDocShape) ?? {};
 
-          const latestStatus = applianceData._status ?? {};
+          const latestApplianceKey =
+            typeof applianceData.applianceKey === 'string'
+              ? applianceData.applianceKey.trim()
+              : '';
 
+          if (!latestApplianceKey) {
+            throw new Error('Appliance key is missing.');
+          }
+
+          if (latestApplianceKey !== applianceKey.trim()) {
+            throw new Error(
+              'Appliance key changed. Please reload and try again.',
+            );
+          }
+
+          const latestStatus = applianceData._status ?? {};
           if (latestStatus.isRunning) {
             throw new Error(
               'This autoclave is already running a cycle.',
@@ -361,6 +379,7 @@ export function useStartAutoclaveCycleAction({
     loading,
     loadError,
     serialNumber,
+    applianceKey,
     maxTemp,
     pressure,
     startTime,
