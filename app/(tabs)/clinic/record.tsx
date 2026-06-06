@@ -28,7 +28,7 @@ import {
 import { normalizeParam } from '@/src/utils/routeParams';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   addDoc,
   collection,
@@ -153,6 +153,21 @@ export default function ClinicRecordScreen() {
     !saving;
 
   const icon = useMemo(() => getApplianceIcon(typeKey), [typeKey]);
+
+  const openApplianceLog = useCallback(() => {
+    if (!roomId || !applianceId) return;
+
+    router.push({
+      pathname: '/clinic/appliance-log',
+      params: {
+        roomId: String(roomId),
+        applianceId: String(applianceId),
+        applianceName: applianceName || 'Appliance',
+        typeKey: typeKey || '',
+        typeName: typeName || '',
+      },
+    });
+  }, [router, roomId, applianceId, applianceName, typeKey, typeName]);
 
   const onChangeField = useCallback((field: string, value: RecordValue) => {
     setRecordValues((prev) => ({ ...prev, [field]: value }));
@@ -571,7 +586,33 @@ export default function ClinicRecordScreen() {
   ]);
 
   return (
-    <>
+    <>      
+      <Stack.Screen
+        options={{
+          title: applianceName || 'Record Status',
+          headerRight: () => (
+            <Pressable
+              onPress={openApplianceLog}
+              disabled={!roomId || !applianceId}
+              style={({ pressed }) => [
+                styles.headerLogButton,
+                pressed && { opacity: 0.8 },
+                (!roomId || !applianceId) && styles.headerLogButtonDisabled,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Open appliance log"
+            >
+              <MaterialCommunityIcons
+                name="history"
+                size={17}
+                color="#fff"
+              />
+              <Text style={styles.headerLogButtonText}>Log</Text>
+            </Pressable>
+          ),
+        }}
+      />
+
       <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
           ref={scrollRef}
@@ -826,6 +867,26 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 12,
   },
+
+  headerLogButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  headerLogButtonDisabled: {
+    opacity: 0.5,
+  },
+
+  headerLogButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+
   detailsCard: {
     borderWidth: 1,
     borderColor: '#111',
