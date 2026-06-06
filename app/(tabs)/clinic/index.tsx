@@ -32,6 +32,10 @@ type ApplianceItem = {
   name: string;
   typeKey: string;
   typeName: string;
+  status: {
+    isRunning: boolean;
+    currentCycle: string;
+  };
 };
 
 type Room = {
@@ -55,6 +59,33 @@ function roomFromDoc(docSnap: QueryDocumentSnapshot<DocumentData>): Room {
     description: toSafeString(data.description),
     appliances: [],
   };
+}
+
+function getAutoclaveStatus(data: DocumentData): ApplianceItem['status'] {
+  const rawStatus = data._status;
+
+  if (!rawStatus || typeof rawStatus !== 'object') {
+    return {
+      isRunning: false,
+      currentCycle: '',
+    };
+  }
+
+  return {
+    isRunning: Boolean(rawStatus.isRunning),
+    currentCycle: toSafeString(rawStatus.currentCycle),
+  };
+}
+
+function getDefaultApplianceStatus(): ApplianceItem['status'] {
+  return {
+    isRunning: false,
+    currentCycle: '',
+  };
+}
+
+function isRunningAutoclave(appliance: ApplianceItem): boolean {
+  return appliance.typeKey === 'autoclave' && appliance.status.isRunning;
 }
 
 export default function ClinicScreen() {
@@ -131,12 +162,18 @@ export default function ClinicScreen() {
         (snapshot) => {
           const applianceList: ApplianceItem[] = snapshot.docs.map((docSnap) => {
             const data = docSnap.data();
+            const typeKey = toSafeString(data.typeKey);
+
             return {
               id: docSnap.id,
               key: toSafeString(data.applianceKey),
               name: toSafeString(data.applianceName, 'Unnamed appliance'),
-              typeKey: toSafeString(data.typeKey),
+              typeKey,
               typeName: toSafeString(data.typeName),
+              status:
+                typeKey === 'autoclave'
+                  ? getAutoclaveStatus(data)
+                  : getDefaultApplianceStatus(),
             };
           });
 
@@ -235,6 +272,8 @@ export default function ClinicScreen() {
               <View style={styles.chipsWrap}>
                 {visibleAppliances.map((a) => {
                   const icon = getApplianceIcon(a.typeKey);
+                  const runningAutoclave = isRunningAutoclave(a);
+
                   return (
                     <Pressable
                       key={`${item.id}:${a.id}`}
@@ -244,26 +283,56 @@ export default function ClinicScreen() {
                       }}
                       style={({ pressed }) => [
                         styles.applianceChip,
+                        runningAutoclave && styles.applianceChipRunning,
                         pressed && styles.applianceChipPressed,
                       ]}
                       accessibilityRole="button"
+                      accessibilityLabel={
+                        runningAutoclave
+                          ? `${a.name}, autoclave running daily ops cycle`
+                          : `${a.name}, ${a.typeName || 'appliance'}`
+                      }
                     >
                       <View style={styles.chipTopRow}>
                         <MaterialCommunityIcons
                           name={icon.name}
                           size={22}
-                          color={icon.color ?? '#111'}
+                          color={runningAutoclave ? '#ea580c' : icon.color ?? '#111'}
                           style={styles.chipIcon}
                         />
-                        <Text style={styles.applianceName} numberOfLines={1}>
+
+                        <Text
+                          style={[
+                            styles.applianceName,
+                            runningAutoclave && styles.applianceNameRunning,
+                          ]}
+                          numberOfLines={1}
+                        >
                           {a.name}
                         </Text>
                       </View>
 
                       {!!a.typeName && (
-                        <Text style={styles.applianceType} numberOfLines={1}>
+                        <Text
+                          style={[
+                            styles.applianceType,
+                            runningAutoclave && styles.applianceTypeRunning,
+                          ]}
+                          numberOfLines={1}
+                        >
                           {a.typeName}
                         </Text>
+                      )}
+
+                      {runningAutoclave && (
+                        <View style={styles.runningBadge}>
+                          <MaterialCommunityIcons
+                            name="clock-outline"
+                            size={14}
+                            color="#9a3412"
+                          />
+                          <Text style={styles.runningBadgeText}>Running</Text>
+                        </View>
                       )}
                     </Pressable>
                   );
@@ -449,5 +518,46 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#666',
     fontWeight: '600',
+  },
+
+  applianceChipRunning: {
+    borderColor: '#f97316',
+    borderWidth: 1.5,
+    backgroundColor: '#fff7ed',
+  },
+
+  applianceNameRunning: {
+    color: '#9a3412',
+  },
+
+  applianceTypeRunning: {
+    color: '#c2410c',
+  },
+
+  runningMiniIcon: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffedd5',
+  },
+
+  runningBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: '#fed7aa',
+  },
+
+  runningBadgeText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#9a3412',
   },
 });
