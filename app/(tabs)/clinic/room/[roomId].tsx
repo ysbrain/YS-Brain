@@ -2,7 +2,14 @@
 
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, doc, onSnapshot, orderBy, query } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  Timestamp,
+} from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -34,6 +41,30 @@ type RoomState = {
   roomName: string;
   description: string;
   applianceList: ApplianceListItem[];
+};
+
+type RoomActivityRecord = {
+  id: string;
+  recordId: string;
+  collectionName: string;
+  recordTypeLabel: string;
+
+  applianceId: string;
+  applianceName: string;
+  applianceTypeKey: string;
+  applianceTypeName: string;
+
+  updatedAt: unknown;
+  updatedAtMs: number;
+
+  outcome: string | null;
+  uploadStatus: string | null;
+
+  /**
+   * Autoclave-specific display helpers.
+   */
+  isAutoclaveRecord: boolean;
+  isRunningDailyOps: boolean;
 };
 
 function normalizeParam(value: string | string[] | undefined): string {
@@ -73,6 +104,174 @@ function isRunningAutoclave(appliance: ApplianceListItem): boolean {
   return appliance.typeKey === 'autoclave' && appliance.status.isRunning;
 }
 
+const ROOM_ACTIVITY_RECORD_COLLECTIONS = [
+  'records',
+  'records_DailyOps',
+  'records_Helix',
+  'records_Spore',
+] as const;
+
+function getRecordTypeLabel(collectionName: string): string {
+  switch (collectionName) {
+    case 'records_DailyOps':
+      return 'Daily Ops';
+    case 'records_Helix':
+      return 'Helix';
+    case 'records_Spore':
+      return 'Spore';
+    case 'records':
+      return 'Record';
+    default:
+      return collectionName;
+  }
+}
+
+function getRecordIconName(
+  collectionName: string,
+): React.ComponentProps<typeof MaterialCommunityIcons>['name'] {
+  switch (collectionName) {
+    case 'records_DailyOps':
+      return 'autorenew';
+    case 'records_Helix':
+      return 'timer-sand';
+    case 'records_Spore':
+      return 'test-tube';
+    case 'records':
+      return 'clipboard-text-outline';
+    default:
+      return 'file-document-outline';
+  }
+}
+
+function getTimestampMs(value: unknown): number {
+  if (value instanceof Timestamp) {
+    return value.toMillis();
+  }
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as any).toMillis === 'function'
+  ) {
+    return (value as any).toMillis();
+  }
+
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as any).seconds === 'number'
+  ) {
+    return (value as any).seconds * 1000;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  return 0;
+}
+
+function formatActivityUpdatedAt(value: unknown): string {
+  const ms = getTimestampMs(value);
+
+  if (!ms) {
+    return 'Unknown time';
+  }
+
+  return new Intl.DateTimeFormat('en-HK', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(ms));
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function getOutcomeStyleKey(
+  outcome: string | null,
+): 'pass' | 'fail' | 'pending' | 'neutral' {
+  const normalized = outcome?.toLowerCase();
+
+  if (normalized === 'pass' || normalized === 'passed') {
+    return 'pass';
+  }
+
+  if (normalized === 'fail' || normalized === 'failed') {
+    return 'fail';
+  }
+
+  if (normalized === 'pending') {
+    return 'pending';
+  }
+
+  return 'neutral';
+}
+
+function isAutoclaveRecordCollection(collectionName: string): boolean {
+  return (
+    collectionName === 'records_DailyOps' ||
+    collectionName === 'records_Helix' ||
+    collectionName === 'records_Spore'
+  );
+}
+
+function getAutoclaveActivityKind(collectionName: string): string {
+  switch (collectionName) {
+    case 'records_DailyOps':
+      return 'Daily Ops';
+    case 'records_Helix':
+      return 'Helix';
+    case 'records_Spore':
+      return 'Spore';
+    default:
+      return 'Record';
+  }
+}
+
+function getActivitySubtitle(activity: RoomActivityRecord): string {
+  if (activity.isAutoclaveRecord) {
+    return `Autoclave • ${getAutoclaveActivityKind(activity.collectionName)}`;
+  }
+
+  return activity.applianceTypeName || 'Appliance';
+}
+
+function getActivityVisibleStatus(activity: RoomActivityRecord): string | null {
+  if (activity.isRunningDailyOps) {
+    return 'Running';
+  }
+
+  return activity.outcome ?? activity.uploadStatus;
+}
+
+function getActivityStatusStyleKey(
+  activity: RoomActivityRecord,
+): 'pass' | 'fail' | 'running' | 'neutral' {
+  if (activity.isRunningDailyOps) {
+    return 'running';
+  }
+
+  const normalized = activity.outcome?.toLowerCase();
+
+  if (normalized === 'pass' || normalized === 'passed') {
+    return 'pass';
+  }
+
+  if (normalized === 'fail' || normalized === 'failed') {
+    return 'fail';
+  }
+
+  return 'neutral';
+}
+
 export default function RoomDetailScreen() {
   const profile = useProfile();
   const clinicId = profile?.clinic;
@@ -101,10 +300,19 @@ export default function RoomDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [activities, setActivities] = useState<RoomActivityRecord[]>([]);
+  const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [activitiesError, setActivitiesError] = useState<string | null>(null);
+
   const applianceFlow = useAddApplianceFlow({
     clinicId,
     defaultRoom: roomId ? { id: roomId, roomName: room.roomName } : undefined,
   });
+
+  const applianceIdsKey = useMemo(
+    () => room.applianceList.map((appliance) => appliance.id).join('|'),
+    [room.applianceList],
+  );
 
   useEffect(() => {
     if (!clinicId || !roomId) {
@@ -197,6 +405,127 @@ export default function RoomDetailScreen() {
     };
   }, [clinicId, roomId]);
 
+  useEffect(() => {
+    if (!clinicId || !roomId || applianceIdsKey.length === 0) {
+      setActivities([]);
+      setActivitiesLoading(false);
+      setActivitiesError(null);
+      return;
+    }
+
+    const appliancesById = new Map(
+      room.applianceList.map((appliance) => [appliance.id, appliance]),
+    );
+
+    const applianceIds = applianceIdsKey.split('|').filter(Boolean);
+
+    if (applianceIds.length === 0) {
+      setActivities([]);
+      setActivitiesLoading(false);
+      setActivitiesError(null);
+      return;
+    }
+
+    setActivitiesLoading(true);
+    setActivitiesError(null);
+
+    const recordsBySource = new Map<string, RoomActivityRecord[]>();
+
+    const emitMergedActivities = () => {
+      const merged = Array.from(recordsBySource.values())
+        .flat()
+        .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+
+      setActivities(merged);
+      setActivitiesLoading(false);
+    };
+
+    const unsubscribers: Array<() => void> = [];
+
+    applianceIds.forEach((applianceId) => {
+      const appliance = appliancesById.get(applianceId);
+
+      if (!appliance) {
+        return;
+      }
+
+      ROOM_ACTIVITY_RECORD_COLLECTIONS.forEach((collectionName) => {
+        const sourceKey = `${applianceId}:${collectionName}`;
+
+        const recordsRef = collection(
+          db,
+          'clinics',
+          clinicId,
+          'rooms',
+          roomId,
+          'appliances',
+          applianceId,
+          collectionName,
+        );
+
+        const recordsQuery = query(recordsRef, orderBy('updatedAt', 'desc'));
+
+        const unsubscribe = onSnapshot(
+          recordsQuery,
+          (snapshot) => {
+            const nextRecords: RoomActivityRecord[] = snapshot.docs.map((recordSnap) => {
+              const data = recordSnap.data();
+              const updatedAt = data.updatedAt;
+              const outcome = normalizeOptionalString(data._outcome);
+              const uploadStatus = normalizeOptionalString(data._uploadStatus);
+
+              const isAutoclaveRecord = isAutoclaveRecordCollection(collectionName);
+
+              const isRunningDailyOps =
+                collectionName === 'records_DailyOps' &&
+                data._isFinished === false;
+
+              return {
+                id: `${applianceId}:${collectionName}:${recordSnap.id}`,
+                recordId: recordSnap.id,
+                collectionName,
+                recordTypeLabel: getRecordTypeLabel(collectionName),
+
+                applianceId,
+                applianceName: appliance.name,
+                applianceTypeKey: appliance.typeKey,
+                applianceTypeName: appliance.typeName,
+
+                updatedAt,
+                updatedAtMs: getTimestampMs(updatedAt),
+
+                outcome,
+                uploadStatus,
+
+                isAutoclaveRecord,
+                isRunningDailyOps,
+              };
+            });
+
+            recordsBySource.set(sourceKey, nextRecords);
+            emitMergedActivities();
+          },
+          (err) => {
+            console.error(
+              `room activity snapshot error for ${applianceId}/${collectionName}`,
+              err,
+            );
+
+            recordsBySource.set(sourceKey, []);
+            setActivitiesError('Failed to load some room activities.');
+            emitMergedActivities();
+          },
+        );
+
+        unsubscribers.push(unsubscribe);
+      });
+    });
+
+    return () => {
+      unsubscribers.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [clinicId, roomId, applianceIdsKey, room.applianceList]);
+
   const openAddAppliance = useCallback(() => {
     if (!roomId) return;
     applianceFlow.open({ id: roomId, roomName: room.roomName });
@@ -211,6 +540,22 @@ export default function RoomDetailScreen() {
         params: {
           roomId: String(roomId),
           applianceId: String(applianceId),
+        },
+      });
+    },
+    [router, roomId],
+  );
+
+  const openActivityRecord = useCallback(
+    (activity: RoomActivityRecord) => {
+      router.push({
+        pathname: '/clinic/record-detail',
+        params: {
+          roomId: String(roomId),
+          applianceId: String(activity.applianceId),
+          collectionName: String(activity.collectionName),
+          recordId: String(activity.recordId),
+          recordTypeLabel: String(activity.recordTypeLabel),
         },
       });
     },
@@ -343,10 +688,140 @@ export default function RoomDetailScreen() {
         </View>
 
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionTitle}>Room Activities</Text>
-          <View style={styles.activitiesBox}>
-            <Text style={styles.emptyText}>No records yet.</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Room Activities</Text>
+
+            {activities.length > 0 && (
+              <Text style={styles.activityCountText}>
+                {activities.length} records
+              </Text>
+            )}
           </View>
+
+          {activitiesError ? (
+            <View style={styles.activitiesBox}>
+              <Text style={styles.errorText}>{activitiesError}</Text>
+            </View>
+          ) : activitiesLoading && activities.length === 0 ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator />
+              <Text style={styles.loadingText}>Loading activities…</Text>
+            </View>
+          ) : activities.length === 0 ? (
+            <View style={styles.activitiesBox}>
+              <Text style={styles.emptyText}>No records yet.</Text>
+            </View>
+          ) : (
+            <View style={styles.activitiesList}>
+              {activities.map((activity) => {
+                const applianceIcon = getApplianceIcon(activity.applianceTypeKey);
+                const visibleStatus = getActivityVisibleStatus(activity);
+                const statusStyleKey = getActivityStatusStyleKey(activity);
+                const subtitle = getActivitySubtitle(activity);
+
+                return (
+                  <Pressable
+                    key={activity.id}
+                    onPress={() => openActivityRecord(activity)}
+                    style={({ pressed }) => [
+                      styles.activityChip,
+                      statusStyleKey === 'pass' && styles.activityChipPass,
+                      statusStyleKey === 'fail' && styles.activityChipFail,
+                      statusStyleKey === 'running' && styles.activityChipRunning,
+                      pressed && styles.activityChipPressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${activity.applianceName}, ${subtitle}`}
+                  >
+                    <View
+                      style={[
+                        styles.activityIconWrap,
+                        statusStyleKey === 'pass' && styles.activityIconWrapPass,
+                        statusStyleKey === 'fail' && styles.activityIconWrapFail,
+                        statusStyleKey === 'running' && styles.activityIconWrapRunning,
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name={applianceIcon.name}
+                        size={22}
+                        color={
+                          statusStyleKey === 'pass'
+                            ? '#15803d'
+                            : statusStyleKey === 'fail'
+                              ? '#b91c1c'
+                              : statusStyleKey === 'running'
+                                ? '#ea580c'
+                                : applianceIcon.color ?? '#334155'
+                        }
+                      />
+                    </View>
+
+                    <View style={styles.activityMain}>
+                      <View style={styles.activityTitleRow}>
+                        <Text style={styles.activityTitle} numberOfLines={1}>
+                          {activity.applianceName}
+                        </Text>
+
+                        {visibleStatus && (
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              statusStyleKey === 'pass' && styles.statusBadgePass,
+                              statusStyleKey === 'fail' && styles.statusBadgeFail,
+                              statusStyleKey === 'running' && styles.statusBadgeRunning,
+                            ]}
+                          >
+                            {statusStyleKey === 'running' && (
+                              <MaterialCommunityIcons
+                                name="progress-clock"
+                                size={13}
+                                color="#9a3412"
+                              />
+                            )}
+
+                            <Text
+                              style={[
+                                styles.statusBadgeText,
+                                statusStyleKey === 'pass' && styles.statusBadgeTextPass,
+                                statusStyleKey === 'fail' && styles.statusBadgeTextFail,
+                                statusStyleKey === 'running' &&
+                                  styles.statusBadgeTextRunning,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {visibleStatus}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      <Text style={styles.activitySubtitle} numberOfLines={1}>
+                        {subtitle}
+                      </Text>
+
+                      <Text style={styles.activityTimeText} numberOfLines={1}>
+                        Updated {formatActivityUpdatedAt(activity.updatedAt)}
+                      </Text>
+                    </View>
+
+                    <MaterialCommunityIcons
+                      name="chevron-right"
+                      size={24}
+                      color={
+                        statusStyleKey === 'pass'
+                          ? '#15803d'
+                          : statusStyleKey === 'fail'
+                            ? '#b91c1c'
+                            : statusStyleKey === 'running'
+                              ? '#ea580c'
+                              : '#94a3b8'
+                      }
+                    />
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -525,5 +1000,148 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#c2410c',
+  },
+
+  activityCountText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748b',
+  },
+
+  activitiesList: {
+    marginTop: 10,
+    gap: 10,
+  },
+
+  activityChip: {
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+
+  activityChipPass: {
+    borderColor: '#22c55e',
+    borderWidth: 1.5,
+    backgroundColor: '#f0fdf4',
+  },
+
+  activityChipFail: {
+    borderColor: '#ef4444',
+    borderWidth: 1.5,
+    backgroundColor: '#fef2f2',
+  },
+
+  activityChipRunning: {
+    borderColor: '#f97316',
+    borderWidth: 1.5,
+    backgroundColor: '#fff7ed',
+  },
+
+  activityChipPressed: {
+    opacity: 0.78,
+  },
+
+  activityIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  activityIconWrapPass: {
+    borderColor: '#86efac',
+    backgroundColor: '#dcfce7',
+  },
+
+  activityIconWrapFail: {
+    borderColor: '#fca5a5',
+    backgroundColor: '#fee2e2',
+  },
+
+  activityIconWrapRunning: {
+    borderColor: '#fdba74',
+    backgroundColor: '#ffedd5',
+  },
+
+  activityMain: {
+    flex: 1,
+  },
+
+  activityTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  activityTitle: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#1e293b',
+  },
+
+  activitySubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#475569',
+  },
+
+  activityTimeText: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+
+  statusBadgePass: {
+    backgroundColor: '#dcfce7',
+  },
+
+  statusBadgeFail: {
+    backgroundColor: '#fee2e2',
+  },
+
+  statusBadgeRunning: {
+    backgroundColor: '#fed7aa',
+  },
+
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#475569',
+    textTransform: 'capitalize',
+  },
+
+  statusBadgeTextPass: {
+    color: '#15803d',
+  },
+
+  statusBadgeTextFail: {
+    color: '#b91c1c',
+  },
+
+  statusBadgeTextRunning: {
+    color: '#9a3412',
   },
 });

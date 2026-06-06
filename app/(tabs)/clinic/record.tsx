@@ -516,10 +516,9 @@ export default function ClinicRecordScreen() {
          * Preferred immutable appliance metadata for this record.
          */
         applianceSnapshot,
-
         records: recordsArr,
-
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
         createdBy: {
           userId: user.uid,
           userName: profile?.name ?? null,
