@@ -65,3 +65,27 @@ export function getStrictSerialIdPart(value: string): string | null {
 
   return trimmed;
 }
+
+export type AutoclaveTestDocTypeCode = 'H' | 'S';
+
+export function getAutoclaveTestDocTypeCode(
+  testType: 'helix' | 'spore',
+): AutoclaveTestDocTypeCode {
+  return testType === 'helix' ? 'H' : 'S';
+}
+
+export function buildAutoclaveTestDocId(params: {
+  serial: string;
+  dateYYMMDD: string;
+  typeCode: AutoclaveTestDocTypeCode;
+  sequenceNumber: number;
+  pad2: (value: number) => string;
+}): string {
+  const { serial, dateYYMMDD, typeCode, sequenceNumber, pad2 } = params;
+
+  return `${serial}-${dateYYMMDD}-${typeCode}${pad2(sequenceNumber)}`;
+}
+
+export function getLastTestedFieldName(testType: 'helix' | 'spore') {
+  return testType === 'helix' ? 'lastTestedHelix' : 'lastTestedSpore';
+}

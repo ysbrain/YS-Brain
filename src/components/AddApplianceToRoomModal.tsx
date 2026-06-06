@@ -648,8 +648,12 @@ export default function AddApplianceToRoomModal({
                   isRunning: false,
                   currentCycle: '',
                 },
+
                 lastStartedCycle: null,
                 lastFinishedCycle: null,
+
+                lastTestedHelix: null,
+                lastTestedSpore: null,
               }
             : {}),
 
