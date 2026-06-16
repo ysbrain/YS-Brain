@@ -84,7 +84,7 @@ export function DailyOpsRunningCard({
 
   const pressureText =
     typeof cycleDoc?.settings?.pressure === 'number'
-      ? String(cycleDoc.settings.pressure)
+      ? `${cycleDoc.settings.pressure} bar`
       : '--';
 
   const startedAtText =

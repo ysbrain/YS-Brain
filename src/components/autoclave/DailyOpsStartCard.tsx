@@ -98,7 +98,7 @@ export function DailyOpsStartCard({
         <View style={styles.twoColItem}>
           <AutoclaveTextField
             ref={registerFieldRef(DAILY_OPS_FIELD_KEYS.pressure)}
-            label="Pressure"
+            label="Pressure (bar)"
             value={pressure}
             onChangeText={(text) => {
               setPressure(sanitizeThreeDigitNumberInput(text));
