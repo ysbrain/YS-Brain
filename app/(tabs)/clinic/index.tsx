@@ -22,7 +22,6 @@ import {
 } from 'react-native';
 
 import { useProfile } from '@/src/contexts/ProfileContext';
-import { useAddApplianceFlow } from '@/src/hooks/useAddApplianceFlow';
 import { db } from '@/src/lib/firebase';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 
@@ -97,7 +96,6 @@ export default function ClinicScreen() {
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const applianceFlow = useAddApplianceFlow({ clinicId });
   const roomsPathReady = useMemo(() => Boolean(clinicId), [clinicId]);
   const roomIdsKey = useMemo(() => rooms.map((r) => r.id).join('|'), [rooms]);
 
@@ -226,13 +224,6 @@ export default function ClinicScreen() {
     [router],
   );
 
-  const openSelectModule = useCallback(
-    (room: Room) => {
-      applianceFlow.open({ id: room.id, roomName: room.roomName });
-    },
-    [applianceFlow],
-  );
-
   const renderRoom: ListRenderItem<Room> = useCallback(
     ({ item }) => {
       const appliances = item.appliances ?? [];
@@ -243,29 +234,43 @@ export default function ClinicScreen() {
       return (
         <Pressable
           onPress={() => goRoomDetail(item)}
-          style={({ pressed }) => [styles.roomCardPressable, pressed && { opacity: 0.96 }]}
+          style={({ pressed }) => [
+            styles.roomCardPressable,
+            pressed && styles.roomCardPressablePressed,
+          ]}
           accessibilityRole="button"
+          accessibilityLabel={`Open ${item.roomName}`}
         >
           <View style={styles.roomCard}>
             <View style={styles.roomHeader}>
-              <Text style={styles.roomTitle} numberOfLines={1}>
-                {item.roomName}
-              </Text>
+              <View style={styles.roomHeaderLeft}>
+                <Text style={styles.roomTitle} numberOfLines={1}>
+                  {item.roomName}
+                </Text>
 
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation?.();
-                  openSelectModule(item);
-                }}
-                style={({ pressed }) => [styles.newButton, pressed && { opacity: 0.8 }]}
-                accessibilityRole="button"
-              >
-                <Text style={styles.newButtonText}>+ Appliance</Text>
-              </Pressable>
+                {!!item.description && (
+                  <Text style={styles.roomDescription} numberOfLines={2}>
+                    {item.description}
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.roomChevronCircle}>
+                <MaterialCommunityIcons
+                  name="chevron-right"
+                  size={26}
+                  color="#111827"
+                />
+              </View>
             </View>
 
             {applianceCount === 0 ? (
               <View style={styles.emptyBox}>
+                <MaterialCommunityIcons
+                  name="cube-outline"
+                  size={20}
+                  color="#64748b"
+                />
                 <Text style={styles.emptyText}>No appliances yet.</Text>
               </View>
             ) : (
@@ -358,12 +363,12 @@ export default function ClinicScreen() {
                   </Pressable>
                 )}
               </View>
-            )}
+            )}            
           </View>
         </Pressable>
       );
     },
-    [openApplianceScreen, goRoomDetail, openSelectModule],
+    [openApplianceScreen, goRoomDetail],
   );
 
   return (
@@ -395,8 +400,6 @@ export default function ClinicScreen() {
           }
         />
       )}
-
-      {applianceFlow.Modals}
     </View>
   );
 }
@@ -408,9 +411,9 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   listContent: {
-    paddingVertical: 8,
-    paddingBottom: 24,
-    gap: 12,
+    paddingVertical: 10,
+    paddingBottom: 28,
+    gap: 16,
   },
   center: {
     alignItems: 'center',
@@ -425,34 +428,79 @@ const styles = StyleSheet.create({
     color: '#B00020',
     fontWeight: '600',
   },
+  
   roomCardPressable: {
-    borderRadius: 22,
-  },  
+    borderRadius: 26,
+  },
+
+  roomCardPressablePressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.985 }],
+  },
+
   roomCard: {
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 22,
-    padding: 14,
-    backgroundColor: '#FFF',
-  },  
+    borderWidth: 1.5,
+    borderColor: '#dbeafe',
+    borderRadius: 26,
+    padding: 16,
+    backgroundColor: '#ffffff',
+
+    shadowColor: '#0f172a',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+
+    elevation: 4,
+  },
+
   roomHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  roomTitle: {    
+
+  roomHeaderLeft: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '800',
   },
+
+  roomTitle: {
+    fontSize: 19,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+
+  roomDescription: {
+    marginTop: 5,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+
+  roomChevronCircle: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
     gap: 12,
+    marginTop: 2,
   },
+
   applianceChip: {
     width: '48%',
     borderWidth: 1,
@@ -495,29 +543,23 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     textAlign: 'center',
   },  
-  newButton: {
-    borderWidth: 1,
-    borderColor: '#111',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: '#fff',
-  },
-  newButtonText: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
+  
   emptyBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 14,
-    padding: 14,
-    backgroundColor: '#FAFAFA',
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    padding: 16,
+    backgroundColor: '#f8fafc',
   },
+
   emptyText: {
     textAlign: 'center',
-    color: '#666',
-    fontWeight: '600',
+    color: '#64748b',
+    fontWeight: '700',
   },
 
   applianceChipRunning: {

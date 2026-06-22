@@ -333,12 +333,6 @@ export default function ApplianceLogScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Log</Text>
-
-            {records.length > 0 && (
-              <Text style={styles.recordCountText}>
-                {records.length} records
-              </Text>
-            )}
           </View>
 
           {loadError ? (
@@ -539,11 +533,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
     color: '#111',
-  },
-  recordCountText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#64748b',
   },
   loadingRow: {
     flexDirection: 'row',
