@@ -53,7 +53,14 @@ import {
   View
 } from 'react-native';
 
-type RecordFieldType = 'string' | 'number' | 'date' | 'time' | 'boolean' | 'photo';
+type RecordFieldType =
+  | 'string'
+  | 'number'
+  | 'date'
+  | 'time'
+  | 'passFail'
+  | 'yesNo'
+  | 'photo';
 
 type RecordFieldItem = {
   field: string;
@@ -324,7 +331,8 @@ export default function ApplianceScreen() {
               x.type === 'number' ||
               x.type === 'date' ||
               x.type === 'time' ||
-              x.type === 'boolean' ||
+              x.type === 'passFail' ||
+              x.type === 'yesNo' ||
               x.type === 'photo'
                 ? x.type
                 : 'string',
@@ -338,8 +346,15 @@ export default function ApplianceScreen() {
 
           for (const item of parsed) {
             const existing = prev[item.field];
+            const isBooleanChoice =
+              item.type === 'passFail' || item.type === 'yesNo';
+
             next[item.field] =
-              existing !== undefined ? existing : item.type === 'boolean' ? null : '';
+              existing !== undefined
+                ? existing
+                : isBooleanChoice
+                  ? null
+                  : '';
           }
 
           return next;
@@ -427,7 +442,10 @@ export default function ApplianceScreen() {
             value = n;
           }
         }
-      } else if (item.type === 'boolean') {
+      } else if (
+        item.type === 'passFail' ||
+        item.type === 'yesNo'
+      ) {
         value = typeof raw === 'boolean' ? raw : null;
       } else if (item.type === 'date') {
         const s = typeof raw === 'string' ? raw.trim() : '';
@@ -739,7 +757,7 @@ export default function ApplianceScreen() {
                         </Text>
                         <MaterialCommunityIcons name="clock-outline" size={20} color="#111" />
                       </Pressable>
-                    ) : item.type === 'boolean' ? (
+                    ) : item.type === 'passFail' || item.type === 'yesNo' ? (
                       <View
                         ref={registerFieldRef(key)}
                         collapsable={false}
@@ -749,18 +767,25 @@ export default function ApplianceScreen() {
                             onPress={() => onChangeField(item.field, true)}
                             style={({ pressed }) => [
                               styles.booleanBtn,
-                              boolValue === true && styles.booleanBtnPassActive,
+                              boolValue === true && styles.booleanBtnPositiveActive,
                               pressed && { opacity: 0.9 },
                             ]}
                             accessibilityRole="button"
+                            accessibilityState={{ selected: boolValue === true }}
+                            accessibilityLabel={
+                              item.type === 'passFail'
+                                ? `Mark ${item.field} as pass`
+                                : `Answer yes for ${item.field}`
+                            }
                           >
                             <Text
                               style={[
                                 styles.booleanBtnText,
-                                boolValue === true && styles.booleanBtnTextPassActive,
+                                boolValue === true &&
+                                  styles.booleanBtnTextPositiveActive,
                               ]}
                             >
-                              PASS
+                              {item.type === 'passFail' ? 'PASS' : 'YES'}
                             </Text>
                           </Pressable>
 
@@ -768,22 +793,29 @@ export default function ApplianceScreen() {
                             onPress={() => onChangeField(item.field, false)}
                             style={({ pressed }) => [
                               styles.booleanBtn,
-                              boolValue === false && styles.booleanBtnFailActive,
+                              boolValue === false && styles.booleanBtnNegativeActive,
                               pressed && { opacity: 0.9 },
                             ]}
                             accessibilityRole="button"
+                            accessibilityState={{ selected: boolValue === false }}
+                            accessibilityLabel={
+                              item.type === 'passFail'
+                                ? `Mark ${item.field} as fail`
+                                : `Answer no for ${item.field}`
+                            }
                           >
                             <Text
                               style={[
                                 styles.booleanBtnText,
-                                boolValue === false && styles.booleanBtnTextFailActive,
+                                boolValue === false &&
+                                  styles.booleanBtnTextNegativeActive,
                               ]}
                             >
-                              FAIL
+                              {item.type === 'passFail' ? 'FAIL' : 'NO'}
                             </Text>
                           </Pressable>
                         </View>
-                      </View>                    
+                      </View>                 
                     ) : item.type === 'photo' ? (
                       (() => {
                         const hasPhoto = typeof raw === 'string' && raw.trim().length > 0;
@@ -1016,6 +1048,7 @@ const styles = StyleSheet.create({
   },
   datePlaceholder: { color: '#999', fontSize: 14, fontWeight: '700' },
   dateText: { color: '#111', fontSize: 14, fontWeight: '700' },
+  
   booleanRow: { flexDirection: 'row', gap: 10 },
   booleanBtn: {
     flex: 1,
@@ -1027,11 +1060,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#fff',
   },
-  booleanBtnPassActive: { backgroundColor: '#dcfce7', borderColor: '#22c55e' },
-  booleanBtnFailActive: { backgroundColor: '#fee2e2', borderColor: '#ef4444' },
   booleanBtnText: { fontSize: 14, fontWeight: '900', color: '#111' },
-  booleanBtnTextPassActive: { color: '#15803d' },
-  booleanBtnTextFailActive: { color: '#b91c1c' },
+  booleanBtnPositiveActive: {
+    backgroundColor: '#dcfce7',
+    borderColor: '#22c55e',
+  },
+  booleanBtnNegativeActive: {
+    backgroundColor: '#fee2e2',
+    borderColor: '#ef4444',
+  },
+  booleanBtnTextPositiveActive: {
+    color: '#15803d',
+  },
+  booleanBtnTextNegativeActive: {
+    color: '#b91c1c',
+  },
 
   photoBox: {
     borderWidth: 2,

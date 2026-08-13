@@ -31,7 +31,8 @@ import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
 type FirestoreRecordFieldType =
   | 'string'
   | 'number'
-  | 'boolean'
+  | 'passFail'
+  | 'yesNo'
   | 'date'
   | 'time'
   | 'photo';
@@ -40,6 +41,7 @@ type UiRecordFieldType =
   | 'text'
   | 'number'
   | 'passFail'
+  | 'yesNo'
   | 'date'
   | 'time'
   | 'photo';
@@ -73,8 +75,14 @@ const FIELD_TYPE_OPTIONS: Array<{
   {
     uiType: 'passFail',
     label: 'Pass/Fail',
-    firestoreType: 'boolean',
+    firestoreType: 'passFail',
     icon: 'check-decagram-outline',
+  },
+  {
+    uiType: 'yesNo',
+    label: 'Yes/No',
+    firestoreType: 'yesNo',
+    icon: 'toggle-switch-outline',
   },
   {
     uiType: 'date',
@@ -295,7 +303,7 @@ export default function CreateApplianceModuleScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Module Info</Text>
+            <Text style={styles.cardTitle}>Appliance Module Info</Text>
 
             <View style={styles.fieldBlock}>
               <Text style={styles.fieldLabel}>
@@ -349,7 +357,7 @@ export default function CreateApplianceModuleScreen() {
                   size={18}
                   color="#111"
                 />
-                <Text style={styles.addFieldButtonText}>Record Field</Text>
+                <Text style={styles.addFieldButtonText}>Field</Text>
               </Pressable>
             </View>
 
@@ -525,7 +533,6 @@ export default function CreateApplianceModuleScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
   },
   scroll: {
     flex: 1,

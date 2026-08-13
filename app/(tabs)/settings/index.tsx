@@ -49,7 +49,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 28,
     gap: 14,
-    backgroundColor: '#f3f4f6',
   },
   moduleButton: {
     flexDirection: 'row',
