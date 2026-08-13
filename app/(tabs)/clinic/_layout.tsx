@@ -36,7 +36,7 @@ export default function ClinicLayout() {
         <Stack.Screen name="index" options={{ title: 'Clinic 01' }} />
         <Stack.Screen name="room/[roomId]" />
         <Stack.Screen name="autoclave" options={{ title: 'Autoclave' }} />
-        <Stack.Screen name="record" options={{ title: 'Record Status' }} />
+        <Stack.Screen name="appliance-record" options={{ title: 'Record Status' }} />
         <Stack.Screen name="appliance-log" options={{ title: 'Appliance Log' }} />
         <Stack.Screen name="record-detail" options={{ title: 'Record Detail' }} />
       </Stack>

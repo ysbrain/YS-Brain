@@ -22,6 +22,10 @@ import type {
 import { parseCycleId } from '@/src/hooks/autoclave/utils';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
+import {
+  buildRoomActivityUpdatePayload,
+  getRoomActivityRef
+} from '@/src/lib/roomActivityIndex';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import {
   doc,
@@ -256,6 +260,14 @@ export function useFinishAutoclaveCycleAction({
         currentCycle,
       );
 
+      const activityRef = getRoomActivityRef({
+        clinicId,
+        roomId,
+        applianceId,
+        collectionName: AUTOCLAVE_RECORD_COLLECTIONS.dailyOps,
+        recordId: currentCycle,
+      });
+
       await runTransaction(db, async (tx) => {
         const applianceSnap = await tx.get(applianceRef);
         const cycleSnap = await tx.get(cycleRef);
@@ -364,6 +376,15 @@ export function useFinishAutoclaveCycleAction({
 
           updatedAt: serverTimestamp(),
         });
+
+        tx.update(
+          activityRef,
+          buildRoomActivityUpdatePayload({
+            outcome,
+            uploadStatus: 'uploaded',
+            isRunningDailyOps: false,
+          }),
+        );
 
         tx.update(applianceRef, {
           '_status.isRunning': false,

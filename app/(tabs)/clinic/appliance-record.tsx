@@ -1,4 +1,4 @@
-// app/(tabs)/clinic/record.tsx
+// app/(tabs)/clinic/appliance-record.tsx
 
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import {
@@ -11,6 +11,7 @@ import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
+import { buildRoomActivityPayload, getRoomActivityRef } from '@/src/lib/roomActivityIndex';
 import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import {
   formatDateYYYYMMDDSlash,
@@ -30,11 +31,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
-  addDoc,
   collection,
   doc,
   onSnapshot,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -73,7 +74,7 @@ type RecordValue = string | boolean | null;
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
 
-export default function ClinicRecordScreen() {
+export default function ApplianceRecordScreen() {
   const router = useRouter();
   const profile = useProfile();
   const user = useAuth().user;
@@ -527,9 +528,6 @@ export default function ClinicRecordScreen() {
       };
 
       const payload = {
-        /**
-         * Preferred immutable appliance metadata for this record.
-         */
         applianceSnapshot,
         records: recordsArr,
         createdAt: serverTimestamp(),
@@ -540,7 +538,40 @@ export default function ClinicRecordScreen() {
         },
       };
 
-      await addDoc(recordsRef, payload);
+      const recordRef = doc(recordsRef);
+
+      const activityRef = getRoomActivityRef({
+        clinicId,
+        roomId,
+        applianceId,
+        collectionName: 'records',
+        recordId: recordRef.id,
+      });
+
+      const batch = writeBatch(db);
+
+      batch.set(recordRef, payload);
+
+      batch.set(
+        activityRef,
+        buildRoomActivityPayload({
+          clinicId,
+          roomId,
+          applianceId,
+          collectionName: 'records',
+          recordId: recordRef.id,
+          recordTypeLabel: 'Record',
+          applianceName: applianceName.trim() || null,
+          applianceTypeKey: typeKey.trim() || null,
+          applianceTypeName: typeName.trim() || null,
+          outcome: null,
+          uploadStatus: null,
+          isAutoclaveRecord: false,
+          isRunningDailyOps: false,
+        }),
+      );
+
+      await batch.commit();
 
       Alert.alert(
         'Saved',

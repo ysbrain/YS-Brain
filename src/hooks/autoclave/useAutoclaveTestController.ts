@@ -12,6 +12,11 @@ import type { ApplianceDocShape } from '@/src/hooks/autoclave/types';
 import { getStrictSerialIdPart } from '@/src/hooks/autoclave/utils';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
+import {
+  buildRoomActivityPayload,
+  buildRoomActivityUpdatePayload,
+  getRoomActivityRef,
+} from '@/src/lib/roomActivityIndex';
 import { formatTimeHHMM, parseHHMM } from '@/src/utils/dateTime';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import { uriToBlob } from '@/src/utils/photo';
@@ -300,6 +305,14 @@ async function createPendingAutoclaveTestRecordWithApplianceCounter({
       );
     }
 
+    const activityRef = getRoomActivityRef({
+      clinicId,
+      roomId,
+      applianceId,
+      collectionName,
+      recordId,
+    });
+
     const applianceSnapshot = {
       clinicId,
       roomId,
@@ -333,6 +346,34 @@ async function createPendingAutoclaveTestRecordWithApplianceCounter({
       },
     });
 
+    tx.set(
+      activityRef,
+      buildRoomActivityPayload({
+        clinicId,
+        roomId,
+        applianceId,
+        collectionName,
+        recordId,
+        recordTypeLabel: testTypeLabel,
+
+        applianceName: latestApplianceName,
+        applianceTypeKey:
+          typeof applianceData.typeKey === 'string'
+            ? applianceData.typeKey
+            : 'autoclave',
+        applianceTypeName:
+          typeof applianceData.typeName === 'string'
+            ? applianceData.typeName
+            : 'Autoclave',
+
+        outcome,
+        uploadStatus: 'pending',
+
+        isAutoclaveRecord: true,
+        isRunningDailyOps: false,
+      }),
+    );
+
     tx.update(applianceRef, {
       [lastTestedField]: {
         dateYYMMDD,
@@ -345,6 +386,7 @@ async function createPendingAutoclaveTestRecordWithApplianceCounter({
 
     return {
       recordRef,
+      activityRef,
       recordId,
       dateYYMMDD,
       sequenceNumber: nextSequenceNumber,
@@ -615,6 +657,13 @@ export function useAutoclaveTestController({
           >
         >['recordRef']
       | null = null;
+    let pendingActivityRef:
+      | Awaited<
+          ReturnType<
+            typeof createPendingAutoclaveTestRecordWithApplianceCounter
+          >
+        >['activityRef']
+      | null = null;
 
     try {
       const collectionName = getCollectionName(testType);
@@ -623,6 +672,7 @@ export function useAutoclaveTestController({
 
       const {
         recordRef,
+        activityRef,
       } = await createPendingAutoclaveTestRecordWithApplianceCounter({
         clinicId,
         roomId,
@@ -645,7 +695,7 @@ export function useAutoclaveTestController({
       });
 
       pendingRecordRef = recordRef;
-
+      pendingActivityRef = activityRef;
       let photoUrl: string | null = null;
       let photoPath: string | null = null;
 
@@ -680,6 +730,15 @@ export function useAutoclaveTestController({
         'results.photoUrl': photoUrl,
       });
 
+      await updateDoc(
+        activityRef,
+        buildRoomActivityUpdatePayload({
+          uploadStatus:
+            trimmedPhotoUri.length > 0 ? 'uploaded' : 'not_required',
+          outcome,
+        }),
+      );
+
       setFormErrorField(null);
 
       Alert.alert(
@@ -712,6 +771,22 @@ export function useAutoclaveTestController({
           console.error(
             `${testType} mark pending record failed error`,
             markFailedErr,
+          );
+        }
+      }
+
+      if (pendingActivityRef) {
+        try {
+          await updateDoc(
+            pendingActivityRef,
+            buildRoomActivityUpdatePayload({
+              uploadStatus: 'failed',
+            }),
+          );
+        } catch (markActivityFailedErr) {
+          console.error(
+            `${testType} mark pending activity failed error`,
+            markActivityFailedErr,
           );
         }
       }

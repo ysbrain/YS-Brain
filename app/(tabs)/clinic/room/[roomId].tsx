@@ -409,7 +409,7 @@ export default function RoomDetailScreen() {
   }, [clinicId, roomId]);
 
   useEffect(() => {
-    if (!clinicId || !roomId || applianceIdsKey.length === 0) {
+    if (!clinicId || !roomId) {
       setActivities([]);
       setActivitiesLoading(false);
       setActivitiesError(null);
@@ -419,107 +419,55 @@ export default function RoomDetailScreen() {
     setActivitiesLoading(true);
     setActivitiesError(null);
 
-    const applianceListSnapshot = room.applianceList;
+    const activitiesQuery = query(
+      collection(db, 'clinics', clinicId, 'rooms', roomId, 'activityRecords'),
+      orderBy('updatedAt', 'desc'),
+      firestoreLimit(10),
+    );
 
-    const activityBuckets = new Map<string, RoomActivityRecord[]>();
-    const unsubscribeList: Array<() => void> = [];
+    const unsubscribe = onSnapshot(
+      activitiesQuery,
+      (snapshot) => {
+        const nextActivities: RoomActivityRecord[] = snapshot.docs.map((snap) => {
+          const data = snap.data();
 
-    let pendingSnapshots =
-      applianceListSnapshot.length * ROOM_ACTIVITY_RECORD_COLLECTIONS.length;
+          const updatedAt = data.updatedAt;
+          const updatedAtMs = getTimestampMs(updatedAt);
 
-    const publishLatestActivities = () => {
-      const mergedActivities = Array.from(activityBuckets.values()).flat();
+          return {
+            id: snap.id,
+            recordId: String(data.recordId ?? ''),
+            collectionName: String(data.collectionName ?? ''),
+            recordTypeLabel: String(data.recordTypeLabel ?? 'Record'),
 
-      const latestActivities = mergedActivities
-        .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
-        .slice(0, ROOM_ACTIVITY_DISPLAY_LIMIT);
+            applianceId: String(data.applianceId ?? ''),
+            applianceName: String(data.applianceName ?? 'Appliance'),
+            applianceTypeKey: String(data.applianceTypeKey ?? ''),
+            applianceTypeName: String(data.applianceTypeName ?? 'Appliance'),
 
-      setActivities(latestActivities);
-    };
+            updatedAt,
+            updatedAtMs,
 
-    applianceListSnapshot.forEach((appliance) => {
-      ROOM_ACTIVITY_RECORD_COLLECTIONS.forEach((collectionName) => {
-        const bucketKey = `${appliance.id}:${collectionName}`;
+            outcome: normalizeOptionalString(data.outcome),
+            uploadStatus: normalizeOptionalString(data.uploadStatus),
 
-        const recordsQuery = query(
-          collection(
-            db,
-            'clinics',
-            clinicId,
-            'rooms',
-            roomId,
-            'appliances',
-            appliance.id,
-            collectionName,
-          ),
-          orderBy('updatedAt', 'desc'),
-          firestoreLimit(ROOM_ACTIVITY_DISPLAY_LIMIT),
-        );
+            isAutoclaveRecord: Boolean(data.isAutoclaveRecord),
+            isRunningDailyOps: Boolean(data.isRunningDailyOps),
+          };
+        });
 
-        const unsubscribe = onSnapshot(
-          recordsQuery,
-          (snapshot) => {
-            const records: RoomActivityRecord[] = snapshot.docs.map(
-              (recordDoc) => {
-                const data = recordDoc.data();
+        setActivities(nextActivities);
+        setActivitiesLoading(false);
+      },
+      (error) => {
+        console.error('Failed to load room activity index:', error);
+        setActivitiesError('Unable to load recent activities.');
+        setActivitiesLoading(false);
+      },
+    );
 
-                const updatedAt = data.updatedAt;
-                const updatedAtMs = getTimestampMs(updatedAt);
-
-                const isAutoclaveRecord =
-                  isAutoclaveRecordCollection(collectionName);
-
-                const isRunningDailyOps =
-                  collectionName === 'records_DailyOps' &&
-                  appliance.typeKey === 'autoclave' &&
-                  appliance.status.isRunning;
-
-                return {
-                  id: `${appliance.id}:${collectionName}:${recordDoc.id}`,
-                  recordId: recordDoc.id,
-                  collectionName,
-                  recordTypeLabel: getRecordTypeLabel(collectionName),
-
-                  applianceId: appliance.id,
-                  applianceName: appliance.name,
-                  applianceTypeKey: appliance.typeKey,
-                  applianceTypeName: appliance.typeName,
-
-                  updatedAt,
-                  updatedAtMs,
-
-                  outcome: normalizeOptionalString(data.outcome),
-                  uploadStatus: normalizeOptionalString(data.uploadStatus),
-
-                  isAutoclaveRecord,
-                  isRunningDailyOps,
-                };
-              },
-            );
-
-            activityBuckets.set(bucketKey, records);
-            publishLatestActivities();
-
-            pendingSnapshots -= 1;
-            if (pendingSnapshots <= 0) {
-              setActivitiesLoading(false);
-            }
-          },
-          (error) => {
-            console.error('Failed to load room activities:', error);
-            setActivitiesError('Unable to load recent activities.');
-            setActivitiesLoading(false);
-          },
-        );
-
-        unsubscribeList.push(unsubscribe);
-      });
-    });
-
-    return () => {
-      unsubscribeList.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [clinicId, roomId, applianceIdsKey, room.applianceList]);
+    return () => unsubscribe();
+  }, [clinicId, roomId]);
 
   const openAddAppliance = useCallback(() => {
     if (!roomId) return;
@@ -531,7 +479,7 @@ export default function RoomDetailScreen() {
       if (!roomId) return;
 
       router.push({
-        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/record',
+        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/appliance-record',
         params: {
           roomId: String(roomId),
           applianceId: String(applianceId),

@@ -24,6 +24,10 @@ import {
 } from '@/src/hooks/autoclave/utils';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
 import { db } from '@/src/lib/firebase';
+import {
+  buildRoomActivityPayload,
+  getRoomActivityRef
+} from '@/src/lib/roomActivityIndex';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import {
   collection,
@@ -297,6 +301,14 @@ export function useStartAutoclaveCycleAction({
             nextCycleId,
           );
 
+          const activityRef = getRoomActivityRef({
+            clinicId,
+            roomId,
+            applianceId,
+            collectionName: AUTOCLAVE_RECORD_COLLECTIONS.dailyOps,
+            recordId: nextCycleId,
+          });
+
           const cycleSnap = await tx.get(cycleRef);
 
           if (cycleSnap.exists()) {
@@ -339,6 +351,37 @@ export function useStartAutoclaveCycleAction({
               userName: userName ?? null,
             },
           });
+
+          tx.set(
+            activityRef,
+            buildRoomActivityPayload({
+              clinicId,
+              roomId,
+              applianceId,
+              collectionName: AUTOCLAVE_RECORD_COLLECTIONS.dailyOps,
+              recordId: nextCycleId,
+              recordTypeLabel: 'Daily Ops',
+
+              applianceName:
+                typeof applianceData.applianceName === 'string'
+                  ? applianceData.applianceName
+                  : null,
+              applianceTypeKey:
+                typeof applianceData.typeKey === 'string'
+                  ? applianceData.typeKey
+                  : 'autoclave',
+              applianceTypeName:
+                typeof applianceData.typeName === 'string'
+                  ? applianceData.typeName
+                  : 'Autoclave',
+
+              outcome: null,
+              uploadStatus: 'running',
+
+              isAutoclaveRecord: true,
+              isRunningDailyOps: true,
+            }),
+          );
 
           return nextCycleId;
         },
