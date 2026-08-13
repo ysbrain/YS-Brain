@@ -141,7 +141,7 @@ export default function AutoclaveScreen() {
               <MaterialCommunityIcons
                 name="history"
                 size={17}
-                color="#fff"
+                color="#102E5C"
               />
               <Text style={styles.headerLogButtonText}>Log</Text>
             </Pressable>
@@ -274,7 +274,7 @@ const styles = StyleSheet.create({
   },
 
   headerLogButtonText: {
-    color: '#fff',
+    color: '#102E5C',
     fontSize: 13,
     fontWeight: '900',
   },
