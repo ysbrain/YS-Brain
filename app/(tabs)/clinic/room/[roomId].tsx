@@ -479,7 +479,7 @@ export default function RoomDetailScreen() {
       if (!roomId) return;
 
       router.push({
-        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/appliance-record',
+        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/appliance',
         params: {
           roomId: String(roomId),
           applianceId: String(applianceId),
@@ -504,6 +504,18 @@ export default function RoomDetailScreen() {
     },
     [router, roomId],
   );
+
+  const openAllRoomRecords = useCallback(() => {
+    if (!roomId) return;
+
+    router.push({
+      pathname: '/clinic/room-records',
+      params: {
+        roomId: String(roomId),
+        roomName: String(room.roomName),
+      },
+    });
+  }, [router, roomId, room.roomName]);
 
   return (
     <>
@@ -759,6 +771,28 @@ export default function RoomDetailScreen() {
               })}
             </View>
           )}
+
+          <Pressable
+            onPress={openAllRoomRecords}
+            disabled={!roomId}
+            style={({ pressed }) => [
+              styles.viewAllRecordsButton,
+              pressed && styles.viewAllRecordsButtonPressed,
+              !roomId && styles.viewAllRecordsButtonDisabled,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="View all records in this room"
+          >
+            <Text style={styles.viewAllRecordsButtonText}>
+              View All Records
+            </Text>
+
+            <MaterialCommunityIcons
+              name="chevron-right"
+              size={20}
+              color="#fff"
+            />
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -1033,6 +1067,33 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#64748b',
+  },
+
+  viewAllRecordsButton: {
+    marginTop: 14,
+    minHeight: 48,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#111',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+
+  viewAllRecordsButtonPressed: {
+    opacity: 0.8,
+  },
+
+  viewAllRecordsButtonDisabled: {
+    opacity: 0.5,
+  },
+
+  viewAllRecordsButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
   },
 
   statusBadge: {

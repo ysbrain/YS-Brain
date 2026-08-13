@@ -74,7 +74,7 @@ type RecordValue = string | boolean | null;
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_ASPECT_EMPTY = 16 / 9;
 
-export default function ApplianceRecordScreen() {
+export default function ApplianceScreen() {
   const router = useRouter();
   const profile = useProfile();
   const user = useAuth().user;

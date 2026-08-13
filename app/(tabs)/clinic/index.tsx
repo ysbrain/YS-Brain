@@ -214,7 +214,7 @@ export default function ClinicScreen() {
   const openApplianceScreen = useCallback(
     (roomId: string, applianceId: string, typeKey: string) => {
       router.push({
-        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/appliance-record',
+        pathname: typeKey === 'autoclave' ? '/clinic/autoclave' : '/clinic/appliance',
         params: {
           roomId: String(roomId),
           applianceId: String(applianceId),
