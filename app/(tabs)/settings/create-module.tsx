@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -22,7 +23,7 @@ import {
   Switch,
   Text,
   TextInput,
-  View,
+  View
 } from 'react-native';
 
 import { db } from '@/src/lib/firebase';
@@ -383,7 +384,7 @@ export default function CreateApplianceModuleScreen() {
                       </Text>
                       <Text style={styles.recordFieldMeta}>
                         {item.typeLabel} •{' '}
-                        {item.required ? 'Required' : 'Optional'} • {item.type}
+                        {item.required ? 'Required' : 'Optional'}
                       </Text>
                     </View>
 
@@ -406,105 +407,7 @@ export default function CreateApplianceModuleScreen() {
                 ))}
               </View>
             )}
-          </View>
-
-          {fieldBuilderOpen && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Add Record Field</Text>
-
-              <Text style={styles.fieldLabel}>
-                Field Type <Text style={styles.required}>*</Text>
-              </Text>
-
-              <View style={styles.typeGrid}>
-                {FIELD_TYPE_OPTIONS.map((option) => {
-                  const active =
-                    selectedFieldType?.uiType === option.uiType;
-
-                  return (
-                    <Pressable
-                      key={option.uiType}
-                      onPress={() => setSelectedFieldType(option)}
-                      style={({ pressed }) => [
-                        styles.typeOption,
-                        active && styles.typeOptionActive,
-                        pressed && { opacity: 0.85 },
-                      ]}
-                      accessibilityRole="button"
-                    >
-                      <MaterialCommunityIcons
-                        name={option.icon}
-                        size={22}
-                        color={active ? '#2563eb' : '#475569'}
-                      />
-                      <Text
-                        style={[
-                          styles.typeOptionText,
-                          active && styles.typeOptionTextActive,
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <View style={styles.fieldBlock}>
-                <Text style={styles.fieldLabel}>
-                  Field Name <Text style={styles.required}>*</Text>
-                </Text>
-                <TextInput
-                  value={draftFieldName}
-                  onChangeText={setDraftFieldName}
-                  placeholder="e.g. Functionality Check"
-                  placeholderTextColor="#94a3b8"
-                  style={styles.textInput}
-                  autoCapitalize="words"
-                />
-              </View>
-
-              <View style={styles.requiredRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.requiredTitle}>Required Field</Text>
-                  <Text style={styles.requiredSubtitle}>
-                    Turn off if this field is optional.
-                  </Text>
-                </View>
-
-                <Switch
-                  value={draftRequired}
-                  onValueChange={setDraftRequired}
-                />
-              </View>
-
-              <View style={styles.builderActions}>
-                <Pressable
-                  onPress={resetFieldBuilder}
-                  style={({ pressed }) => [
-                    styles.secondaryButton,
-                    pressed && { opacity: 0.85 },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.secondaryButtonText}>Cancel</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={addRecordField}
-                  style={({ pressed }) => [
-                    styles.confirmFieldButton,
-                    pressed && { opacity: 0.85 },
-                  ]}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.confirmFieldButtonText}>
-                    Confirm Field
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          )}
+          </View>          
         </ScrollView>
 
         <View style={styles.footer}>
@@ -526,6 +429,168 @@ export default function CreateApplianceModuleScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={fieldBuilderOpen}
+        transparent
+        animationType="fade"
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        onRequestClose={resetFieldBuilder}
+      >
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <Pressable
+            style={styles.modalBackdrop}
+            onPress={resetFieldBuilder}
+            accessibilityRole="button"
+            accessibilityLabel="Close add record field modal"
+          >
+            <Pressable
+              style={styles.modalCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  Add Record Field
+                </Text>
+
+                <Pressable
+                  onPress={resetFieldBuilder}
+                  hitSlop={10}
+                  style={({ pressed }) => [
+                    styles.modalCloseButton,
+                    pressed && { opacity: 0.65 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close add record field modal"
+                >
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={22}
+                    color="#111"
+                  />
+                </Pressable>
+              </View>
+
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {/* Field Name */}
+                <View style={styles.fieldBlock}>
+                  <Text style={styles.fieldLabel}>
+                    Field Name <Text style={styles.required}>*</Text>
+                  </Text>
+
+                  <TextInput
+                    value={draftFieldName}
+                    onChangeText={setDraftFieldName}
+                    placeholder="e.g. Functionality Check"
+                    placeholderTextColor="#94a3b8"
+                    style={styles.textInput}
+                    autoCapitalize="words"
+                    returnKeyType="done"
+                  />
+                </View>
+
+                {/* Field Type */}
+                <Text style={styles.fieldLabel}>
+                  Field Type <Text style={styles.required}>*</Text>
+                </Text>
+
+                <View style={styles.typeGrid}>
+                  {FIELD_TYPE_OPTIONS.map((option) => {
+                    const active =
+                      selectedFieldType?.uiType === option.uiType;
+
+                    return (
+                      <Pressable
+                        key={option.uiType}
+                        onPress={() => setSelectedFieldType(option)}
+                        style={({ pressed }) => [
+                          styles.typeOption,
+                          active && styles.typeOptionActive,
+                          pressed && { opacity: 0.85 },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: active }}
+                        accessibilityLabel={`${option.label} field type`}
+                      >
+                        <MaterialCommunityIcons
+                          name={option.icon}
+                          size={22}
+                          color={active ? '#2563eb' : '#475569'}
+                        />
+
+                        <Text
+                          style={[
+                            styles.typeOptionText,
+                            active && styles.typeOptionTextActive,
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Required Field */}
+                <View style={styles.requiredRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.requiredTitle}>
+                      Required Field
+                    </Text>
+
+                    <Text style={styles.requiredSubtitle}>
+                      Turn off if this field is optional.
+                    </Text>
+                  </View>
+
+                  <Switch
+                    value={draftRequired}
+                    onValueChange={setDraftRequired}
+                  />
+                </View>
+
+                {/* Actions */}
+                <View style={styles.builderActions}>
+                  <Pressable
+                    onPress={resetFieldBuilder}
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      pressed && { opacity: 0.85 },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      Cancel
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={addRecordField}
+                    style={({ pressed }) => [
+                      styles.confirmFieldButton,
+                      pressed && { opacity: 0.85 },
+                    ]}
+                    accessibilityRole="button"
+                  >
+                    <Text style={styles.confirmFieldButtonText}>
+                      Confirm Field
+                    </Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
     </>
   );
 }
@@ -773,5 +838,62 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     fontWeight: '900',
+  },
+
+  modalKeyboardView: {
+    flex: 1,
+  },
+
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 32,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+  },
+
+  modalCard: {
+    width: '100%',
+    maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: '#111',
+    borderRadius: 22,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+
+  modalTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#111',
+  },
+
+  modalCloseButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f5f9',
+  },
+
+  modalScroll: {
+    flexGrow: 0,
+  },
+
+  modalContent: {
+    padding: 16,
   },
 });
