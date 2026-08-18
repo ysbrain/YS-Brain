@@ -438,10 +438,7 @@ export default function CreateApplianceModuleScreen() {
         statusBarTranslucent
         onRequestClose={resetFieldBuilder}
       >
-        <KeyboardAvoidingView
-          style={styles.modalKeyboardView}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
+        <View style={styles.modalKeyboardView}>
           <Pressable
             style={styles.modalBackdrop}
             onPress={resetFieldBuilder}
@@ -589,7 +586,7 @@ export default function CreateApplianceModuleScreen() {
               </ScrollView>
             </Pressable>
           </Pressable>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
     </>
   );
