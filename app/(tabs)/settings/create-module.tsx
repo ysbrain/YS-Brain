@@ -6,7 +6,6 @@ import {
   collection,
   doc,
   getDoc,
-  getDocs,
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
@@ -227,7 +226,6 @@ export default function CreateApplianceModuleScreen() {
     try {
       const modulesRef = collection(db, 'applianceModules');
       const moduleRef = doc(modulesRef, generatedModuleKey);
-
       const existingSnap = await getDoc(moduleRef);
 
       if (existingSnap.exists()) {
@@ -238,17 +236,9 @@ export default function CreateApplianceModuleScreen() {
         return;
       }
 
-      /**
-       * For now, module docs cannot be removed.
-       * So moduleIndex = number of existing module docs + 1.
-       */
-      const existingModulesSnap = await getDocs(modulesRef);
-      const moduleIndex = existingModulesSnap.size + 1;
-
       await setDoc(moduleRef, {
         moduleName: trimmedModuleName,
         description: trimmedDescription,
-        moduleIndex,
         official: false,
         recordFields: recordFields.map((item) => ({
           field: item.field,
