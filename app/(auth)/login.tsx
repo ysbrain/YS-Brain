@@ -1,6 +1,9 @@
+// app/(auth)/login.tsx
+
+import SafeScreen from '@/src/components/layout/SafeScreen';
 import { auth } from '@/src/lib/auth';
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import React, { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function Login() {
@@ -17,36 +20,38 @@ export default function Login() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Welcome Back 👋</Text>
-      <Text style={styles.subtitle}>Sign in to continue</Text>      
+    <SafeScreen>
+      <View style={styles.container}>
+        <Text style={styles.title}>Welcome Back 👋</Text>
+        <Text style={styles.subtitle}>Sign in to continue</Text>      
 
-      <TextInput
-        style={styles.input}
-        placeholder="Email"
-        placeholderTextColor={"#999"}
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        returnKeyType="next"
-        onSubmitEditing={() => passwordRef.current?.focus()}
-      />
-      <TextInput
-        ref={passwordRef}
-        style={styles.input}
-        placeholder="Password"
-        placeholderTextColor={"#999"}
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-      {!!error && <Text style={{ color: 'red' }}>{error}</Text>}
+        <TextInput
+          style={styles.input}
+          placeholder="Email"
+          placeholderTextColor={"#999"}
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+        />
+        <TextInput
+          ref={passwordRef}
+          style={styles.input}
+          placeholder="Password"
+          placeholderTextColor={"#999"}
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+        />
+        {!!error && <Text style={{ color: 'red' }}>{error}</Text>}
 
-      <TouchableOpacity style={styles.button} onPress={signIn}>
-        <Text style={styles.buttonText}>Sign In</Text>
-      </TouchableOpacity>
-    </View>
+        <TouchableOpacity style={styles.button} onPress={signIn}>
+          <Text style={styles.buttonText}>Sign In</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeScreen>
   );
 }
 

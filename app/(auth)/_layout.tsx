@@ -1,3 +1,5 @@
+// app/(auth)/_layout.tsx
+
 import { useAuth } from '@/src/contexts/AuthContext';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
