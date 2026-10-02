@@ -1,6 +1,13 @@
+// src/lib/firebase.ts
+
 import { getApp, getApps, initializeApp } from 'firebase/app';
+
 import { getDatabase } from 'firebase/database';
-import { getFirestore } from 'firebase/firestore';
+
+import {
+  initializeFirestore,
+  persistentLocalCache,
+} from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBQX4kUaJ9cMNRX08xE39OFljbX5hR9Fa0",
@@ -12,6 +19,20 @@ const firebaseConfig = {
   databaseURL: "https://ys-brain-16ad9-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
 
-export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-export const db = getFirestore(app);
+export const app =
+  !getApps().length
+    ? initializeApp(firebaseConfig)
+    : getApp();
+
+/**
+ * Firestore with offline persistence
+ * Works for PWA and mobile web.
+ */
+export const db = initializeFirestore(app, {
+  localCache: persistentLocalCache(),
+});
+
+/**
+ * Realtime Database
+ */
 export const rtdb = getDatabase(app);

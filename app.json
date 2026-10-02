@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "YS-Brain",
-    "slug": "YS-Brain",
+    "name": "YS Brain",
+    "slug": "ys-brain",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -22,7 +22,7 @@
       "package": "com.anonymous.YSBrain"
     },
     "web": {
-      "output": "static",
+      "bundler": "metro",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
