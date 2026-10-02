@@ -11,8 +11,13 @@ import {
 } from 'react-native';
 
 type MeasurableRef = {
-  measureInWindow: (
-    callback: (x: number, y: number, width: number, height: number) => void,
+  measureInWindow?: (
+    callback: (
+      x: number,
+      y: number,
+      width: number,
+      height: number,
+    ) => void,
   ) => void;
 };
 
@@ -29,11 +34,17 @@ type UseKeyboardAwareFieldScrollParams = {
 
 type UseKeyboardAwareFieldScrollResult = {
   scrollRef: React.RefObject<ScrollView | null>;
-  registerFieldRef: (key: string) => (ref: MeasurableRef | null) => void;
+  registerFieldRef: (key: string) => (ref: any) => void;
   onFieldFocus: (key: string) => void;
   onFieldBlur: (key: string) => void;
-  requestScroll: (key: string, reason: string, delayMs?: number) => void;
-  handleScroll: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  requestScroll: (
+    key: string,
+    reason: string,
+    delayMs?: number,
+  ) => void;
+  handleScroll: (
+    event: NativeSyntheticEvent<NativeScrollEvent>,
+  ) => void;
   contentBottomPadding: number;
   keyboardHeight: number;
 };
@@ -49,131 +60,299 @@ export function useKeyboardAwareFieldScroll({
   keyboardShowDelayMs = 50,
 }: UseKeyboardAwareFieldScrollParams = {}): UseKeyboardAwareFieldScrollResult {
   const scrollRef = useRef<ScrollView | null>(null);
+
   const scrollYRef = useRef(0);
-  const inputRefs = useRef<Record<string, MeasurableRef | null>>({});
+
+  const inputRefs = useRef<Record<string, any>>({});
+
   const focusedKeyRef = useRef<string | null>(null);
 
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  const pendingScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingScrollTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const pendingScrollKeyRef = useRef<string | null>(null);
+
   const lastScrollAtRef = useRef(0);
+
   const scrollReqIdRef = useRef(0);
 
+  const performWebScroll = useCallback((key: string) => {
+    const input = inputRefs.current[key];
+
+    if (!input) return;
+
+    const node =
+      input?.getScrollableNode?.() ??
+      input?.getNode?.() ??
+      input;
+
+    if (
+      node &&
+      typeof node.scrollIntoView === 'function'
+    ) {
+      node.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      });
+    }
+  }, []);
+
+  const performNativeScroll = useCallback(
+    (key: string, reqId: number) => {
+      const input = inputRefs.current[key];
+
+      if (!input?.measureInWindow) {
+        return;
+      }
+
+      input.measureInWindow(
+        (_x: number, y: number) => {
+          if (reqId !== scrollReqIdRef.current) {
+            return;
+          }
+
+          const windowH =
+            Dimensions.get('window').height;
+
+          const targetY =
+            windowH * focusAnchorRatio;
+
+          if (y <= targetY) {
+            return;
+          }
+
+          const delta = y - targetY;
+
+          const nextY = Math.max(
+            0,
+            scrollYRef.current + delta,
+          );
+
+          scrollRef.current?.scrollTo({
+            y: nextY,
+            animated: true,
+          });
+        },
+      );
+    },
+    [focusAnchorRatio],
+  );
+
   const requestScroll = useCallback(
-    (key: string, reason: string, delayMs = scrollDebounceMs) => {
+    (
+      key: string,
+      reason: string,
+      delayMs = scrollDebounceMs,
+    ) => {
       pendingScrollKeyRef.current = key;
 
       if (pendingScrollTimerRef.current) {
-        clearTimeout(pendingScrollTimerRef.current);
-        pendingScrollTimerRef.current = null;
+        clearTimeout(
+          pendingScrollTimerRef.current,
+        );
       }
 
-      pendingScrollTimerRef.current = setTimeout(() => {
-        const latestKey = pendingScrollKeyRef.current;
-        if (!latestKey) return;
+      pendingScrollTimerRef.current =
+        setTimeout(() => {
+          const latestKey =
+            pendingScrollKeyRef.current;
 
-        const now = Date.now();
-        const elapsed = now - lastScrollAtRef.current;
-        const bypassCooldown = reason === 'validation';
+          if (!latestKey) {
+            return;
+          }
 
-        if (!bypassCooldown && elapsed < scrollCooldownMs) {
-          const remaining = scrollCooldownMs - elapsed;
-          requestScroll(latestKey, reason, remaining);
-          return;
-        }
+          const now = Date.now();
 
-        lastScrollAtRef.current = now;
-        const reqId = ++scrollReqIdRef.current;
+          const elapsed =
+            now - lastScrollAtRef.current;
 
-        requestAnimationFrame(() => {
-          const input = inputRefs.current[latestKey];
-          if (!input?.measureInWindow) return;
+          const bypassCooldown =
+            reason === 'validation';
 
-          input.measureInWindow((_x, y) => {
-            if (reqId !== scrollReqIdRef.current) return;
+          if (
+            !bypassCooldown &&
+            elapsed < scrollCooldownMs
+          ) {
+            const remaining =
+              scrollCooldownMs - elapsed;
 
-            const windowH = Dimensions.get('window').height;
-            const targetY = windowH * focusAnchorRatio;
+            requestScroll(
+              latestKey,
+              reason,
+              remaining,
+            );
 
-            if (y <= targetY) return;
+            return;
+          }
 
-            const delta = y - targetY;
-            const nextY = Math.max(0, scrollYRef.current + delta);
+          lastScrollAtRef.current = now;
 
-            scrollRef.current?.scrollTo({ y: nextY, animated: true });
+          const reqId =
+            ++scrollReqIdRef.current;
+
+          requestAnimationFrame(() => {
+            if (Platform.OS === 'web') {
+              performWebScroll(latestKey);
+            } else {
+              performNativeScroll(
+                latestKey,
+                reqId,
+              );
+            }
           });
-        });
-      }, delayMs);
+        }, delayMs);
     },
-    [focusAnchorRatio, scrollCooldownMs, scrollDebounceMs],
+    [
+      performNativeScroll,
+      performWebScroll,
+      scrollCooldownMs,
+      scrollDebounceMs,
+    ],
   );
 
   const registerFieldRef = useCallback(
-    (key: string) => (ref: MeasurableRef | null) => {
-      inputRefs.current[key] = ref;
-    },
+    (key: string) =>
+      (ref: any) => {
+        inputRefs.current[key] = ref;
+      },
     [],
   );
 
   const onFieldFocus = useCallback(
     (key: string) => {
       focusedKeyRef.current = key;
+
       requestScroll(key, 'focus');
     },
     [requestScroll],
   );
 
-  const onFieldBlur = useCallback((key: string) => {
-    if (focusedKeyRef.current === key) {
-      focusedKeyRef.current = null;
-    }
-  }, []);
+  const onFieldBlur = useCallback(
+    (key: string) => {
+      if (focusedKeyRef.current === key) {
+        focusedKeyRef.current = null;
+      }
+    },
+    [],
+  );
 
-  const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    scrollYRef.current = event.nativeEvent.contentOffset.y;
-  }, []);
+  const handleScroll = useCallback(
+    (
+      event: NativeSyntheticEvent<NativeScrollEvent>,
+    ) => {
+      scrollYRef.current =
+        event.nativeEvent.contentOffset.y;
+    },
+    [],
+  );
 
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    if (Platform.OS === 'web') {
+      return;
+    }
 
-    const showSub = Keyboard.addListener(showEvent, (event) => {
-      const nextKeyboardHeight = event.endCoordinates?.height ?? 0;
-      setKeyboardHeight(nextKeyboardHeight);
+    const showEvent =
+      Platform.OS === 'ios'
+        ? 'keyboardWillShow'
+        : 'keyboardDidShow';
 
-      const key = focusedKeyRef.current;
-      if (key) {
-        requestScroll(key, 'keyboardShow', keyboardShowDelayMs);
-      }
-    });
+    const hideEvent =
+      Platform.OS === 'ios'
+        ? 'keyboardWillHide'
+        : 'keyboardDidHide';
 
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-    });
+    const showSub = Keyboard.addListener(
+      showEvent,
+      event => {
+        const nextKeyboardHeight =
+          event.endCoordinates?.height ?? 0;
+
+        setKeyboardHeight(
+          nextKeyboardHeight,
+        );
+
+        const key =
+          focusedKeyRef.current;
+
+        if (key) {
+          requestScroll(
+            key,
+            'keyboardShow',
+            keyboardShowDelayMs,
+          );
+        }
+      },
+    );
+
+    const hideSub = Keyboard.addListener(
+      hideEvent,
+      () => {
+        setKeyboardHeight(0);
+      },
+    );
 
     return () => {
       showSub.remove();
       hideSub.remove();
-
-      if (pendingScrollTimerRef.current) {
-        clearTimeout(pendingScrollTimerRef.current);
-      }
     };
-  }, [keyboardShowDelayMs, requestScroll]);
+  }, [
+    keyboardShowDelayMs,
+    requestScroll,
+  ]);
 
   useEffect(() => {
-    if (!activeOverlayFieldKey) return;
+    return () => {
+      if (
+        pendingScrollTimerRef.current
+      ) {
+        clearTimeout(
+          pendingScrollTimerRef.current,
+        );
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeOverlayFieldKey) {
+      return;
+    }
 
     requestAnimationFrame(() => {
-      requestScroll(activeOverlayFieldKey, 'overlayOpen', 0);
+      requestScroll(
+        activeOverlayFieldKey,
+        'overlayOpen',
+        0,
+      );
     });
-  }, [activeOverlayFieldKey, requestScroll]);
+  }, [
+    activeOverlayFieldKey,
+    requestScroll,
+  ]);
 
-  const contentBottomPadding = useMemo(() => {
-    const bottomObstruction = Math.max(keyboardHeight, overlayHeight);
-    return baseBottomPadding + safeGap + bottomObstruction;
-  }, [baseBottomPadding, keyboardHeight, overlayHeight, safeGap]);
+  const contentBottomPadding =
+    useMemo(() => {
+      const bottomObstruction =
+        Platform.OS === 'web'
+          ? overlayHeight
+          : Math.max(
+              keyboardHeight,
+              overlayHeight,
+            );
+
+      return (
+        baseBottomPadding +
+        safeGap +
+        bottomObstruction
+      );
+    }, [
+      baseBottomPadding,
+      keyboardHeight,
+      overlayHeight,
+      safeGap,
+    ]);
 
   return {
     scrollRef,
