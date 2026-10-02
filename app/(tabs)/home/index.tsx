@@ -74,13 +74,8 @@ const styles = StyleSheet.create({
     width: 300,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    // iOS shadow (optional)
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 4,
-    // Android elevation (optional)
-    elevation: 2,
+
+    boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.15)',
   },
   // Applied only while pressing (via style callback)
   buttonPressed: {

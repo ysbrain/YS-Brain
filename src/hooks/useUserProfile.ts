@@ -1,9 +1,12 @@
-import { auth } from '@/src/lib/auth';
-import { db } from '@/src/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
-import * as React from 'react';
-import { userProfileConverter } from '../profile/profile.converter';
-import type { UserProfile } from '../profile/profile.types';
+import { onAuthStateChanged } from "firebase/auth";
+import { doc, onSnapshot } from "firebase/firestore";
+import { useEffect, useState } from "react";
+
+import { auth } from "@/src/lib/auth";
+import { db } from "@/src/lib/firebase";
+
+import { userProfileConverter } from "../profile/profile.converter";
+import type { UserProfile } from "../profile/profile.types";
 
 type UseUserProfileResult = {
   profile: UserProfile | null;
@@ -12,34 +15,75 @@ type UseUserProfileResult = {
 };
 
 export function useUserProfile(): UseUserProfileResult {
-  const [profile, setProfile] = React.useState<UserProfile | null>(null);
-  const [loading, setLoading] = React.useState(true);
-  const [error, setError] = React.useState<Error | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  React.useEffect(() => {
-    const user = auth.currentUser;
-    if (!user) {
-      setError(new Error('No authenticated user'));
-      setLoading(false);
-      return;
-    }
+  useEffect(() => {
+    let unsubscribeProfile: (() => void) | undefined;
 
-    const ref = doc(db, 'users', user.uid).withConverter(userProfileConverter);
+    const unsubscribeAuth = onAuthStateChanged(
+      auth,
+      (user) => {
+        if (unsubscribeProfile) {
+          unsubscribeProfile();
+          unsubscribeProfile = undefined;
+        }
 
-    const unsubscribe = onSnapshot(
-      ref,
-      (snap) => {
-        setProfile(snap.exists() ? snap.data()! : null); // createdAt/updatedAt are Date
-        setLoading(false);
+        if (!user) {
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+
+        setLoading(true);
+
+        const profileRef = doc(
+          db,
+          "users",
+          user.uid
+        ).withConverter(userProfileConverter);
+
+        unsubscribeProfile = onSnapshot(
+          profileRef,
+          (snapshot) => {
+            if (snapshot.exists()) {
+              setProfile(snapshot.data());
+            } else {
+              setProfile(null);
+            }
+
+            setError(null);
+            setLoading(false);
+          },
+          (err) => {
+            console.error("Profile listener error:", err);
+
+            setError(err);
+            setLoading(false);
+          }
+        );
       },
       (err) => {
-        setError(err as Error);
+        console.error("Auth state error:", err);
+
+        setError(err);
         setLoading(false);
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribeAuth();
+
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
+    };
   }, []);
 
-  return { profile, loading, error };
+  return {
+    profile,
+    loading,
+    error,
+  };
 }

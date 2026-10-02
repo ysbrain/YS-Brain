@@ -232,37 +232,39 @@ export default function ClinicScreen() {
       const visibleAppliances = showMoreChip ? appliances.slice(0, 7) : appliances;
 
       return (
-        <Pressable
-          onPress={() => goRoomDetail(item)}
-          style={({ pressed }) => [
-            styles.roomCardPressable,
-            pressed && styles.roomCardPressablePressed,
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={`Open ${item.roomName}`}
-        >
+        <View style={styles.roomCardPressable}>
           <View style={styles.roomCard}>
-            <View style={styles.roomHeader}>
-              <View style={styles.roomHeaderLeft}>
-                <Text style={styles.roomTitle} numberOfLines={1}>
-                  {item.roomName}
-                </Text>
-
-                {!!item.description && (
-                  <Text style={styles.roomDescription} numberOfLines={2}>
-                    {item.description}
+            <Pressable
+              onPress={() => goRoomDetail(item)}
+              style={({ pressed }) => [
+                styles.roomHeaderPressable,
+                pressed && styles.roomCardPressablePressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${item.roomName}`}
+            >
+              <View style={styles.roomHeader}>
+                <View style={styles.roomHeaderLeft}>
+                  <Text style={styles.roomTitle} numberOfLines={1}>
+                    {item.roomName}
                   </Text>
-                )}
-              </View>
 
-              <View style={styles.roomChevronCircle}>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={26}
-                  color="#111827"
-                />
+                  {!!item.description && (
+                    <Text style={styles.roomDescription} numberOfLines={2}>
+                      {item.description}
+                    </Text>
+                  )}
+                </View>
+
+                <View style={styles.roomChevronCircle}>
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={26}
+                    color="#111827"
+                  />
+                </View>
               </View>
-            </View>
+            </Pressable>
 
             {applianceCount === 0 ? (
               <View style={styles.emptyBox}>
@@ -365,7 +367,7 @@ export default function ClinicScreen() {
               </View>
             )}            
           </View>
-        </Pressable>
+        </View>
       );
     },
     [openApplianceScreen, goRoomDetail],
@@ -445,15 +447,7 @@ const styles = StyleSheet.create({
     padding: 16,
     backgroundColor: '#ffffff',
 
-    shadowColor: '#0f172a',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-
-    elevation: 4,
+    boxShadow: '0px 4px 10px rgba(15, 23, 42, 0.10)',
   },
 
   roomHeader: {
@@ -462,6 +456,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     marginBottom: 14,
+  },
+
+  roomHeaderPressable: {
+    borderRadius: 16,
   },
 
   roomHeaderLeft: {
