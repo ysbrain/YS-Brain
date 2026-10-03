@@ -1,5 +1,6 @@
 // src/components/autoclave/AutoclaveTestTab.tsx
 
+import AppTimePicker from '@/src/components/AppTimePicker';
 import { ActionBlockerList } from '@/src/components/autoclave/ActionBlockerList';
 import {
   AutoclavePassFailField,
@@ -7,10 +8,7 @@ import {
   AutoclaveTimeField,
 } from '@/src/components/autoclave/DailyOpsFields';
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
-import {
-  IOS_PICKER_OVERLAY_HEIGHT,
-  IosDateTimePickerOverlay,
-} from '@/src/components/IosDateTimePickerOverlay';
+import { IOS_PICKER_OVERLAY_HEIGHT } from '@/src/components/IosDateTimePickerOverlay';
 import { AUTOCLAVE_SETUP_KEYS } from '@/src/constants/autoclave';
 import { setupValueToString } from '@/src/hooks/autoclave/setupUtils';
 import type { SetupStoredItem } from '@/src/hooks/autoclave/types';
@@ -25,9 +23,6 @@ import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldSc
 import { formatTimeHHMM, parseHHMM } from '@/src/utils/dateTime';
 import { cropToAspect } from '@/src/utils/photo';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -151,24 +146,6 @@ export function AutoclaveTestTab({
     routerBack: () => router.back(),
   });
 
-  const activePickerValue = useMemo(() => {
-    if (!activePicker) return new Date();
-
-    if (activePicker.field === 'cycleStartTime') {
-      return parseHHMM(controller.cycleStartTime) ?? new Date();
-    }
-
-    if (activePicker.field === 'cycleEndTime') {
-      return parseHHMM(controller.cycleEndTime) ?? new Date();
-    }
-
-    return new Date();
-  }, [
-    activePicker,
-    controller.cycleStartTime,
-    controller.cycleEndTime,
-  ]);
-
   const openPicker = useCallback(
     (field: AutoclaveTestPickerField, mode: 'time') => {
       Keyboard.dismiss();
@@ -196,40 +173,6 @@ export function AutoclaveTestTab({
       onFieldBlur(AUTOCLAVE_TEST_FIELD_KEYS.cycleEndTime);
     }
   }, [activePicker, onFieldBlur]);
-
-  const onPickerChange = useCallback(
-    (evt: DateTimePickerEvent, date?: Date) => {
-      if (!activePicker) return;
-
-      if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-        blurActivePickerField();
-        setActivePicker(null);
-        return;
-      }
-
-      if (!date) return;
-
-      if (Platform.OS === 'ios') {
-        setPickerDraft(date);
-        return;
-      }
-
-      if (activePicker.field === 'cycleStartTime') {
-        controller.setCycleStartTime(formatTimeHHMM(date));
-      } else if (activePicker.field === 'cycleEndTime') {
-        controller.setCycleEndTime(formatTimeHHMM(date));
-      }
-
-      blurActivePickerField();
-      setActivePicker(null);
-    },
-    [
-      activePicker,
-      controller.setCycleStartTime,
-      controller.setCycleEndTime,
-      blurActivePickerField,
-    ],
-  );
 
   const closePicker = useCallback(() => {
     blurActivePickerField();
@@ -451,20 +394,10 @@ export function AutoclaveTestTab({
         </View>
       </ScrollView>
 
-      {Platform.OS !== 'ios' && activePicker && (
-        <DateTimePicker
-          value={activePickerValue}
-          mode={activePicker.mode}
-          display="default"
-          onChange={onPickerChange}
-        />
-      )}
-
-      <IosDateTimePickerOverlay
-        visible={Platform.OS === 'ios' && !!activePicker}
+      <AppTimePicker
+        visible={!!activePicker}
         value={pickerDraft}
-        mode={activePicker?.mode ?? 'time'}
-        onChange={onPickerChange}
+        onChange={setPickerDraft}
         onClose={closePicker}
         onDone={commitPicker}
       />

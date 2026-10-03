@@ -1,12 +1,11 @@
 // src/lib/firebase.ts
 
 import { getApp, getApps, initializeApp } from 'firebase/app';
-
 import { getDatabase } from 'firebase/database';
-
 import {
+  getFirestore,
   initializeFirestore,
-  persistentLocalCache,
+  memoryLocalCache,
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -24,15 +23,11 @@ export const app =
     ? initializeApp(firebaseConfig)
     : getApp();
 
-/**
- * Firestore with offline persistence
- * Works for PWA and mobile web.
- */
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache(),
-});
+export const db =
+  getApps().length === 1
+    ? initializeFirestore(app, {
+        localCache: memoryLocalCache(),
+      })
+    : getFirestore(app);
 
-/**
- * Realtime Database
- */
 export const rtdb = getDatabase(app);

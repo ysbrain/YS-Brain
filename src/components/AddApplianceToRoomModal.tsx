@@ -1,10 +1,8 @@
 // src/components/AddApplianceToRoomModal.tsx
 
+import AppDatePicker from '@/src/components/AppDatePicker';
 import BottomSheetShell from '@/src/components/BottomSheetShell';
-import {
-  IOS_PICKER_OVERLAY_HEIGHT,
-  IosDateTimePickerOverlay,
-} from '@/src/components/IosDateTimePickerOverlay';
+import { IOS_PICKER_OVERLAY_HEIGHT } from '@/src/components/IosDateTimePickerOverlay';
 import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
 import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
@@ -14,9 +12,6 @@ import { getApplianceIcon } from '@/src/utils/applianceIcons';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
 import { blurActiveInputAndDismissKeyboard } from '@/src/utils/keyboard';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import {
   collection,
   doc,
@@ -289,31 +284,6 @@ export default function AddApplianceToRoomModal({
 
     onFieldBlur(`setup:${activeDateField}` as FieldKey);
   }, [activeDateField, onFieldBlur]);
-
-  const onDateChange = useCallback(
-    (evt: DateTimePickerEvent, date?: Date) => {
-      if (!activeDateField) return;
-
-      if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-        blurActiveDateField();
-        setActiveDateField(null);
-        return;
-      }
-
-      if (!date) return;
-
-      if (Platform.OS === 'ios') {
-        setDateDraft(date);
-        return;
-      }
-
-      onChangeConfig(activeDateField, formatDateYYYYMMDD(date));
-
-      blurActiveDateField();
-      setActiveDateField(null);
-    },
-    [activeDateField, onChangeConfig, blurActiveDateField],
-  );
 
   const closeDatePicker = useCallback(() => {
     blurActiveDateField();
@@ -996,20 +966,10 @@ export default function AddApplianceToRoomModal({
           </View>
         )}
 
-        {Platform.OS !== 'ios' && activeDateField && (
-          <DateTimePicker
-            value={activeDateValue}
-            mode="date"
-            display="default"
-            onChange={onDateChange}
-          />
-        )}
-
-        <IosDateTimePickerOverlay
-          visible={Platform.OS === 'ios' && !!activeDateField}
+        <AppDatePicker
+          visible={!!activeDateField}
           value={dateDraft}
-          mode="date"
-          onChange={onDateChange}
+          onChange={setDateDraft}
           onClose={closeDatePicker}
           onDone={commitDatePicker}
         />

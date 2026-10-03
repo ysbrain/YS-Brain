@@ -1,9 +1,10 @@
-// app/(tabs)/clinic/appliance-record.tsx
+// app/(tabs)/clinic/appliance.tsx
 
+import AppDatePicker from '@/src/components/AppDatePicker';
+import AppTimePicker from '@/src/components/AppTimePicker';
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import {
-  IOS_PICKER_OVERLAY_HEIGHT,
-  IosDateTimePickerOverlay,
+  IOS_PICKER_OVERLAY_HEIGHT
 } from '@/src/components/IosDateTimePickerOverlay';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
@@ -28,7 +29,6 @@ import {
 } from '@/src/utils/photo';
 import { normalizeParam } from '@/src/utils/routeParams';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
@@ -138,14 +138,6 @@ export default function ApplianceScreen() {
     baseBottomPadding: 24 + FOOTER_BASE_HEIGHT,
   });
 
-  const activePickerValue = useMemo(() => {
-    if (!activePicker) return new Date();
-    const raw = recordValues[activePicker.field];
-    const s = typeof raw === 'string' ? raw : '';
-    if (activePicker.mode === 'date') return parseYYYYMMDDSlash(s) ?? new Date();
-    return parseHHMM(s) ?? new Date();
-  }, [activePicker, recordValues]);
-
   const hasValidContext = Boolean(clinicId && roomId && applianceId);
 
   const applianceReady =
@@ -198,35 +190,6 @@ export default function ApplianceScreen() {
 
     onFieldBlur(`record:${activePicker.field}`);
   }, [activePicker, onFieldBlur]);
-
-  const onPickerChange = useCallback(
-    (evt: DateTimePickerEvent, date?: Date) => {
-      if (!activePicker) return;
-
-      if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-        blurActivePickerField();
-        setActivePicker(null);
-        return;
-      }
-
-      if (!date) return;
-
-      if (Platform.OS === 'ios') {
-        setPickerDraft(date);
-        return;
-      }
-
-      if (activePicker.mode === 'date') {
-        onChangeField(activePicker.field, formatDateYYYYMMDDSlash(date));
-      } else {
-        onChangeField(activePicker.field, formatTimeHHMM(date));
-      }
-
-      blurActivePickerField();
-      setActivePicker(null);
-    },
-    [activePicker, onChangeField, blurActivePickerField],
-  );
 
   const closePicker = useCallback(() => {
     blurActivePickerField();
@@ -896,17 +859,24 @@ export default function ApplianceScreen() {
           </View>
         )}
 
-        {/* Android native picker */}
-        {Platform.OS !== 'ios' && activePicker && (
-          <DateTimePicker value={activePickerValue} mode={activePicker.mode} display="default" onChange={onPickerChange} />
-        )}
-
-        {/* iOS picker overlay */}
-        <IosDateTimePickerOverlay
-          visible={Platform.OS === 'ios' && !!activePicker}
+        <AppDatePicker
+          visible={
+            !!activePicker &&
+            activePicker.mode === 'date'
+          }
           value={pickerDraft}
-          mode={activePicker?.mode ?? 'date'}
-          onChange={onPickerChange}
+          onChange={setPickerDraft}
+          onClose={closePicker}
+          onDone={commitPicker}
+        />
+
+        <AppTimePicker
+          visible={
+            !!activePicker &&
+            activePicker.mode === 'time'
+          }
+          value={pickerDraft}
+          onChange={setPickerDraft}
           onClose={closePicker}
           onDone={commitPicker}
         />

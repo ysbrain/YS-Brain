@@ -1,10 +1,8 @@
 // src/components/autoclave/DailyOpsTab.tsx
 
+import AppTimePicker from '@/src/components/AppTimePicker';
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
-import {
-  IOS_PICKER_OVERLAY_HEIGHT,
-  IosDateTimePickerOverlay,
-} from '@/src/components/IosDateTimePickerOverlay';
+import { IOS_PICKER_OVERLAY_HEIGHT } from '@/src/components/IosDateTimePickerOverlay';
 import { DailyOpsView } from '@/src/components/autoclave/DailyOpsView';
 import { DAILY_OPS_FIELD_KEYS } from '@/src/constants/autoclave';
 import type {
@@ -20,11 +18,8 @@ import {
   parseHHMM,
 } from '@/src/utils/dateTime';
 import { cropToAspect } from '@/src/utils/photo';
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Alert,
   Keyboard,
@@ -160,20 +155,6 @@ export function DailyOpsTab({
     routerBack: () => router.back(),
   });
 
-  const activePickerValue = useMemo(() => {
-    if (!activePicker) return new Date();
-
-    if (activePicker.field === 'startTime') {
-      return parseHHMM(dailyOps.startTime) ?? new Date();
-    }
-
-    if (activePicker.field === 'unloadTime') {
-      return parseHHMM(dailyOps.unloadTime) ?? new Date();
-    }
-
-    return new Date();
-  }, [activePicker, dailyOps.startTime, dailyOps.unloadTime]);
-
   const openPicker = useCallback(
     (field: DailyOpsPickerField, mode: 'time') => {
       Keyboard.dismiss();
@@ -201,40 +182,6 @@ export function DailyOpsTab({
       onFieldBlur(DAILY_OPS_FIELD_KEYS.unloadTime);
     }
   }, [activePicker, onFieldBlur]);
-
-  const onPickerChange = useCallback(
-    (evt: DateTimePickerEvent, date?: Date) => {
-      if (!activePicker) return;
-
-      if (Platform.OS !== 'ios' && evt.type === 'dismissed') {
-        blurActivePickerField();
-        setActivePicker(null);
-        return;
-      }
-
-      if (!date) return;
-
-      if (Platform.OS === 'ios') {
-        setPickerDraft(date);
-        return;
-      }
-
-      if (activePicker.field === 'startTime') {
-        dailyOps.setStartTime(formatTimeHHMM(date));
-      } else if (activePicker.field === 'unloadTime') {
-        dailyOps.setUnloadTime(formatTimeHHMM(date));
-      }
-
-      blurActivePickerField();
-      setActivePicker(null);
-    },
-    [
-      activePicker,
-      dailyOps.setStartTime,
-      dailyOps.setUnloadTime,
-      blurActivePickerField,
-    ],
-  );
 
   const closePicker = useCallback(() => {
     blurActivePickerField();
@@ -321,20 +268,10 @@ export function DailyOpsTab({
         />
       </ScrollView>
 
-      {Platform.OS !== 'ios' && activePicker && (
-        <DateTimePicker
-          value={activePickerValue}
-          mode={activePicker.mode}
-          display="default"
-          onChange={onPickerChange}
-        />
-      )}
-
-      <IosDateTimePickerOverlay
-        visible={Platform.OS === 'ios' && !!activePicker}
+      <AppTimePicker
+        visible={!!activePicker}
         value={pickerDraft}
-        mode={activePicker?.mode ?? 'time'}
-        onChange={onPickerChange}
+        onChange={setPickerDraft}
         onClose={closePicker}
         onDone={commitPicker}
       />
