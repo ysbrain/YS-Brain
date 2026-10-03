@@ -6,6 +6,7 @@ import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import {
   IOS_PICKER_OVERLAY_HEIGHT
 } from '@/src/components/IosDateTimePickerOverlay';
+import { useAlert } from '@/src/contexts/AlertContext';
 import { useAuth } from '@/src/contexts/AuthContext';
 import { useProfile } from '@/src/contexts/ProfileContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
@@ -40,7 +41,6 @@ import {
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -112,6 +112,7 @@ export default function ApplianceScreen() {
   const [saving, setSaving] = useState(false);
 
   const { setUiLocked } = useUiLock();
+  const { alert } = useAlert();
 
   // Picker control (date/time)
   const [activePicker, setActivePicker] = useState<{ field: string; mode: 'date' | 'time' } | null>(
@@ -232,12 +233,15 @@ export default function ApplianceScreen() {
         onChangeField(activePhotoField, croppedUri);
       } catch (err) {
         console.error('photo process error', err);
-        Alert.alert('Photo error', 'Failed to process the captured photo.');
+        await alert({
+          title: 'Photo error',
+          message: 'Failed to process the captured photo.',
+        });
       } finally {
         closeCamera();
       }
     },
-    [activePhotoField, closeCamera, onChangeField],
+    [activePhotoField, closeCamera, onChangeField, alert],
   );
 
   // Subscribe to appliance doc
@@ -343,32 +347,50 @@ export default function ApplianceScreen() {
     setActivePicker(null);
 
     if (!clinicId || !roomId || !applianceId) {
-      Alert.alert('Missing context', 'Clinic/Room/Appliance not available.');
+      await alert({
+        title: 'Missing context',
+        message: 'Clinic / Room / Appliance not available.',
+      });
       return;
     }
 
     if (!user?.uid) {
-      Alert.alert('Not signed in', 'Please sign in before saving a record.');
+      await alert({
+        title: 'Not signed in',
+        message: 'Please sign in before saving a record.',
+      });
       return;
     }
 
     if (loading) {
-      Alert.alert('Please wait', 'Still loading appliance configuration.');
+      await alert({
+        title: 'Please wait',
+        message: 'Still loading appliance configuration.',
+      });
       return;
     }
 
     if (loadError) {
-      Alert.alert('Cannot save', loadError);
+      await alert({
+        title: 'Cannot save',
+        message: loadError,
+      });
       return;
     }
 
     if (!applianceName.trim()) {
-      Alert.alert('Cannot save', 'Appliance information is incomplete.');
+      await alert({
+        title: 'Cannot save',
+        message: 'Appliance information is incomplete.',
+      });
       return;
     }
 
     if (recordFields.length === 0) {
-      Alert.alert('Cannot save', 'This appliance has no record fields configured.');
+      await alert({
+        title: 'Cannot save',
+        message: 'This appliance has no record fields configured.',
+      });
       return;
     }
 
@@ -553,23 +575,18 @@ export default function ApplianceScreen() {
       );
 
       await batch.commit();
-
-      Alert.alert(
-        'Saved',
-        'Record saved successfully.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.back();
-            },
-          },
-        ],
-        { cancelable: false },
-      );
+      
+      await alert({
+        title: 'Saved',
+        message: 'Record saved successfully.',
+      });
+      router.back();
     } catch (e: any) {
       console.error('save record error', e);
-      Alert.alert('Save failed', e?.message ?? 'Unknown error');
+      await alert({
+        title: 'Save failed',
+        message: e?.message ?? 'Unknown error',
+      });
     } finally {
       setSaving(false);
       setUiLocked(false);
@@ -590,6 +607,7 @@ export default function ApplianceScreen() {
     user?.uid,
     profile?.name,
     router,
+    alert,
     blurActiveInputAndDismissKeyboard,
     blurActivePickerField,
     setActivePicker,
@@ -1000,7 +1018,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: Platform.OS === 'ios' ? 12 : 10,
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: '#111',
     backgroundColor: '#fff',

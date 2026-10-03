@@ -10,6 +10,7 @@ import {
 import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { IOS_PICKER_OVERLAY_HEIGHT } from '@/src/components/IosDateTimePickerOverlay';
 import { AUTOCLAVE_SETUP_KEYS } from '@/src/constants/autoclave';
+import { useAlert } from '@/src/contexts/AlertContext';
 import { setupValueToString } from '@/src/hooks/autoclave/setupUtils';
 import type { SetupStoredItem } from '@/src/hooks/autoclave/types';
 import {
@@ -26,14 +27,13 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
   Keyboard,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  View,
+  View
 } from 'react-native';
 
 const PHOTO_ASPECT = 4 / 3;
@@ -86,6 +86,7 @@ export function AutoclaveTestTab({
   setUiLocked,
 }: AutoclaveTestTabProps) {
   const router = useRouter();
+  const { alert } = useAlert();
 
   const [cameraOpen, setCameraOpen] = useState(false);
   const [activePicker, setActivePicker] =
@@ -224,13 +225,17 @@ export function AutoclaveTestTab({
         }
       } catch (err) {
         console.error(`${testType} photo process error`, err);
-        Alert.alert('Photo error', 'Failed to process the captured photo.');
+        await alert({
+          title: 'Photo error',
+          message: 'Failed to process the captured photo.',
+        });
       } finally {
         closeCamera();
       }
     },
     [
       testType,
+      alert,
       closeCamera,
       controller.formErrorField,
       controller.setFormErrorField,

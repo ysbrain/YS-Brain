@@ -1,17 +1,14 @@
 // app/_layout.tsx
 
-import { useEffect } from 'react';
-
 import GlobalUiLockOverlay from '@/src/components/ui-lock/GlobalUiLockOverlay';
+import { AlertProvider } from '@/src/contexts/AlertContext';
 import { AuthProvider } from '@/src/contexts/AuthContext';
 import { UiLockProvider } from '@/src/contexts/UiLockContext';
-
+import { registerServiceWorker } from '@/src/registerServiceWorker';
 import { Stack } from 'expo-router';
 import Head from 'expo-router/head';
-
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-
-import { registerServiceWorker } from '@/src/registerServiceWorker';
 
 export default function RootLayout() {
   useEffect(() => {
@@ -72,22 +69,24 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <AuthProvider>
           <UiLockProvider>
-            <>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  contentStyle: {
-                    backgroundColor: '#f0fff4ff',
-                  },
-                }}
-              >
-                <Stack.Screen name="index" />
-                <Stack.Screen name="(auth)" />
-                <Stack.Screen name="(tabs)" />
-              </Stack>
+            <AlertProvider>
+              <>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    contentStyle: {
+                      backgroundColor: '#f0fff4ff',
+                    },
+                  }}
+                >
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="(auth)" />
+                  <Stack.Screen name="(tabs)" />
+                </Stack>
 
-              <GlobalUiLockOverlay />
-            </>
+                <GlobalUiLockOverlay />
+              </>
+            </AlertProvider>
           </UiLockProvider>
         </AuthProvider>
       </SafeAreaProvider>

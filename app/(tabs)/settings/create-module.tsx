@@ -12,7 +12,6 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -27,6 +26,8 @@ import {
 
 import { db } from '@/src/lib/firebase';
 import { toFirestoreSafeKey } from '@/src/utils/firestoreKeys';
+
+import { useAlert } from '@/src/contexts/AlertContext';
 
 type FirestoreRecordFieldType =
   | 'string'
@@ -110,6 +111,7 @@ function createDraftId(): string {
 
 export default function CreateApplianceModuleScreen() {
   const router = useRouter();
+  const { alert } = useAlert();
 
   const [moduleName, setModuleName] = useState('');
   const [description, setDescription] = useState('');
@@ -148,16 +150,22 @@ export default function CreateApplianceModuleScreen() {
     setDraftRequired(true);
   }, []);
 
-  const addRecordField = useCallback(() => {
+  const addRecordField = useCallback(async () => {
     const trimmedName = draftFieldName.trim();
 
     if (!selectedFieldType) {
-      Alert.alert('Select type', 'Please choose a record field type.');
+      await alert({
+        title: 'Select type',
+        message: 'Please choose a record field type.',
+      });
       return;
     }
 
     if (!trimmedName) {
-      Alert.alert('Field name required', 'Please enter a record field name.');
+      await alert({
+        title: 'Field name required',
+        message: 'Please enter a record field name.',
+      });
       return;
     }
 
@@ -166,10 +174,10 @@ export default function CreateApplianceModuleScreen() {
     );
 
     if (duplicate) {
-      Alert.alert(
-        'Duplicate field',
-        'A record field with this name already exists.',
-      );
+      await alert({
+        title: 'Duplicate field',
+        message: 'A record field with this name already exists.',
+      });
       return;
     }
 
@@ -190,6 +198,7 @@ export default function CreateApplianceModuleScreen() {
     draftRequired,
     selectedFieldType,
     recordFields,
+    alert,
     resetFieldBuilder,
   ]);
 
@@ -202,20 +211,26 @@ export default function CreateApplianceModuleScreen() {
     const trimmedDescription = description.trim();
 
     if (!trimmedModuleName) {
-      Alert.alert('Module Name required', 'Please enter a Module Name.');
+      await alert({
+        title: 'Module Name required',
+        message: 'Please enter a Module Name.',
+      });
       return;
     }
 
     if (!trimmedDescription) {
-      Alert.alert('Description required', 'Please enter a Description.');
+      await alert({
+        title: 'Description required',
+        message: 'Please enter a Description.',
+      });
       return;
     }
 
     if (recordFields.length === 0) {
-      Alert.alert(
-        'Record Fields required',
-        'Please add at least one record field.',
-      );
+      await alert({
+        title: 'Record Fields required',
+        message: 'Please add at least one record field.',
+      });
       return;
     }
 
@@ -229,10 +244,10 @@ export default function CreateApplianceModuleScreen() {
       const existingSnap = await getDoc(moduleRef);
 
       if (existingSnap.exists()) {
-        Alert.alert(
-          'Module already exists',
-          `A module document named "${generatedModuleKey}" already exists. Please change the Module Name.`,
-        );
+        await alert({
+          title: 'Module already exists',
+          message: `A module document named "${generatedModuleKey}" already exists. Please change the Module Name.`,
+        });
         return;
       }
 
@@ -249,20 +264,17 @@ export default function CreateApplianceModuleScreen() {
         updatedAt: serverTimestamp(),
       });
 
-      Alert.alert(
-        'Created',
-        'Custom appliance module created successfully.',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.back(),
-          },
-        ],
-        { cancelable: false },
-      );
+      await alert({
+        title: 'Created',
+        message: 'Custom appliance module created successfully.',
+      });
+      router.back();
     } catch (err: any) {
       console.error('create appliance module error', err);
-      Alert.alert('Create failed', err?.message ?? 'Unknown error');
+      await alert({
+        title: 'Create failed',
+        message: err?.message ?? 'Unknown error',
+      });
     } finally {
       setSaving(false);
     }
@@ -273,6 +285,7 @@ export default function CreateApplianceModuleScreen() {
     generatedModuleKey,
     saving,
     router,
+    alert
   ]);
 
   return (

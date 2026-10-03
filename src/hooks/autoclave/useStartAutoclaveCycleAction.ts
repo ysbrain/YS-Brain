@@ -4,6 +4,7 @@ import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_SETUP_KEYS,
 } from '@/src/constants/autoclave';
+import { useAlert } from '@/src/contexts/AlertContext';
 import { buildApplianceSnapshot } from '@/src/hooks/autoclave/applianceSnapshot';
 import type {
   FormatDateYYMMDDFn,
@@ -36,7 +37,6 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { useCallback } from 'react';
-import { Alert } from 'react-native';
 
 type UseStartAutoclaveCycleActionParams = {
   clinicId?: string | null;
@@ -91,6 +91,8 @@ export function useStartAutoclaveCycleAction({
   formatDateYYMMDD,
   pad2,
 }: UseStartAutoclaveCycleActionParams) {
+  const { alert } = useAlert();
+
   const { showValidationAlert } = useValidationScroll(requestScroll);
 
   const onStartMachine = useCallback(async () => {
@@ -98,57 +100,60 @@ export function useStartAutoclaveCycleAction({
     setActivePicker(null);
 
     if (!clinicId || !roomId || !applianceId) {
-      Alert.alert(
-        'Missing context',
-        'Clinic, room, or appliance information is missing.',
-      );
+      await alert({
+        title: 'Missing context',
+        message: 'Clinic, room, or appliance information is missing.',
+      });
       return;
     }
 
     if (!userUid) {
-      Alert.alert(
-        'Not signed in',
-        'Please sign in before starting the machine.',
-      );
+      await alert({
+        title: 'Not signed in',
+        message: 'Please sign in before starting the machine.',
+      });
       return;
     }
 
     if (loading) {
-      Alert.alert(
-        'Please wait',
-        'Autoclave information is still loading.',
-      );
+      await alert({
+        title: 'Please wait',
+        message: 'Autoclave information is still loading.',
+      });
       return;
     }
 
     if (loadError) {
-      Alert.alert('Cannot start', loadError);
+      await alert({
+        title: 'Cannot start',
+        message: loadError,
+      });
       return;
     }
 
     if (!serialNumber.trim()) {
-      Alert.alert(
-        'Cannot start',
-        'Missing serial number in appliance setup.',
-      );
+      await alert({
+        title: 'Cannot start',
+        message: 'Missing serial number in appliance setup.',
+      });
       return;
     }
 
     if (!applianceKey.trim()) {
-      Alert.alert(
-        'Cannot start',
-        'Appliance key is missing.',
-      );
+      await alert({
+        title: 'Cannot start',
+        message: 'Appliance key is missing.',
+      });
       return;
     }
 
     const strictInputSerialIdPart = getStrictSerialIdPart(serialNumber);
 
     if (!strictInputSerialIdPart) {
-      Alert.alert(
-        'Cannot start',
-        'Serial number contains unsupported characters. Please update appliance setup.',
-      );
+      await alert({
+        title: 'Cannot start',
+        message: 'Serial number contains unsupported characters. Please update appliance setup.',
+      });
       return;
     }
 
@@ -389,26 +394,21 @@ export function useStartAutoclaveCycleAction({
 
       setFormErrorField(null);
 
-      Alert.alert(
-        'Started',
-        `Autoclave cycle ${committedCycleId} started successfully.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              routerBack();
-            },
-          },
-        ],
-        { cancelable: false },
-      );
+      await alert({
+        title: 'Started',
+        message: `Autoclave cycle ${committedCycleId} started successfully.`,
+      });
+      routerBack();
     } catch (e) {
       console.error('start autoclave error', e);
 
       const message =
         e instanceof Error ? e.message : 'Unknown error';
 
-      Alert.alert('Start failed', message);
+      await alert({
+        title: 'Start failed',
+        message,
+      });
     } finally {
       setSaving(false);
       setUiLocked(false);
@@ -427,6 +427,7 @@ export function useStartAutoclaveCycleAction({
     pressure,
     startTime,
     saving,
+    alert,
     setActivePicker,
     setFormErrorField,
     setSaving,

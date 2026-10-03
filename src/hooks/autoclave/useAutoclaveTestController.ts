@@ -5,6 +5,7 @@ import {
   AUTOCLAVE_SETUP_KEYS,
   AUTOCLAVE_STORAGE,
 } from '@/src/constants/autoclave';
+import { useAlert } from '@/src/contexts/AlertContext';
 import { setupValueToString } from '@/src/hooks/autoclave/setupUtils';
 import { buildAutoclavePhotoPath } from '@/src/hooks/autoclave/storagePaths';
 import { normalizeAutoclaveTestCounter } from '@/src/hooks/autoclave/testCounterUtils';
@@ -35,7 +36,6 @@ import {
   uploadBytes,
 } from 'firebase/storage';
 import { useCallback, useMemo, useState } from 'react';
-import { Alert } from 'react-native';
 
 export type AutoclaveTestType = 'helix' | 'spore';
 
@@ -414,6 +414,8 @@ export function useAutoclaveTestController({
   requestScroll,
   routerBack,
 }: UseAutoclaveTestControllerParams) {
+  const { alert } = useAlert();
+
   const { showValidationAlert } = useValidationScroll(requestScroll);
 
   const [formErrorField, setFormErrorField] =
@@ -533,49 +535,58 @@ export function useAutoclaveTestController({
     setActivePicker(null);
 
     if (!clinicId || !roomId || !applianceId) {
-      Alert.alert(
-        'Missing context',
-        'Clinic, room, or appliance information is missing.',
-      );
+      await alert({
+        title: 'Missing context',
+        message: 'Clinic, room, or appliance information is missing.',
+      });
       return;
     }
 
     if (!userUid) {
-      Alert.alert(
-        'Not signed in',
-        'Please sign in before saving the record.',
-      );
+      await alert({
+        title: 'Not signed in',
+        message: 'Please sign in before saving the record.',
+      });
       return;
     }
 
     if (loading) {
-      Alert.alert(
-        'Please wait',
-        'Autoclave information is still loading.',
-      );
+      await alert({
+        title: 'Please wait',
+        message: 'Autoclave information is still loading.',
+      });
       return;
     }
 
     if (loadError) {
-      Alert.alert('Cannot save', loadError);
+      await alert({
+        title: 'Cannot save',
+        message: loadError,
+      });
       return;
     }
 
     if (!applianceKey.trim()) {
-      Alert.alert('Cannot save', 'Appliance key is missing.');
+      await alert({
+        title: 'Cannot save',
+        message: 'Appliance key is missing.',
+      });
       return;
     }
 
     if (!serialNumber?.trim()) {
-      Alert.alert('Cannot save', 'Serial number is missing.');
+      await alert({
+        title: 'Cannot save',
+        message: 'Serial number is missing.',
+      });
       return;
     }
 
     if (!getStrictSerialIdPart(serialNumber)) {
-      Alert.alert(
-        'Cannot save',
-        'Serial number contains unsupported characters. Please update appliance setup.',
-      );
+      await alert({
+        title: 'Cannot save',
+        message: 'Serial number contains unsupported characters. Please update appliance setup.',
+      });
       return;
     }
 
@@ -741,19 +752,11 @@ export function useAutoclaveTestController({
 
       setFormErrorField(null);
 
-      Alert.alert(
-        'Saved',
-        getSuccessMessage(testType),
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              routerBack();
-            },
-          },
-        ],
-        { cancelable: false },
-      );
+      await alert({
+        title: 'Saved',
+        message: getSuccessMessage(testType),
+      });
+      routerBack();
     } catch (e: any) {
       console.error(`${testType} autoclave test save error`, e);
 
@@ -799,7 +802,10 @@ export function useAutoclaveTestController({
         }
       }
 
-      Alert.alert('Save failed', e?.message ?? 'Unknown error');
+      await alert({
+        title: 'Save failed',
+        message: e?.message ?? 'Unknown error',
+      });
     } finally {
       setSaving(false);
       setUiLocked(false);
@@ -822,6 +828,7 @@ export function useAutoclaveTestController({
     testResult,
     photoUri,
     saving,
+    alert,
     setActivePicker,
     setSaving,
     setUiLocked,

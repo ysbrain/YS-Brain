@@ -4,6 +4,7 @@ import AppDatePicker from '@/src/components/AppDatePicker';
 import BottomSheetShell from '@/src/components/BottomSheetShell';
 import { IOS_PICKER_OVERLAY_HEIGHT } from '@/src/components/IosDateTimePickerOverlay';
 import type { ModuleItem } from '@/src/components/SelectApplianceTypeModal';
+import { useAlert } from '@/src/contexts/AlertContext';
 import { useUiLock } from '@/src/contexts/UiLockContext';
 import { useKeyboardAwareFieldScroll } from '@/src/hooks/useKeyboardAwareFieldScroll';
 import { useValidationScroll } from '@/src/hooks/useValidationScroll';
@@ -25,7 +26,6 @@ import {
 } from 'firebase/firestore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -34,7 +34,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -177,6 +177,7 @@ export default function AddApplianceToRoomModal({
   const [saving, setSaving] = useState(false);
 
   const { setUiLocked } = useUiLock();
+  const { alert } = useAlert();
 
   const applianceKey = useMemo(
     () => toFirestoreSafeKey(applianceName),
@@ -632,17 +633,11 @@ export default function AddApplianceToRoomModal({
         });
       });
 
-      Alert.alert(
-        '✅ Success',
-        `“${name}” has been added to “${roomName}”.`,
-        [
-          {
-            text: 'OK',
-            onPress: () => onCloseAll(),
-          },
-        ],
-        { cancelable: true },
-      );
+      await alert({
+        title: 'Success',
+        message: `“${name}” has been added to “${roomName}”.`,
+      });
+      onCloseAll();
     } catch (e: any) {
       console.error('Add appliance error:', e);
 
@@ -673,6 +668,7 @@ export default function AddApplianceToRoomModal({
     roomId,
     moduleRecordFields,
     roomName,
+    alert,
     onCloseAll,
     scrollToField,
     setUiLocked,

@@ -4,6 +4,7 @@ import {
   AUTOCLAVE_RECORD_COLLECTIONS,
   AUTOCLAVE_STORAGE,
 } from '@/src/constants/autoclave';
+import { useAlert } from '@/src/contexts/AlertContext';
 import { buildApplianceSnapshot } from '@/src/hooks/autoclave/applianceSnapshot';
 import type {
   ParseHHMMFn,
@@ -40,7 +41,6 @@ import {
   uploadBytes,
 } from 'firebase/storage';
 import { useCallback } from 'react';
-import { Alert } from 'react-native';
 
 type UseFinishAutoclaveCycleActionParams = {
   clinicId?: string | null;
@@ -108,6 +108,8 @@ export function useFinishAutoclaveCycleAction({
   parseHHMM,
   uriToBlob,
 }: UseFinishAutoclaveCycleActionParams) {
+  const { alert } = useAlert();
+
   const { showValidationAlert } = useValidationScroll(requestScroll);
 
   const onFinishAndUnload = useCallback(async () => {
@@ -115,52 +117,58 @@ export function useFinishAutoclaveCycleAction({
     setActivePicker(null);
 
     if (!clinicId || !roomId || !applianceId) {
-      Alert.alert(
-        'Missing context',
-        'Clinic, room, or appliance information is missing.',
-      );
+      await alert({
+        title: 'Missing context',
+        message: 'Clinic, room, or appliance information is missing.',
+      });
       return;
     }
 
     if (!userUid) {
-      Alert.alert(
-        'Not signed in',
-        'Please sign in before finishing the cycle.',
-      );
+      await alert({
+        title: 'Not signed in',
+        message: 'Please sign in before finishing the cycle.',
+      });
       return;
     }
 
     if (loading || cycleDocLoading) {
-      Alert.alert(
-        'Please wait',
-        'Cycle information is still loading.',
-      );
+      await alert({
+        title: 'Please wait',
+        message: 'Cycle information is still loading.',
+      });
       return;
     }
 
     if (loadError) {
-      Alert.alert('Cannot finish', loadError);
+      await alert({
+        title: 'Cannot finish',
+        message: loadError,
+      });
       return;
     }
 
     if (cycleDocError) {
-      Alert.alert('Cannot finish', cycleDocError);
+      await alert({
+        title: 'Cannot finish',
+        message: cycleDocError,
+      });
       return;
     }
 
     if (!isRunning || !currentCycle) {
-      Alert.alert(
-        'Cannot finish',
-        'No running cycle was found.',
-      );
+      await alert({
+        title: 'Cannot finish',
+        message: 'No running cycle was found.',
+      });
       return;
     }
 
     if (!applianceKey.trim()) {
-      Alert.alert(
-        'Cannot finish',
-        'Appliance key is missing.',
-      );
+      await alert({
+        title: 'Cannot finish',
+        message: 'Appliance key is missing.',
+      });
       return;
     }
 
@@ -188,10 +196,10 @@ export function useFinishAutoclaveCycleAction({
     const parsed = parseCycleId(currentCycle);
 
     if (!parsed) {
-      Alert.alert(
-        'Cannot finish',
-        'Current cycle ID format is invalid.',
-      );
+      await alert({
+        title: 'Cannot finish',
+        message: 'Current cycle ID format is invalid.',
+      });
       return;
     }
 
@@ -201,10 +209,10 @@ export function useFinishAutoclaveCycleAction({
     } = parsed;
 
     if (!Number.isFinite(cycleNumberPart)) {
-      Alert.alert(
-        'Cannot finish',
-        'Current cycle ID format is invalid.',
-      );
+      await alert({
+        title: 'Cannot finish',
+        message: 'Current cycle ID format is invalid.',
+      });
       return;
     }
 
@@ -403,19 +411,11 @@ export function useFinishAutoclaveCycleAction({
       databaseCommitted = true;
       setFormErrorField(null);
 
-      Alert.alert(
-        'Finished',
-        'Cycle finished and unloaded successfully.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              routerBack();
-            },
-          },
-        ],
-        { cancelable: false },
-      );
+      await alert({
+        title: 'Finished',
+        message: 'Cycle finished and unloaded successfully.',
+      });
+      routerBack();
     } catch (e) {
       console.error('finish autoclave cycle error', e);
 
@@ -433,7 +433,10 @@ export function useFinishAutoclaveCycleAction({
       const message =
         e instanceof Error ? e.message : 'Unknown error';
 
-      Alert.alert('Finish failed', message);
+      await alert({
+        title: 'Finish failed',
+        message,
+      });
     } finally {
       setSaving(false);
       setUiLocked(false);
@@ -457,6 +460,7 @@ export function useFinishAutoclaveCycleAction({
     photoUri,
     notes,
     saving,
+    alert,
     setActivePicker,
     setFormErrorField,
     setSaving,

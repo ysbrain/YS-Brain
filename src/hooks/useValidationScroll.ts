@@ -1,7 +1,7 @@
 // src/hooks/useValidationScroll.ts
 
+import { useAlert } from '@/src/contexts/AlertContext';
 import { useCallback } from 'react';
-import { Alert } from 'react-native';
 
 type RequestScrollFn = (
   key: string,
@@ -23,6 +23,8 @@ type ShowValidationAlertOptions = {
 };
 
 export function useValidationScroll(requestScroll: RequestScrollFn) {
+  const { alert } = useAlert();
+
   const scrollToField = useCallback(
     (
       fieldKey: string | null | undefined,
@@ -43,31 +45,24 @@ export function useValidationScroll(requestScroll: RequestScrollFn) {
   );
 
   const showValidationAlert = useCallback(
-    ({
+    async ({
       title = 'Validation',
       message,
       fieldKey,
       delayMs = 50,
       reason = 'validation',
     }: ShowValidationAlertOptions) => {
-      Alert.alert(
+      await alert({
         title,
         message,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              scrollToField(fieldKey, {
-                delayMs,
-                reason,
-              });
-            },
-          },
-        ],
-        { cancelable: true },
-      );
+      });
+
+      scrollToField(fieldKey, {
+        delayMs,
+        reason,
+      });
     },
-    [scrollToField],
+    [scrollToField, alert],
   );
 
   return {

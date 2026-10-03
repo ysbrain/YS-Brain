@@ -5,6 +5,7 @@ import { CameraCaptureModal } from '@/src/components/CameraCaptureModal';
 import { IOS_PICKER_OVERLAY_HEIGHT } from '@/src/components/IosDateTimePickerOverlay';
 import { DailyOpsView } from '@/src/components/autoclave/DailyOpsView';
 import { DAILY_OPS_FIELD_KEYS } from '@/src/constants/autoclave';
+import { useAlert } from '@/src/contexts/AlertContext';
 import type {
   DailyOpsActivePicker,
   DailyOpsPickerField,
@@ -21,11 +22,10 @@ import { cropToAspect } from '@/src/utils/photo';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
-  Alert,
   Keyboard,
   Platform,
   ScrollView,
-  StyleSheet,
+  StyleSheet
 } from 'react-native';
 
 const PHOTO_ASPECT = 4 / 3;
@@ -89,6 +89,7 @@ export function DailyOpsTab({
   setUiLocked,
 }: DailyOpsTabProps) {
   const router = useRouter();
+  const { alert } = useAlert();
 
   const {
     cycleDocLoading,
@@ -230,12 +231,16 @@ export function DailyOpsTab({
         }
       } catch (err) {
         console.error('autoclave photo process error', err);
-        Alert.alert('Photo error', 'Failed to process the captured photo.');
+        await alert({
+          title: 'Photo error',
+          message: 'Failed to process the captured photo.',
+        });
       } finally {
         closeCamera();
       }
     },
     [
+      alert,
       closeCamera,
       dailyOps.formErrorField,
       dailyOps.setFormErrorField,
