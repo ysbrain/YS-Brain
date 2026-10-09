@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover"
+    />
+
+    <title>%WEB_TITLE%</title>
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- iOS PWA settings -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="default"
+    />
+    <meta name="apple-mobile-web-app-title" content="%WEB_TITLE%" />
+
+    <!--
+      The react-native-web recommended style reset.
+      These styles make the document and Expo root element full height.
+    -->
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        overflow: hidden;
+        margin: 0;
+      }
+
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+
+    <!-- Register the generated Workbox service worker -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", async function () {
+          try {
+            const registration = await navigator.serviceWorker.register(
+              "/sw.js",
+              {
+                scope: "/",
+
+                /*
+                 * Do not use the browser HTTP cache when checking sw.js
+                 * or its imported scripts for updates.
+                 */
+                updateViaCache: "none",
+              }
+            );
+
+            console.log(
+              "YS Brain service worker registered:",
+              registration.scope
+            );
+
+            /*
+             * Explicitly check for a new service-worker version whenever
+             * the application starts.
+             */
+            try {
+              await registration.update();
+              console.log(
+                "YS Brain service worker update check completed."
+              );
+            } catch (updateError) {
+              /*
+               * An update check can fail when the device is offline.
+               * The currently cached application can continue working.
+               */
+              console.warn(
+                "Service worker update check could not be completed:",
+                updateError
+              );
+            }
+
+            /*
+             * Reload once when a newly activated service worker takes
+             * control of this page.
+             */
+            let isRefreshing = false;
+
+            navigator.serviceWorker.addEventListener(
+              "controllerchange",
+              function () {
+                if (isRefreshing) {
+                  return;
+                }
+
+                isRefreshing = true;
+                window.location.reload();
+              }
+            );
+          } catch (registrationError) {
+            console.error(
+              "YS Brain service worker registration failed:",
+              registrationError
+            );
+          }
+        });
+      }
+    </script>
+  </head>
+
+  <body>
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+
+    <!-- The root element for the Expo application -->
+    <div id="root"></div>
+  </body>
+</html>

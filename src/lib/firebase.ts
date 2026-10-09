@@ -2,11 +2,7 @@
 
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getDatabase } from 'firebase/database';
-import {
-  getFirestore,
-  initializeFirestore,
-  memoryLocalCache,
-} from 'firebase/firestore';
+import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBQX4kUaJ9cMNRX08xE39OFljbX5hR9Fa0",
@@ -19,15 +15,10 @@ const firebaseConfig = {
 };
 
 export const app =
-  !getApps().length
+  getApps().length === 0
     ? initializeApp(firebaseConfig)
     : getApp();
 
-export const db =
-  getApps().length === 1
-    ? initializeFirestore(app, {
-        localCache: memoryLocalCache(),
-      })
-    : getFirestore(app);
+export const db = getFirestore(app);
 
 export const rtdb = getDatabase(app);

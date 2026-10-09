@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { BuildVersion } from '@/src/components/BuildVersion';
 import { auth } from '@/src/lib/auth';
 
 export default function SettingsScreen() {
@@ -39,6 +40,8 @@ export default function SettingsScreen() {
         />
         <Text style={styles.signOutButtonText}>Sign Out</Text>
       </TouchableOpacity>
+
+      <BuildVersion />
     </View>
   );
 }
